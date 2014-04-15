@@ -108,7 +108,6 @@ static int hostapd_acl_comp(const void *a, const void *b)
 	return os_memcmp(aa->addr, bb->addr, sizeof(macaddr));
 }
 
-
 static int hostapd_config_read_maclist(const char *fname,
 				       struct mac_acl_entry **acl, int *num)
 {
@@ -1630,6 +1629,14 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			bss->logger_syslog = atoi(pos);
 		} else if (os_strcmp(buf, "logger_stdout") == 0) {
 			bss->logger_stdout = atoi(pos);
+		// KARMA START
+		} else if (os_strcmp(buf, "enable_karma") == 0) {
+			int val = atoi(pos);
+			conf->enable_karma = (val != 0);
+			if (conf->enable_karma) {
+				wpa_printf(MSG_DEBUG, "KARMA: Enabled");
+			}
+		// KARMA END
 		} else if (os_strcmp(buf, "dump_file") == 0) {
 			wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
 				   line);
@@ -2954,6 +2961,11 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	}
 
 	bss = conf->last_bss = conf->bss[0];
+
+	// KARMA START
+	conf->enable_karma = 0; //default off
+	
+	// KARMA END
 
 	while (fgets(buf, sizeof(buf), f)) {
 		bss = conf->last_bss;

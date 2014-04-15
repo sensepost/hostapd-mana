@@ -36,6 +36,7 @@
 #include "wps/wps.h"
 #include "config_file.h"
 #include "ctrl_iface.h"
+#include "ap/beacon.h"
 
 
 struct wpa_ctrl_dst {
@@ -155,6 +156,96 @@ static int hostapd_ctrl_iface_new_sta(struct hostapd_data *hapd,
 	return 0;
 }
 
+// KARMA START
+
+static int hostapd_ctrl_iface_karma_get_state (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE STATUS QUERY");
+	return hapd->iconf->enable_karma;
+}
+// Used in the hostapd_ctrl_iface_karma_add_mac function to sort the MAC ACL list
+static int hostapd_acl_comp(const void *a, const void *b)
+{
+	const struct mac_acl_entry *aa = a;
+	const struct mac_acl_entry *bb = b;
+	return os_memcmp(aa->addr, bb->addr, sizeof(macaddr));
+}
+
+static int hostapd_ctrl_iface_karma_add_mac (struct hostapd_data *hapd,
+					     const char *mac, int black) {
+
+	u8 addr[ETH_ALEN];
+	struct mac_acl_entry *newacl;
+	struct hostapd_bss_config *bss;
+	char buf[128];
+	struct mac_acl_entry **acl;
+	int *num;
+	// for now we don't care about VLANs so just hardcoding 0
+	int vlan_id = 0;
+
+	if (hwaddr_aton(mac, addr)) {
+		wpa_printf(MSG_ERROR, "Invalid MAC address '%s'", buf);
+		return -1;
+	}
+
+	bss = hapd->iconf->last_bss;
+	if (black) {
+		hostapd_ctrl_iface_deauthenticate(hapd, buf);
+		num = &bss->num_deny_mac;
+		acl = &bss->deny_mac;
+	} else {
+		num = &bss->num_accept_mac;
+		acl = &bss->accept_mac;
+	}
+
+	newacl = os_realloc(*acl, (*num + 1) * sizeof(**acl));
+	if (newacl == NULL) {
+		wpa_printf(MSG_ERROR, "MAC list reallocation failed");
+		return -1;
+	}
+
+	*acl = newacl;
+	os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
+	(*acl)[*num].vlan_id = vlan_id;
+	(*num)++;
+
+	qsort(*acl, *num, sizeof(**acl), hostapd_acl_comp);
+
+	//num = &bss->num_deny_mac;
+	wpa_printf(MSG_DEBUG, "There are now %i MAC addresses in the list", *num);
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_karma_change_ssid (struct hostapd_data *hapd,
+					     const char *ssid) {
+	wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE CHANGE SSID %s", ssid);
+
+	if (strlen(ssid) > HOSTAPD_MAX_SSID_LEN || strlen(ssid) == 0) {
+		return -1;
+	}
+
+	hapd->conf->ssid.ssid_len = strlen(ssid);
+	// Not sure if the +1 is needed here or not
+	os_memcpy(hapd->conf->ssid.ssid, ssid, strlen(ssid) + 1);
+	ieee802_11_set_beacon(hapd);
+	wpa_printf(MSG_DEBUG, "CTRL_IFACE KARMA Default SSID Changed");
+	return 0;
+}
+
+static int hostapd_ctrl_iface_karma_enable_disable (struct hostapd_data *hapd,
+						int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE DISABLED");
+	}
+	hapd->iconf->enable_karma = status;
+
+	return 0;
+}
+// KARMA END
 
 #ifdef CONFIG_IEEE80211W
 #ifdef NEED_AP_MLME
@@ -251,7 +342,6 @@ static int hostapd_ctrl_iface_wps_check_pin(
 
 	return ret;
 }
-
 
 #ifdef CONFIG_WPS_NFC
 static int hostapd_ctrl_iface_wps_nfc_tag_read(struct hostapd_data *hapd,
@@ -1355,6 +1445,52 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	} else if (os_strncmp(buf, "CHAN_SWITCH ", 12) == 0) {
 		if (hostapd_ctrl_iface_chan_switch(hapd, buf + 12))
 			reply_len = -1;
+	// KARMA
+	} else if (os_strcmp(buf, "KARMA_STATE") == 0) {
+		if (hostapd_ctrl_iface_karma_get_state(hapd)) {
+			os_memcpy(reply, "ENABLED\n", 8);
+			reply_len = 8;
+		} else {
+			os_memcpy(reply, "DISABLED\n", 9);
+			reply_len = 9;
+		}
+	} else if (os_strncmp(buf, "KARMA_ADD_WHITE_MAC ", 20) == 0) {
+		if (hostapd_ctrl_iface_karma_add_mac (hapd, buf + 20, 0)) {
+			reply_len = -1;
+		} else {
+			os_memcpy(reply, "ADDED\n", 6);
+			reply_len = 6;
+		}
+	} else if (os_strncmp(buf, "KARMA_ADD_BLACK_MAC ", 20) == 0) {
+		if (hostapd_ctrl_iface_karma_add_mac (hapd, buf + 20, 1)) {
+			reply_len = -1;
+		} else {
+			os_memcpy(reply, "ADDED\n", 6);
+			reply_len = 6;
+		}
+	} else if (os_strcmp(buf, "KARMA_GET_SSID") == 0) {
+		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE GET SSID");
+		size_t len;
+ 
+		// +2 for the new line and the null byte terminator
+		len = hapd->conf->ssid.ssid_len + 2;
+		os_snprintf(reply, len, "%s\n", hapd->conf->ssid.ssid);
+		reply_len = len;
+ 
+	} else if (os_strncmp(buf, "KARMA_CHANGE_SSID ", 18) == 0) {
+		if (hostapd_ctrl_iface_karma_change_ssid (hapd, buf + 18)) {
+			reply_len = -1;
+		} else {
+			os_memcpy(reply, "CHANGED\n", 8);
+			reply_len = 8;
+		}
+	} else if (os_strcmp(buf, "KARMA_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_karma_enable_disable(hapd, 0))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "KARMA_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_karma_enable_disable(hapd, 1))
+			reply_len = -1;
+	// END KARMA
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;

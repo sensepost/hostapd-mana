@@ -488,6 +488,10 @@ struct hostapd_config {
 	struct hostapd_bss_config **bss, *last_bss;
 	size_t num_bss;
 
+	// KARMA
+	int enable_karma;
+	// KARMA END
+
 	u16 beacon_int;
 	int rts_threshold;
 	int fragm_threshold;
