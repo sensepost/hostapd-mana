@@ -105,7 +105,7 @@ struct tls_connection {
 	unsigned int ca_cert_verify:1;
 	unsigned int cert_probe:1;
 	unsigned int server_cert_only:1;
-	unsigned int server:1;
+	unsigned int invalid_hb_used:1;
 
 	u8 srv_cert_hash[32];
 
@@ -786,12 +786,13 @@ void * tls_init(const struct tls_config *conf)
 		PKCS12_PBE_add();
 #endif  /* PKCS12_FUNCS */
 	} else {
-		context = tls_global;
 #ifdef OPENSSL_SUPPORTS_CTX_APP_DATA
 		/* Newer OpenSSL can store app-data per-SSL */
 		context = tls_context_new(conf);
 		if (context == NULL)
 			return NULL;
+#else /* OPENSSL_SUPPORTS_CTX_APP_DATA */
+		context = tls_global;
 #endif /* OPENSSL_SUPPORTS_CTX_APP_DATA */
 	}
 	tls_openssl_ref_count++;
@@ -984,14 +985,35 @@ int tls_get_errors(void *ssl_ctx)
 	return count;
 }
 
+
+static void tls_msg_cb(int write_p, int version, int content_type,
+		       const void *buf, size_t len, SSL *ssl, void *arg)
+{
+	struct tls_connection *conn = arg;
+	const u8 *pos = buf;
+
+	wpa_printf(MSG_DEBUG, "OpenSSL: %s ver=0x%x content_type=%d",
+		   write_p ? "TX" : "RX", version, content_type);
+	wpa_hexdump_key(MSG_MSGDUMP, "OpenSSL: Message", buf, len);
+	if (content_type == 24 && len >= 3 && pos[0] == 1) {
+		size_t payload_len = WPA_GET_BE16(pos + 1);
+		if (payload_len + 3 > len) {
+			wpa_printf(MSG_ERROR, "OpenSSL: Heartbeat attack detected");
+			conn->invalid_hb_used = 1;
+		}
+	}
+}
+
+
 struct tls_connection * tls_connection_init(void *ssl_ctx)
 {
 	SSL_CTX *ssl = ssl_ctx;
 	struct tls_connection *conn;
 	long options;
-	struct tls_context *context = tls_global;
 #ifdef OPENSSL_SUPPORTS_CTX_APP_DATA
-	context = SSL_CTX_get_app_data(ssl);
+	struct tls_context *context = SSL_CTX_get_app_data(ssl);
+#else /* OPENSSL_SUPPORTS_CTX_APP_DATA */
+	struct tls_context *context = tls_global;
 #endif /* OPENSSL_SUPPORTS_CTX_APP_DATA */
 
 	conn = os_zalloc(sizeof(*conn));
@@ -1007,6 +1029,8 @@ struct tls_connection * tls_connection_init(void *ssl_ctx)
 
 	conn->context = context;
 	SSL_set_app_data(conn->ssl, conn);
+	SSL_set_msg_callback(conn->ssl, tls_msg_cb);
+	SSL_set_msg_callback_arg(conn->ssl, conn);
 	options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
 		SSL_OP_SINGLE_DH_USE;
 #ifdef SSL_OP_NO_COMPRESSION
@@ -1368,6 +1392,9 @@ static int tls_verify_cb(int preverify_ok, X509_STORE_CTX *x509_ctx)
 	const char *err_str;
 
 	err_cert = X509_STORE_CTX_get_current_cert(x509_ctx);
+	if (!err_cert)
+		return 0;
+
 	err = X509_STORE_CTX_get_error(x509_ctx);
 	depth = X509_STORE_CTX_get_error_depth(x509_ctx);
 	ssl = X509_STORE_CTX_get_ex_data(x509_ctx,
@@ -1475,16 +1502,6 @@ static int tls_verify_cb(int preverify_ok, X509_STORE_CTX *x509_ctx)
 		openssl_tls_fail_event(conn, err_cert, err, depth, buf,
 				       "Server certificate chain probe",
 				       TLS_FAIL_SERVER_CHAIN_PROBE);
-	}
-
-	if (!conn->server && err_cert && preverify_ok && depth == 0 &&
-	    (err_cert->ex_flags & EXFLAG_XKUSAGE) &&
-	    (err_cert->ex_xkusage & XKU_SSL_CLIENT)) {
-		wpa_printf(MSG_WARNING, "TLS: Server used client certificate");
-		openssl_tls_fail_event(conn, err_cert, err, depth, buf,
-				       "Server used client certificate",
-				       TLS_FAIL_SERVER_USED_CLIENT_CERT);
-		preverify_ok = 0;
 	}
 
 	if (preverify_ok && context->event_cb != NULL)
@@ -2538,8 +2555,6 @@ openssl_handshake(struct tls_connection *conn, const struct wpabuf *in_data,
 	int res;
 	struct wpabuf *out_data;
 
-	conn->server = !!server;
-
 	/*
 	 * Give TLS handshake data from the server (if available) to OpenSSL
 	 * for processing.
@@ -2650,9 +2665,24 @@ openssl_connection_handshake(struct tls_connection *conn,
 	out_data = openssl_handshake(conn, in_data, server);
 	if (out_data == NULL)
 		return NULL;
+	if (conn->invalid_hb_used) {
+		wpa_printf(MSG_INFO, "TLS: Heartbeat attack detected - do not send response");
+		wpabuf_free(out_data);
+		return NULL;
+	}
 
 	if (SSL_is_init_finished(conn->ssl) && appl_data && in_data)
 		*appl_data = openssl_get_appl_data(conn, wpabuf_len(in_data));
+
+	if (conn->invalid_hb_used) {
+		wpa_printf(MSG_INFO, "TLS: Heartbeat attack detected - do not send response");
+		if (appl_data) {
+			wpabuf_free(*appl_data);
+			*appl_data = NULL;
+		}
+		wpabuf_free(out_data);
+		return NULL;
+	}
 
 	return out_data;
 }
@@ -2754,6 +2784,12 @@ struct wpabuf * tls_connection_decrypt(void *tls_ctx,
 		return NULL;
 	}
 	wpabuf_put(buf, res);
+
+	if (conn->invalid_hb_used) {
+		wpa_printf(MSG_INFO, "TLS: Heartbeat attack detected - do not send response");
+		wpabuf_free(buf);
+		return NULL;
+	}
 
 	return buf;
 }
@@ -2932,6 +2968,41 @@ static void ocsp_debug_print_resp(OCSP_RESPONSE *rsp)
 }
 
 
+static void debug_print_cert(X509 *cert, const char *title)
+{
+#ifndef CONFIG_NO_STDOUT_DEBUG
+	BIO *out;
+	size_t rlen;
+	char *txt;
+	int res;
+
+	if (wpa_debug_level > MSG_DEBUG)
+		return;
+
+	out = BIO_new(BIO_s_mem());
+	if (!out)
+		return;
+
+	X509_print(out, cert);
+	rlen = BIO_ctrl_pending(out);
+	txt = os_malloc(rlen + 1);
+	if (!txt) {
+		BIO_free(out);
+		return;
+	}
+
+	res = BIO_read(out, txt, rlen);
+	if (res > 0) {
+		txt[res] = '\0';
+		wpa_printf(MSG_DEBUG, "OpenSSL: %s\n%s", title, txt);
+	}
+	os_free(txt);
+
+	BIO_free(out);
+#endif /* CONFIG_NO_STDOUT_DEBUG */
+}
+
+
 static int ocsp_resp_cb(SSL *s, void *arg)
 {
 	struct tls_connection *conn = arg;
@@ -2975,8 +3046,7 @@ static int ocsp_resp_cb(SSL *s, void *arg)
 
 	store = SSL_CTX_get_cert_store(s->ctx);
 	if (conn->peer_issuer) {
-		wpa_printf(MSG_DEBUG, "OpenSSL: Add issuer");
-		X509_print_fp(stdout, conn->peer_issuer);
+		debug_print_cert(conn->peer_issuer, "Add OCSP issuer");
 
 		if (X509_STORE_add_cert(store, conn->peer_issuer) != 1) {
 			tls_show_errors(MSG_INFO, __func__,
@@ -3186,6 +3256,19 @@ int tls_connection_set_params(void *tls_ctx, struct tls_connection *conn,
 		SSL_clear_options(conn->ssl, SSL_OP_NO_TICKET);
 #endif /* SSL_clear_options */
 #endif /*  SSL_OP_NO_TICKET */
+
+#ifdef SSL_OP_NO_TLSv1_1
+	if (params->flags & TLS_CONN_DISABLE_TLSv1_1)
+		SSL_set_options(conn->ssl, SSL_OP_NO_TLSv1_1);
+	else
+		SSL_clear_options(conn->ssl, SSL_OP_NO_TLSv1_1);
+#endif /* SSL_OP_NO_TLSv1_1 */
+#ifdef SSL_OP_NO_TLSv1_2
+	if (params->flags & TLS_CONN_DISABLE_TLSv1_2)
+		SSL_set_options(conn->ssl, SSL_OP_NO_TLSv1_2);
+	else
+		SSL_clear_options(conn->ssl, SSL_OP_NO_TLSv1_2);
+#endif /* SSL_OP_NO_TLSv1_2 */
 
 #ifdef HAVE_OCSP
 	if (params->flags & TLS_CONN_REQUEST_OCSP) {

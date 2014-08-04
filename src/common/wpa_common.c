@@ -56,6 +56,11 @@ int wpa_eapol_key_mic(const u8 *key, int ver, const u8 *buf, size_t len,
 	case WPA_KEY_INFO_TYPE_AES_128_CMAC:
 		return omac1_aes_128(key, buf, len, mic);
 #endif /* CONFIG_IEEE80211R || CONFIG_IEEE80211W */
+#ifdef CONFIG_HS20
+	case WPA_KEY_INFO_TYPE_AKM_DEFINED:
+		/* FIX: This should be based on negotiated AKM */
+		return omac1_aes_128(key, buf, len, mic);
+#endif /* CONFIG_HS20 */
 	default:
 		return -1;
 	}
@@ -363,6 +368,8 @@ static int rsn_selector_to_bitfield(const u8 *s)
 		return WPA_CIPHER_BIP_GMAC_256;
 	if (RSN_SELECTOR_GET(s) == RSN_CIPHER_SUITE_BIP_CMAC_256)
 		return WPA_CIPHER_BIP_CMAC_256;
+	if (RSN_SELECTOR_GET(s) == RSN_CIPHER_SUITE_NO_GROUP_ADDRESSED)
+		return WPA_CIPHER_GTK_NOT_USED;
 	return 0;
 }
 
@@ -393,6 +400,26 @@ static int rsn_key_mgmt_to_bitfield(const u8 *s)
 #endif /* CONFIG_SAE */
 	return 0;
 }
+
+
+static int wpa_cipher_valid_group(int cipher)
+{
+	return wpa_cipher_valid_pairwise(cipher) ||
+		cipher == WPA_CIPHER_WEP104 ||
+		cipher == WPA_CIPHER_WEP40 ||
+		cipher == WPA_CIPHER_GTK_NOT_USED;
+}
+
+
+#ifdef CONFIG_IEEE80211W
+int wpa_cipher_valid_mgmt_group(int cipher)
+{
+	return cipher == WPA_CIPHER_AES_128_CMAC ||
+		cipher == WPA_CIPHER_BIP_GMAC_128 ||
+		cipher == WPA_CIPHER_BIP_GMAC_256 ||
+		cipher == WPA_CIPHER_BIP_CMAC_256;
+}
+#endif /* CONFIG_IEEE80211W */
 
 
 /**
@@ -450,13 +477,11 @@ int wpa_parse_wpa_ie_rsn(const u8 *rsn_ie, size_t rsn_ie_len,
 
 	if (left >= RSN_SELECTOR_LEN) {
 		data->group_cipher = rsn_selector_to_bitfield(pos);
-#ifdef CONFIG_IEEE80211W
-		if (data->group_cipher == WPA_CIPHER_AES_128_CMAC) {
-			wpa_printf(MSG_DEBUG, "%s: AES-128-CMAC used as group "
-				   "cipher", __func__);
+		if (!wpa_cipher_valid_group(data->group_cipher)) {
+			wpa_printf(MSG_DEBUG, "%s: invalid group cipher 0x%x",
+				   __func__, data->group_cipher);
 			return -1;
 		}
-#endif /* CONFIG_IEEE80211W */
 		pos += RSN_SELECTOR_LEN;
 		left -= RSN_SELECTOR_LEN;
 	} else if (left > 0) {
@@ -541,7 +566,7 @@ int wpa_parse_wpa_ie_rsn(const u8 *rsn_ie, size_t rsn_ie_len,
 #ifdef CONFIG_IEEE80211W
 	if (left >= 4) {
 		data->mgmt_group_cipher = rsn_selector_to_bitfield(pos);
-		if (data->mgmt_group_cipher != WPA_CIPHER_AES_128_CMAC) {
+		if (!wpa_cipher_valid_mgmt_group(data->mgmt_group_cipher)) {
 			wpa_printf(MSG_DEBUG, "%s: Unsupported management "
 				   "group cipher 0x%x", __func__,
 				   data->mgmt_group_cipher);
@@ -553,8 +578,9 @@ int wpa_parse_wpa_ie_rsn(const u8 *rsn_ie, size_t rsn_ie_len,
 #endif /* CONFIG_IEEE80211W */
 
 	if (left > 0) {
-		wpa_printf(MSG_DEBUG, "%s: ie has %u trailing bytes - ignored",
-			   __func__, left);
+		wpa_hexdump(MSG_DEBUG,
+			    "wpa_parse_wpa_ie_rsn: ignore trailing bytes",
+			    pos, left);
 	}
 
 	return 0;
@@ -691,8 +717,9 @@ int wpa_parse_wpa_ie_wpa(const u8 *wpa_ie, size_t wpa_ie_len,
 	}
 
 	if (left > 0) {
-		wpa_printf(MSG_DEBUG, "%s: ie has %u trailing bytes - ignored",
-			   __func__, left);
+		wpa_hexdump(MSG_DEBUG,
+			    "wpa_parse_wpa_ie_wpa: ignore trailing bytes",
+			    pos, left);
 	}
 
 	return 0;
@@ -1096,9 +1123,13 @@ int wpa_cipher_key_len(int cipher)
 	switch (cipher) {
 	case WPA_CIPHER_CCMP_256:
 	case WPA_CIPHER_GCMP_256:
+	case WPA_CIPHER_BIP_GMAC_256:
+	case WPA_CIPHER_BIP_CMAC_256:
 		return 32;
 	case WPA_CIPHER_CCMP:
 	case WPA_CIPHER_GCMP:
+	case WPA_CIPHER_AES_128_CMAC:
+	case WPA_CIPHER_BIP_GMAC_128:
 		return 16;
 	case WPA_CIPHER_TKIP:
 		return 32;
@@ -1146,6 +1177,14 @@ int wpa_cipher_to_alg(int cipher)
 	case WPA_CIPHER_WEP104:
 	case WPA_CIPHER_WEP40:
 		return WPA_ALG_WEP;
+	case WPA_CIPHER_AES_128_CMAC:
+		return WPA_ALG_IGTK;
+	case WPA_CIPHER_BIP_GMAC_128:
+		return WPA_ALG_BIP_GMAC_128;
+	case WPA_CIPHER_BIP_GMAC_256:
+		return WPA_ALG_BIP_GMAC_256;
+	case WPA_CIPHER_BIP_CMAC_256:
+		return WPA_ALG_BIP_CMAC_256;
 	}
 	return WPA_ALG_NONE;
 }
@@ -1186,70 +1225,69 @@ u32 wpa_cipher_to_suite(int proto, int cipher)
 			RSN_CIPHER_SUITE_NONE : WPA_CIPHER_SUITE_NONE);
 	if (cipher & WPA_CIPHER_GTK_NOT_USED)
 		return RSN_CIPHER_SUITE_NO_GROUP_ADDRESSED;
+	if (cipher & WPA_CIPHER_AES_128_CMAC)
+		return RSN_CIPHER_SUITE_AES_128_CMAC;
+	if (cipher & WPA_CIPHER_BIP_GMAC_128)
+		return RSN_CIPHER_SUITE_BIP_GMAC_128;
+	if (cipher & WPA_CIPHER_BIP_GMAC_256)
+		return RSN_CIPHER_SUITE_BIP_GMAC_256;
+	if (cipher & WPA_CIPHER_BIP_CMAC_256)
+		return RSN_CIPHER_SUITE_BIP_CMAC_256;
 	return 0;
 }
 
 
-int rsn_cipher_put_suites(u8 *pos, int ciphers)
+int rsn_cipher_put_suites(u8 *start, int ciphers)
 {
-	int num_suites = 0;
+	u8 *pos = start;
 
 	if (ciphers & WPA_CIPHER_CCMP_256) {
 		RSN_SELECTOR_PUT(pos, RSN_CIPHER_SUITE_CCMP_256);
 		pos += RSN_SELECTOR_LEN;
-		num_suites++;
 	}
 	if (ciphers & WPA_CIPHER_GCMP_256) {
 		RSN_SELECTOR_PUT(pos, RSN_CIPHER_SUITE_GCMP_256);
 		pos += RSN_SELECTOR_LEN;
-		num_suites++;
 	}
 	if (ciphers & WPA_CIPHER_CCMP) {
 		RSN_SELECTOR_PUT(pos, RSN_CIPHER_SUITE_CCMP);
 		pos += RSN_SELECTOR_LEN;
-		num_suites++;
 	}
 	if (ciphers & WPA_CIPHER_GCMP) {
 		RSN_SELECTOR_PUT(pos, RSN_CIPHER_SUITE_GCMP);
 		pos += RSN_SELECTOR_LEN;
-		num_suites++;
 	}
 	if (ciphers & WPA_CIPHER_TKIP) {
 		RSN_SELECTOR_PUT(pos, RSN_CIPHER_SUITE_TKIP);
 		pos += RSN_SELECTOR_LEN;
-		num_suites++;
 	}
 	if (ciphers & WPA_CIPHER_NONE) {
 		RSN_SELECTOR_PUT(pos, RSN_CIPHER_SUITE_NONE);
 		pos += RSN_SELECTOR_LEN;
-		num_suites++;
 	}
 
-	return num_suites;
+	return (pos - start) / RSN_SELECTOR_LEN;
 }
 
 
-int wpa_cipher_put_suites(u8 *pos, int ciphers)
+int wpa_cipher_put_suites(u8 *start, int ciphers)
 {
-	int num_suites = 0;
+	u8 *pos = start;
 
 	if (ciphers & WPA_CIPHER_CCMP) {
 		RSN_SELECTOR_PUT(pos, WPA_CIPHER_SUITE_CCMP);
 		pos += WPA_SELECTOR_LEN;
-		num_suites++;
 	}
 	if (ciphers & WPA_CIPHER_TKIP) {
 		RSN_SELECTOR_PUT(pos, WPA_CIPHER_SUITE_TKIP);
 		pos += WPA_SELECTOR_LEN;
-		num_suites++;
 	}
 	if (ciphers & WPA_CIPHER_NONE) {
 		RSN_SELECTOR_PUT(pos, WPA_CIPHER_SUITE_NONE);
 		pos += WPA_SELECTOR_LEN;
-		num_suites++;
 	}
 
-	return num_suites;
+	return (pos - start) / RSN_SELECTOR_LEN;
 }
 
 

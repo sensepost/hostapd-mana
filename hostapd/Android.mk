@@ -24,16 +24,13 @@ L_CFLAGS += -DVERSION_STR_POSTFIX=\"-$(PLATFORM_VERSION)\"
 # Set Android log name
 L_CFLAGS += -DANDROID_LOG_NAME=\"hostapd\"
 
-ifeq ($(BOARD_WLAN_DEVICE), bcmdhd)
-L_CFLAGS += -DANDROID_P2P
-endif
+# Disable unused parameter warnings
+L_CFLAGS += -Wno-unused-parameter
 
-ifeq ($(BOARD_WLAN_DEVICE), qcwcn)
+# Set Android extended P2P functionality
 L_CFLAGS += -DANDROID_P2P
-endif
-
-ifeq ($(BOARD_WLAN_DEVICE), mrvl)
-L_CFLAGS += -DANDROID_P2P
+ifeq ($(BOARD_HOSTAPD_PRIVATE_LIB),)
+L_CFLAGS += -DANDROID_P2P_STUB
 endif
 
 # Use Android specific directory for control interface sockets
@@ -51,7 +48,11 @@ INCLUDES += $(LOCAL_PATH)/src/utils
 INCLUDES += external/openssl/include
 INCLUDES += system/security/keystore/include
 ifdef CONFIG_DRIVER_NL80211
+ifneq ($(wildcard external/libnl),)
+INCLUDES += external/libnl/include
+else
 INCLUDES += external/libnl-headers
+endif
 endif
 
 
@@ -195,6 +196,10 @@ endif
 ifdef CONFIG_PEERKEY
 L_CFLAGS += -DCONFIG_PEERKEY
 OBJS += src/ap/peerkey_auth.c
+endif
+
+ifdef CONFIG_HS20
+NEED_AES_OMAC1=y
 endif
 
 ifdef CONFIG_IEEE80211W
@@ -385,10 +390,6 @@ NEED_AES_UNWRAP=y
 endif
 
 ifdef CONFIG_WPS
-ifdef CONFIG_WPS2
-L_CFLAGS += -DCONFIG_WPS2
-endif
-
 L_CFLAGS += -DCONFIG_WPS -DEAP_SERVER_WSC
 OBJS += src/utils/uuid.c
 OBJS += src/ap/wps_hostapd.c
@@ -531,7 +532,8 @@ endif
 OBJS += src/crypto/crypto_gnutls.c
 HOBJS += src/crypto/crypto_gnutls.c
 ifdef NEED_FIPS186_2_PRF
-OBJS += src/crypto/fips_prf_gnutls.c
+OBJS += src/crypto/fips_prf_internal.c
+OBJS += src/crypto/sha1-internal.c
 endif
 LIBS += -lgcrypt
 LIBS_h += -lgcrypt
@@ -558,7 +560,8 @@ LIBS += -lssl3
 endif
 OBJS += src/crypto/crypto_nss.c
 ifdef NEED_FIPS186_2_PRF
-OBJS += src/crypto/fips_prf_nss.c
+OBJS += src/crypto/fips_prf_internal.c
+OBJS += src/crypto/sha1-internal.c
 endif
 LIBS += -lnss3
 LIBS_h += -lnss3
@@ -910,7 +913,11 @@ LOCAL_STATIC_LIBRARIES += $(BOARD_HOSTAPD_PRIVATE_LIB)
 endif
 LOCAL_SHARED_LIBRARIES := libc libcutils liblog libcrypto libssl
 ifdef CONFIG_DRIVER_NL80211
+ifneq ($(wildcard external/libnl),)
+LOCAL_SHARED_LIBRARIES += libnl
+else
 LOCAL_STATIC_LIBRARIES += libnl_2
+endif
 endif
 LOCAL_CFLAGS := $(L_CFLAGS)
 LOCAL_SRC_FILES := $(OBJS)

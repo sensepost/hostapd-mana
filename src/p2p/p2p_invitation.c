@@ -227,8 +227,11 @@ void p2p_process_invitation_req(struct p2p_data *p2p, const u8 *sa,
 		goto fail;
 	}
 
+	p2p_channels_dump(p2p, "own channels", &p2p->cfg->channels);
+	p2p_channels_dump(p2p, "peer channels", &dev->channels);
 	p2p_channels_intersect(&p2p->cfg->channels, &dev->channels,
 			       &intersection);
+	p2p_channels_dump(p2p, "intersection", &intersection);
 
 	if (p2p->cfg->invitation_process) {
 		status = p2p->cfg->invitation_process(
@@ -288,7 +291,9 @@ void p2p_process_invitation_req(struct p2p_data *p2p, const u8 *sa,
 			}
 		}
 
-		if (!p2p_channels_includes(&intersection, p2p->op_reg_class,
+		/* Reselect the channel only for the case of the GO */
+		if (go &&
+		    !p2p_channels_includes(&intersection, p2p->op_reg_class,
 					   p2p->op_channel)) {
 			p2p_dbg(p2p, "Initially selected channel (op_class %d channel %d) not in channel intersection - try to reselect",
 				p2p->op_reg_class, p2p->op_channel);
@@ -303,7 +308,7 @@ void p2p_process_invitation_req(struct p2p_data *p2p, const u8 *sa,
 				status = P2P_SC_FAIL_NO_COMMON_CHANNELS;
 				goto fail;
 			}
-		} else if (!(dev->flags & P2P_DEV_FORCE_FREQ) &&
+		} else if (go && !(dev->flags & P2P_DEV_FORCE_FREQ) &&
 			   !p2p->cfg->cfg_op_channel) {
 			p2p_dbg(p2p, "Try to reselect channel selection with peer information received; previously selected op_class %u channel %u",
 				p2p->op_reg_class, p2p->op_channel);
@@ -359,12 +364,17 @@ fail:
 		p2p->inv_group_bssid_ptr = p2p->inv_group_bssid;
 	} else
 		p2p->inv_group_bssid_ptr = NULL;
-	if (msg.group_id_len - ETH_ALEN <= 32) {
-		os_memcpy(p2p->inv_ssid, msg.group_id + ETH_ALEN,
-			  msg.group_id_len - ETH_ALEN);
-		p2p->inv_ssid_len = msg.group_id_len - ETH_ALEN;
+	if (msg.group_id) {
+		if (msg.group_id_len - ETH_ALEN <= 32) {
+			os_memcpy(p2p->inv_ssid, msg.group_id + ETH_ALEN,
+				  msg.group_id_len - ETH_ALEN);
+			p2p->inv_ssid_len = msg.group_id_len - ETH_ALEN;
+		}
+		os_memcpy(p2p->inv_go_dev_addr, msg.group_id, ETH_ALEN);
+	} else {
+		p2p->inv_ssid_len = 0;
+		os_memset(p2p->inv_go_dev_addr, 0, ETH_ALEN);
 	}
-	os_memcpy(p2p->inv_go_dev_addr, msg.group_id, ETH_ALEN);
 	p2p->inv_status = status;
 	p2p->inv_op_freq = op_freq;
 
@@ -439,13 +449,23 @@ void p2p_process_invitation_resp(struct p2p_data *p2p, const u8 *sa,
 	}
 
 	if (p2p->cfg->invitation_result) {
+		int peer_oper_freq = 0;
 		int freq = p2p_channel_to_freq(p2p->op_reg_class,
 					       p2p->op_channel);
 		if (freq < 0)
 			freq = 0;
+
+		if (msg.operating_channel) {
+			peer_oper_freq = p2p_channel_to_freq(
+				msg.operating_channel[3],
+				msg.operating_channel[4]);
+			if (peer_oper_freq < 0)
+				peer_oper_freq = 0;
+		}
+
 		p2p->cfg->invitation_result(p2p->cfg->cb_ctx, *msg.status,
 					    msg.group_bssid, channels, sa,
-					    freq);
+					    freq, peer_oper_freq);
 	}
 
 	p2p_parse_free(&msg);
@@ -488,6 +508,8 @@ int p2p_invite_send(struct p2p_data *p2p, struct p2p_device *dev,
 		p2p_dbg(p2p, "Failed to send Action frame");
 		/* Use P2P find to recover and retry */
 		p2p_set_timeout(p2p, 0, 0);
+	} else {
+		dev->flags |= P2P_DEV_WAIT_INV_REQ_ACK;
 	}
 
 	wpabuf_free(req);
@@ -504,6 +526,9 @@ void p2p_invitation_req_cb(struct p2p_data *p2p, int success)
 		p2p_dbg(p2p, "No pending Invite");
 		return;
 	}
+
+	if (success)
+		p2p->invite_peer->flags &= ~P2P_DEV_WAIT_INV_REQ_ACK;
 
 	/*
 	 * Use P2P find, if needed, to find the other device from its listen

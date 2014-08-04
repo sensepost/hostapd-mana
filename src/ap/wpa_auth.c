@@ -211,6 +211,8 @@ static int wpa_use_aes_cmac(struct wpa_state_machine *sm)
 	if (wpa_key_mgmt_sha256(sm->wpa_key_mgmt))
 		ret = 1;
 #endif /* CONFIG_IEEE80211W */
+	if (sm->wpa_key_mgmt == WPA_KEY_MGMT_OSEN)
+		ret = 1;
 	return ret;
 }
 
@@ -563,6 +565,8 @@ int wpa_auth_sta_associated(struct wpa_authenticator *wpa_auth,
 		wpa_auth_logger(wpa_auth, sm->addr, LOGGER_DEBUG,
 				"FT authentication already completed - do not "
 				"start 4-way handshake");
+		/* Go to PTKINITDONE state to allow GTK rekeying */
+		sm->wpa_ptk_state = WPA_PTK_PTKINITDONE;
 		return 0;
 	}
 #endif /* CONFIG_IEEE80211R */
@@ -619,6 +623,7 @@ static void wpa_free_sta_sm(struct wpa_state_machine *sm)
 	}
 #ifdef CONFIG_IEEE80211R
 	os_free(sm->assoc_resp_ftie);
+	wpabuf_free(sm->ft_pending_req_ies);
 #endif /* CONFIG_IEEE80211R */
 	os_free(sm->last_rx_eapol_key);
 	os_free(sm->wpa_ie);
@@ -878,6 +883,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 		if (sm->pairwise == WPA_CIPHER_CCMP ||
 		    sm->pairwise == WPA_CIPHER_GCMP) {
 			if (wpa_use_aes_cmac(sm) &&
+			    sm->wpa_key_mgmt != WPA_KEY_MGMT_OSEN &&
 			    ver != WPA_KEY_INFO_TYPE_AES_128_CMAC) {
 				wpa_auth_logger(wpa_auth, sm->addr,
 						LOGGER_WARNING,
@@ -1001,6 +1007,9 @@ continue_processing:
 		if (kde.rsn_ie) {
 			eapol_key_ie = kde.rsn_ie;
 			eapol_key_ie_len = kde.rsn_ie_len;
+		} else if (kde.osen) {
+			eapol_key_ie = kde.osen;
+			eapol_key_ie_len = kde.osen_len;
 		} else {
 			eapol_key_ie = kde.wpa_ie;
 			eapol_key_ie_len = kde.wpa_ie_len;
@@ -1286,6 +1295,8 @@ void __wpa_send_eapol(struct wpa_authenticator *wpa_auth,
 
 	if (force_version)
 		version = force_version;
+	else if (sm->wpa_key_mgmt == WPA_KEY_MGMT_OSEN)
+		version = WPA_KEY_INFO_TYPE_AKM_DEFINED;
 	else if (wpa_use_aes_cmac(sm))
 		version = WPA_KEY_INFO_TYPE_AES_128_CMAC;
 	else if (sm->pairwise != WPA_CIPHER_TKIP)
@@ -1308,6 +1319,7 @@ void __wpa_send_eapol(struct wpa_authenticator *wpa_auth,
 	key_data_len = kde_len;
 
 	if ((version == WPA_KEY_INFO_TYPE_HMAC_SHA1_AES ||
+	     sm->wpa_key_mgmt == WPA_KEY_MGMT_OSEN ||
 	     version == WPA_KEY_INFO_TYPE_AES_128_CMAC) && encr) {
 		pad_len = key_data_len % 8;
 		if (pad_len)
@@ -1376,6 +1388,7 @@ void __wpa_send_eapol(struct wpa_authenticator *wpa_auth,
 		wpa_hexdump_key(MSG_DEBUG, "Plaintext EAPOL-Key Key Data",
 				buf, key_data_len);
 		if (version == WPA_KEY_INFO_TYPE_HMAC_SHA1_AES ||
+		    sm->wpa_key_mgmt == WPA_KEY_MGMT_OSEN ||
 		    version == WPA_KEY_INFO_TYPE_AES_128_CMAC) {
 			if (aes_wrap(sm->PTK.kek, (key_data_len - 8) / 8, buf,
 				     (u8 *) (key + 1))) {
@@ -1410,7 +1423,7 @@ void __wpa_send_eapol(struct wpa_authenticator *wpa_auth,
 				  key->key_mic);
 #ifdef CONFIG_TESTING_OPTIONS
 		if (!pairwise &&
-		    wpa_auth->conf.corrupt_gtk_rekey_mic_probability > 0.0d &&
+		    wpa_auth->conf.corrupt_gtk_rekey_mic_probability > 0.0 &&
 		    drand48() <
 		    wpa_auth->conf.corrupt_gtk_rekey_mic_probability) {
 			wpa_auth_logger(wpa_auth, sm->addr, LOGGER_INFO,
@@ -1774,7 +1787,8 @@ SM_STATE(WPA_PTK, PTKSTART)
 	 * one possible PSK for this STA.
 	 */
 	if (sm->wpa == WPA_VERSION_WPA2 &&
-	    wpa_key_mgmt_wpa_ieee8021x(sm->wpa_key_mgmt)) {
+	    wpa_key_mgmt_wpa_ieee8021x(sm->wpa_key_mgmt) &&
+	    sm->wpa_key_mgmt != WPA_KEY_MGMT_OSEN) {
 		pmkid = buf;
 		pmkid_len = 2 + RSN_SELECTOR_LEN + PMKID_LEN;
 		pmkid[0] = WLAN_EID_VENDOR_SPECIFIC;
@@ -1802,7 +1816,7 @@ SM_STATE(WPA_PTK, PTKSTART)
 static int wpa_derive_ptk(struct wpa_state_machine *sm, const u8 *pmk,
 			  struct wpa_ptk *ptk)
 {
-	size_t ptk_len = sm->pairwise != WPA_CIPHER_TKIP ? 48 : 64;
+	size_t ptk_len = wpa_cipher_key_len(sm->pairwise) + 32;
 #ifdef CONFIG_IEEE80211R
 	if (wpa_key_mgmt_ft(sm->wpa_key_mgmt))
 		return wpa_auth_derive_ptk_ft(sm, pmk, ptk, ptk_len);
@@ -1907,7 +1921,9 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING2)
 static int ieee80211w_kde_len(struct wpa_state_machine *sm)
 {
 	if (sm->mgmt_frame_prot) {
-		return 2 + RSN_SELECTOR_LEN + sizeof(struct wpa_igtk_kde);
+		size_t len;
+		len = wpa_cipher_key_len(sm->wpa_auth->conf.group_mgmt_cipher);
+		return 2 + RSN_SELECTOR_LEN + WPA_IGTK_KDE_PREFIX_LEN + len;
 	}
 
 	return 0;
@@ -1919,6 +1935,7 @@ static u8 * ieee80211w_kde_add(struct wpa_state_machine *sm, u8 *pos)
 	struct wpa_igtk_kde igtk;
 	struct wpa_group *gsm = sm->group;
 	u8 rsc[WPA_KEY_RSC_LEN];
+	size_t len = wpa_cipher_key_len(sm->wpa_auth->conf.group_mgmt_cipher);
 
 	if (!sm->mgmt_frame_prot)
 		return pos;
@@ -1930,17 +1947,18 @@ static u8 * ieee80211w_kde_add(struct wpa_state_machine *sm, u8 *pos)
 		os_memset(igtk.pn, 0, sizeof(igtk.pn));
 	else
 		os_memcpy(igtk.pn, rsc, sizeof(igtk.pn));
-	os_memcpy(igtk.igtk, gsm->IGTK[gsm->GN_igtk - 4], WPA_IGTK_LEN);
+	os_memcpy(igtk.igtk, gsm->IGTK[gsm->GN_igtk - 4], len);
 	if (sm->wpa_auth->conf.disable_gtk) {
 		/*
 		 * Provide unique random IGTK to each STA to prevent use of
 		 * IGTK in the BSS.
 		 */
-		if (random_get_bytes(igtk.igtk, WPA_IGTK_LEN) < 0)
+		if (random_get_bytes(igtk.igtk, len) < 0)
 			return pos;
 	}
 	pos = wpa_add_kde(pos, RSN_KEY_DATA_IGTK,
-			  (const u8 *) &igtk, sizeof(igtk), NULL, 0);
+			  (const u8 *) &igtk, WPA_IGTK_KDE_PREFIX_LEN + len,
+			  NULL, 0);
 
 	return pos;
 }
@@ -2446,15 +2464,16 @@ static int wpa_gtk_update(struct wpa_authenticator *wpa_auth,
 
 #ifdef CONFIG_IEEE80211W
 	if (wpa_auth->conf.ieee80211w != NO_MGMT_FRAME_PROTECTION) {
+		size_t len;
+		len = wpa_cipher_key_len(wpa_auth->conf.group_mgmt_cipher);
 		os_memcpy(group->GNonce, group->Counter, WPA_NONCE_LEN);
 		inc_byte_array(group->Counter, WPA_NONCE_LEN);
 		if (wpa_gmk_to_gtk(group->GMK, "IGTK key expansion",
 				   wpa_auth->addr, group->GNonce,
-				   group->IGTK[group->GN_igtk - 4],
-				   WPA_IGTK_LEN) < 0)
+				   group->IGTK[group->GN_igtk - 4], len) < 0)
 			ret = -1;
 		wpa_hexdump_key(MSG_DEBUG, "IGTK",
-				group->IGTK[group->GN_igtk - 4], WPA_IGTK_LEN);
+				group->IGTK[group->GN_igtk - 4], len);
 	}
 #endif /* CONFIG_IEEE80211W */
 
@@ -2571,26 +2590,27 @@ int wpa_wnmsleep_igtk_subelem(struct wpa_state_machine *sm, u8 *pos)
 {
 	struct wpa_group *gsm = sm->group;
 	u8 *start = pos;
+	size_t len = wpa_cipher_key_len(sm->wpa_auth->conf.group_mgmt_cipher);
 
 	/*
 	 * IGTK subelement:
 	 * Sub-elem ID[1] | Length[1] | KeyID[2] | PN[6] | Key[16]
 	 */
 	*pos++ = WNM_SLEEP_SUBELEM_IGTK;
-	*pos++ = 2 + 6 + WPA_IGTK_LEN;
+	*pos++ = 2 + 6 + len;
 	WPA_PUT_LE16(pos, gsm->GN_igtk);
 	pos += 2;
 	if (wpa_auth_get_seqnum(sm->wpa_auth, NULL, gsm->GN_igtk, pos) != 0)
 		return 0;
 	pos += 6;
 
-	os_memcpy(pos, gsm->IGTK[gsm->GN_igtk - 4], WPA_IGTK_LEN);
-	pos += WPA_IGTK_LEN;
+	os_memcpy(pos, gsm->IGTK[gsm->GN_igtk - 4], len);
+	pos += len;
 
 	wpa_printf(MSG_DEBUG, "WNM: IGTK Key ID %u in WNM-Sleep Mode exit",
 		   gsm->GN_igtk);
 	wpa_hexdump_key(MSG_DEBUG, "WNM: IGTK in WNM-Sleep Mode exit",
-			gsm->IGTK[gsm->GN_igtk - 4], WPA_IGTK_LEN);
+			gsm->IGTK[gsm->GN_igtk - 4], len);
 
 	return pos - start;
 }
@@ -2645,12 +2665,19 @@ static int wpa_group_config_group_keys(struct wpa_authenticator *wpa_auth,
 		ret = -1;
 
 #ifdef CONFIG_IEEE80211W
-	if (wpa_auth->conf.ieee80211w != NO_MGMT_FRAME_PROTECTION &&
-	    wpa_auth_set_key(wpa_auth, group->vlan_id, WPA_ALG_IGTK,
-			     broadcast_ether_addr, group->GN_igtk,
-			     group->IGTK[group->GN_igtk - 4],
-			     WPA_IGTK_LEN) < 0)
-		ret = -1;
+	if (wpa_auth->conf.ieee80211w != NO_MGMT_FRAME_PROTECTION) {
+		enum wpa_alg alg;
+		size_t len;
+
+		alg = wpa_cipher_to_alg(wpa_auth->conf.group_mgmt_cipher);
+		len = wpa_cipher_key_len(wpa_auth->conf.group_mgmt_cipher);
+
+		if (ret == 0 &&
+		    wpa_auth_set_key(wpa_auth, group->vlan_id, alg,
+				     broadcast_ether_addr, group->GN_igtk,
+				     group->IGTK[group->GN_igtk - 4], len) < 0)
+			ret = -1;
+	}
 #endif /* CONFIG_IEEE80211W */
 
 	return ret;

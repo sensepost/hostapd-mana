@@ -54,7 +54,8 @@ struct wpa_sm_ctx {
 			     int *tdls_ext_setup);
 	int (*send_tdls_mgmt)(void *ctx, const u8 *dst,
 			      u8 action_code, u8 dialog_token,
-			      u16 status_code, const u8 *buf, size_t len);
+			      u16 status_code, u32 peer_capab,
+			      const u8 *buf, size_t len);
 	int (*tdls_oper)(void *ctx, int oper, const u8 *peer);
 	int (*tdls_peer_addset)(void *ctx, const u8 *addr, int add, u16 aid,
 				u16 capability, const u8 *supp_rates,
@@ -122,8 +123,6 @@ int wpa_sm_get_mib(struct wpa_sm *sm, char *buf, size_t buflen);
 
 int wpa_sm_set_param(struct wpa_sm *sm, enum wpa_sm_conf_params param,
 		     unsigned int value);
-unsigned int wpa_sm_get_param(struct wpa_sm *sm,
-			      enum wpa_sm_conf_params param);
 
 int wpa_sm_get_status(struct wpa_sm *sm, char *buf, size_t buflen,
 		      int verbose);
@@ -237,12 +236,6 @@ static inline int wpa_sm_set_param(struct wpa_sm *sm,
 				   unsigned int value)
 {
 	return -1;
-}
-
-static inline unsigned int wpa_sm_get_param(struct wpa_sm *sm,
-					    enum wpa_sm_conf_params param)
-{
-	return 0;
 }
 
 static inline int wpa_sm_get_status(struct wpa_sm *sm, char *buf,
@@ -386,7 +379,6 @@ void wpa_tdls_ap_ies(struct wpa_sm *sm, const u8 *ies, size_t len);
 void wpa_tdls_assoc_resp_ies(struct wpa_sm *sm, const u8 *ies, size_t len);
 int wpa_tdls_start(struct wpa_sm *sm, const u8 *addr);
 void wpa_tdls_remove(struct wpa_sm *sm, const u8 *addr);
-int wpa_tdls_send_teardown(struct wpa_sm *sm, const u8 *addr, u16 reason_code);
 int wpa_tdls_teardown_link(struct wpa_sm *sm, const u8 *addr, u16 reason_code);
 int wpa_tdls_send_discovery_request(struct wpa_sm *sm, const u8 *addr);
 int wpa_tdls_init(struct wpa_sm *sm);

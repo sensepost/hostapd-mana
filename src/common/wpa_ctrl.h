@@ -64,6 +64,10 @@ extern "C" {
 #define WPA_EVENT_BSS_ADDED "CTRL-EVENT-BSS-ADDED "
 /** A BSS entry was removed (followed by BSS entry id and BSSID) */
 #define WPA_EVENT_BSS_REMOVED "CTRL-EVENT-BSS-REMOVED "
+/** Change in the signal level was reported by the driver */
+#define WPA_EVENT_SIGNAL_CHANGE "CTRL-EVENT-SIGNAL-CHANGE "
+/** Regulatory domain channel */
+#define WPA_EVENT_REGDOM_CHANGE "CTRL-EVENT-REGDOM-CHANGE "
 
 /** RSN IBSS 4-way handshakes completed with specified peer */
 #define IBSS_RSN_COMPLETED "IBSS-RSN-COMPLETED "
@@ -159,14 +163,26 @@ extern "C" {
 #define P2P_EVENT_REMOVE_AND_REFORM_GROUP "P2P-REMOVE-AND-REFORM-GROUP "
 
 #define INTERWORKING_AP "INTERWORKING-AP "
+#define INTERWORKING_BLACKLISTED "INTERWORKING-BLACKLISTED "
 #define INTERWORKING_NO_MATCH "INTERWORKING-NO-MATCH "
 #define INTERWORKING_ALREADY_CONNECTED "INTERWORKING-ALREADY-CONNECTED "
+#define INTERWORKING_SELECTED "INTERWORKING-SELECTED "
+
+/* Credential block added; parameters: <id> */
+#define CRED_ADDED "CRED-ADDED "
+/* Credential block modified; parameters: <id> <field> */
+#define CRED_MODIFIED "CRED-MODIFIED "
+/* Credential block removed; parameters: <id> */
+#define CRED_REMOVED "CRED-REMOVED "
 
 #define GAS_RESPONSE_INFO "GAS-RESPONSE-INFO "
 /* parameters: <addr> <dialog_token> <freq> */
 #define GAS_QUERY_START "GAS-QUERY-START "
 /* parameters: <addr> <dialog_token> <freq> <status_code> <result> */
 #define GAS_QUERY_DONE "GAS-QUERY-DONE "
+
+#define HS20_SUBSCRIPTION_REMEDIATION "HS20-SUBSCRIPTION-REMEDIATION "
+#define HS20_DEAUTH_IMMINENT_NOTICE "HS20-DEAUTH-IMMINENT-NOTICE "
 
 #define EXT_RADIO_WORK_START "EXT-RADIO-WORK-START "
 #define EXT_RADIO_WORK_TIMEOUT "EXT-RADIO-WORK-TIMEOUT "

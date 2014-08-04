@@ -70,6 +70,11 @@ NEED_SHA1=y
 OBJS += ../src/drivers/drivers.o
 CFLAGS += -DHOSTAPD
 
+ifdef CONFIG_MODULE_TESTS
+CFLAGS += -DCONFIG_MODULE_TESTS
+OBJS += hapd_module_tests.o
+endif
+
 ifdef CONFIG_WPA_TRACE
 CFLAGS += -DWPA_TRACE
 OBJS += ../src/utils/trace.o
@@ -77,10 +82,10 @@ HOBJS += ../src/utils/trace.o
 LDFLAGS += -rdynamic
 CFLAGS += -funwind-tables
 ifdef CONFIG_WPA_TRACE_BFD
-CFLAGS += -DWPA_TRACE_BFD
-LIBS += -lbfd
-LIBS_c += -lbfd
-LIBS_h += -lbfd
+CFLAGS += -DPACKAGE="hostapd" -DWPA_TRACE_BFD
+LIBS += -lbfd -ldl -liberty -lz
+LIBS_c += -lbfd -ldl -liberty -lz
+LIBS_h += -lbfd -ldl -liberty -lz
 endif
 endif
 
@@ -95,6 +100,7 @@ ifeq ($(CONFIG_ELOOP), eloop)
 LIBS += -lrt
 LIBS_c += -lrt
 LIBS_h += -lrt
+LIBS_n += -lrt
 endif
 
 OBJS += ../src/utils/common.o
@@ -177,6 +183,10 @@ endif
 ifdef CONFIG_PEERKEY
 CFLAGS += -DCONFIG_PEERKEY
 OBJS += ../src/ap/peerkey_auth.o
+endif
+
+ifdef CONFIG_HS20
+NEED_AES_OMAC1=y
 endif
 
 ifdef CONFIG_IEEE80211W
@@ -366,10 +376,6 @@ NEED_AES_UNWRAP=y
 endif
 
 ifdef CONFIG_WPS
-ifdef CONFIG_WPS2
-CFLAGS += -DCONFIG_WPS2
-endif
-
 CFLAGS += -DCONFIG_WPS -DEAP_SERVER_WSC
 OBJS += ../src/utils/uuid.o
 OBJS += ../src/ap/wps_hostapd.o
@@ -512,7 +518,8 @@ endif
 OBJS += ../src/crypto/crypto_gnutls.o
 HOBJS += ../src/crypto/crypto_gnutls.o
 ifdef NEED_FIPS186_2_PRF
-OBJS += ../src/crypto/fips_prf_gnutls.o
+OBJS += ../src/crypto/fips_prf_internal.o
+SHA1OBJS += ../src/crypto/sha1-internal.o
 endif
 LIBS += -lgcrypt
 LIBS_h += -lgcrypt
@@ -539,7 +546,8 @@ LIBS += -lssl3
 endif
 OBJS += ../src/crypto/crypto_nss.o
 ifdef NEED_FIPS186_2_PRF
-OBJS += ../src/crypto/fips_prf_nss.o
+OBJS += ../src/crypto/fips_prf_internal.o
+SHA1OBJS += ../src/crypto/sha1-internal.o
 endif
 LIBS += -lnss3
 LIBS_h += -lnss3

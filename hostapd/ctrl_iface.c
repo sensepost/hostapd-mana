@@ -30,13 +30,13 @@
 #include "ap/wps_hostapd.h"
 #include "ap/ctrl_iface_ap.h"
 #include "ap/ap_drv_ops.h"
+#include "ap/hs20.h"
 #include "ap/wnm_ap.h"
 #include "ap/wpa_auth.h"
 #include "wps/wps_defs.h"
 #include "wps/wps.h"
 #include "config_file.h"
 #include "ctrl_iface.h"
-#include "ap/beacon.h"
 
 
 struct wpa_ctrl_dst {
@@ -156,96 +156,6 @@ static int hostapd_ctrl_iface_new_sta(struct hostapd_data *hapd,
 	return 0;
 }
 
-// KARMA START
-
-static int hostapd_ctrl_iface_karma_get_state (struct hostapd_data *hapd)
-{
-	wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE STATUS QUERY");
-	return hapd->iconf->enable_karma;
-}
-// Used in the hostapd_ctrl_iface_karma_add_mac function to sort the MAC ACL list
-static int hostapd_acl_comp(const void *a, const void *b)
-{
-	const struct mac_acl_entry *aa = a;
-	const struct mac_acl_entry *bb = b;
-	return os_memcmp(aa->addr, bb->addr, sizeof(macaddr));
-}
-
-static int hostapd_ctrl_iface_karma_add_mac (struct hostapd_data *hapd,
-					     const char *mac, int black) {
-
-	u8 addr[ETH_ALEN];
-	struct mac_acl_entry *newacl;
-	struct hostapd_bss_config *bss;
-	char buf[128];
-	struct mac_acl_entry **acl;
-	int *num;
-	// for now we don't care about VLANs so just hardcoding 0
-	int vlan_id = 0;
-
-	if (hwaddr_aton(mac, addr)) {
-		wpa_printf(MSG_ERROR, "Invalid MAC address '%s'", buf);
-		return -1;
-	}
-
-	bss = hapd->iconf->last_bss;
-	if (black) {
-		hostapd_ctrl_iface_deauthenticate(hapd, buf);
-		num = &bss->num_deny_mac;
-		acl = &bss->deny_mac;
-	} else {
-		num = &bss->num_accept_mac;
-		acl = &bss->accept_mac;
-	}
-
-	newacl = os_realloc(*acl, (*num + 1) * sizeof(**acl));
-	if (newacl == NULL) {
-		wpa_printf(MSG_ERROR, "MAC list reallocation failed");
-		return -1;
-	}
-
-	*acl = newacl;
-	os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
-	(*acl)[*num].vlan_id = vlan_id;
-	(*num)++;
-
-	qsort(*acl, *num, sizeof(**acl), hostapd_acl_comp);
-
-	//num = &bss->num_deny_mac;
-	wpa_printf(MSG_DEBUG, "There are now %i MAC addresses in the list", *num);
-
-	return 0;
-}
-
-static int hostapd_ctrl_iface_karma_change_ssid (struct hostapd_data *hapd,
-					     const char *ssid) {
-	wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE CHANGE SSID %s", ssid);
-
-	if (strlen(ssid) > HOSTAPD_MAX_SSID_LEN || strlen(ssid) == 0) {
-		return -1;
-	}
-
-	hapd->conf->ssid.ssid_len = strlen(ssid);
-	// Not sure if the +1 is needed here or not
-	os_memcpy(hapd->conf->ssid.ssid, ssid, strlen(ssid) + 1);
-	ieee802_11_set_beacon(hapd);
-	wpa_printf(MSG_DEBUG, "CTRL_IFACE KARMA Default SSID Changed");
-	return 0;
-}
-
-static int hostapd_ctrl_iface_karma_enable_disable (struct hostapd_data *hapd,
-						int status)
-{
-	if (status) {
-		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE ENABLED");
-	} else {
-		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE DISABLED");
-	}
-	hapd->iconf->enable_karma = status;
-
-	return 0;
-}
-// KARMA END
 
 #ifdef CONFIG_IEEE80211W
 #ifdef NEED_AP_MLME
@@ -342,6 +252,7 @@ static int hostapd_ctrl_iface_wps_check_pin(
 
 	return ret;
 }
+
 
 #ifdef CONFIG_WPS_NFC
 static int hostapd_ctrl_iface_wps_nfc_tag_read(struct hostapd_data *hapd,
@@ -707,6 +618,82 @@ static int hostapd_ctrl_iface_wps_get_status(struct hostapd_data *hapd,
 
 #endif /* CONFIG_WPS */
 
+#ifdef CONFIG_HS20
+
+static int hostapd_ctrl_iface_hs20_wnm_notif(struct hostapd_data *hapd,
+					     const char *cmd)
+{
+	u8 addr[ETH_ALEN];
+	const char *url;
+
+	if (hwaddr_aton(cmd, addr))
+		return -1;
+	url = cmd + 17;
+	if (*url == '\0') {
+		url = NULL;
+	} else {
+		if (*url != ' ')
+			return -1;
+		url++;
+		if (*url == '\0')
+			url = NULL;
+	}
+
+	return hs20_send_wnm_notification(hapd, addr, 1, url);
+}
+
+
+static int hostapd_ctrl_iface_hs20_deauth_req(struct hostapd_data *hapd,
+					      const char *cmd)
+{
+	u8 addr[ETH_ALEN];
+	int code, reauth_delay, ret;
+	const char *pos;
+	size_t url_len;
+	struct wpabuf *req;
+
+	/* <STA MAC Addr> <Code(0/1)> <Re-auth-Delay(sec)> [URL] */
+	if (hwaddr_aton(cmd, addr))
+		return -1;
+
+	pos = os_strchr(cmd, ' ');
+	if (pos == NULL)
+		return -1;
+	pos++;
+	code = atoi(pos);
+
+	pos = os_strchr(pos, ' ');
+	if (pos == NULL)
+		return -1;
+	pos++;
+	reauth_delay = atoi(pos);
+
+	url_len = 0;
+	pos = os_strchr(pos, ' ');
+	if (pos) {
+		pos++;
+		url_len = os_strlen(pos);
+	}
+
+	req = wpabuf_alloc(4 + url_len);
+	if (req == NULL)
+		return -1;
+	wpabuf_put_u8(req, code);
+	wpabuf_put_le16(req, reauth_delay);
+	wpabuf_put_u8(req, url_len);
+	if (pos)
+		wpabuf_put_data(req, pos, url_len);
+
+	wpa_printf(MSG_DEBUG, "HS 2.0: Send WNM-Notification to " MACSTR
+		   " to indicate imminent deauthentication (code=%d "
+		   "reauth_delay=%d)", MAC2STR(addr), code, reauth_delay);
+	ret = hs20_send_wnm_notification_deauth_req(hapd, addr, req);
+	wpabuf_free(req);
+	return ret;
+}
+
+#endif /* CONFIG_HS20 */
+
 
 #ifdef CONFIG_INTERWORKING
 
@@ -953,6 +940,14 @@ static int hostapd_ctrl_iface_get_config(struct hostapd_data *hapd,
 				return pos - buf;
 			pos += ret;
 		}
+#ifdef CONFIG_SAE
+		if (hapd->conf->wpa_key_mgmt & WPA_KEY_MGMT_FT_SAE) {
+			ret = os_snprintf(pos, end - pos, "FT-SAE ");
+			if (ret < 0 || ret >= end - pos)
+				return pos - buf;
+			pos += ret;
+		}
+#endif /* CONFIG_SAE */
 #endif /* CONFIG_IEEE80211R */
 #ifdef CONFIG_IEEE80211W
 		if (hapd->conf->wpa_key_mgmt & WPA_KEY_MGMT_PSK_SHA256) {
@@ -968,6 +963,14 @@ static int hostapd_ctrl_iface_get_config(struct hostapd_data *hapd,
 			pos += ret;
 		}
 #endif /* CONFIG_IEEE80211W */
+#ifdef CONFIG_SAE
+		if (hapd->conf->wpa_key_mgmt & WPA_KEY_MGMT_SAE) {
+			ret = os_snprintf(pos, end - pos, "SAE ");
+			if (ret < 0 || ret >= end - pos)
+				return pos - buf;
+			pos += ret;
+		}
+#endif /* CONFIG_SAE */
 
 		ret = os_snprintf(pos, end - pos, "\n");
 		if (ret < 0 || ret >= end - pos)
@@ -1073,7 +1076,37 @@ static int hostapd_ctrl_iface_set(struct hostapd_data *hapd, char *cmd)
 		hapd->ext_mgmt_frame_handling = atoi(value);
 #endif /* CONFIG_TESTING_OPTIONS */
 	} else {
+		struct sta_info *sta;
+		int vlan_id;
+
 		ret = hostapd_set_iface(hapd->iconf, hapd->conf, cmd, value);
+		if (ret)
+			return ret;
+
+		if (os_strcasecmp(cmd, "deny_mac_file") == 0) {
+			for (sta = hapd->sta_list; sta; sta = sta->next) {
+				if (hostapd_maclist_found(
+					    hapd->conf->deny_mac,
+					    hapd->conf->num_deny_mac, sta->addr,
+					    &vlan_id) &&
+				    (!vlan_id || vlan_id == sta->vlan_id))
+					ap_sta_disconnect(
+						hapd, sta, sta->addr,
+						WLAN_REASON_UNSPECIFIED);
+			}
+		} else if (hapd->conf->macaddr_acl == DENY_UNLESS_ACCEPTED &&
+			   os_strcasecmp(cmd, "accept_mac_file") == 0) {
+			for (sta = hapd->sta_list; sta; sta = sta->next) {
+				if (!hostapd_maclist_found(
+					    hapd->conf->accept_mac,
+					    hapd->conf->num_accept_mac,
+					    sta->addr, &vlan_id) ||
+				    (vlan_id && vlan_id != sta->vlan_id))
+					ap_sta_disconnect(
+						hapd, sta, sta->addr,
+						WLAN_REASON_UNSPECIFIED);
+			}
+		}
 	}
 
 	return ret;
@@ -1248,6 +1281,63 @@ static int hostapd_ctrl_iface_mib(struct hostapd_data *hapd, char *reply,
 }
 
 
+static int hostapd_ctrl_iface_vendor(struct hostapd_data *hapd, char *cmd,
+				     char *buf, size_t buflen)
+{
+	int ret;
+	char *pos;
+	u8 *data = NULL;
+	unsigned int vendor_id, subcmd;
+	struct wpabuf *reply;
+	size_t data_len = 0;
+
+	/* cmd: <vendor id> <subcommand id> [<hex formatted data>] */
+	vendor_id = strtoul(cmd, &pos, 16);
+	if (!isblank(*pos))
+		return -EINVAL;
+
+	subcmd = strtoul(pos, &pos, 10);
+
+	if (*pos != '\0') {
+		if (!isblank(*pos++))
+			return -EINVAL;
+		data_len = os_strlen(pos);
+	}
+
+	if (data_len) {
+		data_len /= 2;
+		data = os_malloc(data_len);
+		if (!data)
+			return -ENOBUFS;
+
+		if (hexstr2bin(pos, data, data_len)) {
+			wpa_printf(MSG_DEBUG,
+				   "Vendor command: wrong parameter format");
+			os_free(data);
+			return -EINVAL;
+		}
+	}
+
+	reply = wpabuf_alloc((buflen - 1) / 2);
+	if (!reply) {
+		os_free(data);
+		return -ENOBUFS;
+	}
+
+	ret = hostapd_drv_vendor_cmd(hapd, vendor_id, subcmd, data, data_len,
+				     reply);
+
+	if (ret == 0)
+		ret = wpa_snprintf_hex(buf, buflen, wpabuf_head_u8(reply),
+				       wpabuf_len(reply));
+
+	wpabuf_free(reply);
+	os_free(data);
+
+	return ret;
+}
+
+
 static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 				       void *sock_ctx)
 {
@@ -1408,6 +1498,14 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 		if (hostapd_ctrl_iface_send_qos_map_conf(hapd, buf + 18))
 			reply_len = -1;
 #endif /* CONFIG_INTERWORKING */
+#ifdef CONFIG_HS20
+	} else if (os_strncmp(buf, "HS20_WNM_NOTIF ", 15) == 0) {
+		if (hostapd_ctrl_iface_hs20_wnm_notif(hapd, buf + 15))
+			reply_len = -1;
+	} else if (os_strncmp(buf, "HS20_DEAUTH_REQ ", 16) == 0) {
+		if (hostapd_ctrl_iface_hs20_deauth_req(hapd, buf + 16))
+			reply_len = -1;
+#endif /* CONFIG_HS20 */
 #ifdef CONFIG_WNM
 	} else if (os_strncmp(buf, "DISASSOC_IMMINENT ", 18) == 0) {
 		if (hostapd_ctrl_iface_disassoc_imminent(hapd, buf + 18))
@@ -1445,52 +1543,10 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	} else if (os_strncmp(buf, "CHAN_SWITCH ", 12) == 0) {
 		if (hostapd_ctrl_iface_chan_switch(hapd, buf + 12))
 			reply_len = -1;
-	// KARMA
-	} else if (os_strcmp(buf, "KARMA_STATE") == 0) {
-		if (hostapd_ctrl_iface_karma_get_state(hapd)) {
-			os_memcpy(reply, "ENABLED\n", 8);
-			reply_len = 8;
-		} else {
-			os_memcpy(reply, "DISABLED\n", 9);
-			reply_len = 9;
-		}
-	} else if (os_strncmp(buf, "KARMA_ADD_WHITE_MAC ", 20) == 0) {
-		if (hostapd_ctrl_iface_karma_add_mac (hapd, buf + 20, 0)) {
-			reply_len = -1;
-		} else {
-			os_memcpy(reply, "ADDED\n", 6);
-			reply_len = 6;
-		}
-	} else if (os_strncmp(buf, "KARMA_ADD_BLACK_MAC ", 20) == 0) {
-		if (hostapd_ctrl_iface_karma_add_mac (hapd, buf + 20, 1)) {
-			reply_len = -1;
-		} else {
-			os_memcpy(reply, "ADDED\n", 6);
-			reply_len = 6;
-		}
-	} else if (os_strcmp(buf, "KARMA_GET_SSID") == 0) {
-		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE GET SSID");
-		size_t len;
- 
-		// +2 for the new line and the null byte terminator
-		len = hapd->conf->ssid.ssid_len + 2;
-		os_snprintf(reply, len, "%s\n", hapd->conf->ssid.ssid);
-		reply_len = len;
- 
-	} else if (os_strncmp(buf, "KARMA_CHANGE_SSID ", 18) == 0) {
-		if (hostapd_ctrl_iface_karma_change_ssid (hapd, buf + 18)) {
-			reply_len = -1;
-		} else {
-			os_memcpy(reply, "CHANGED\n", 8);
-			reply_len = 8;
-		}
-	} else if (os_strcmp(buf, "KARMA_DISABLE") == 0) {
-		if (hostapd_ctrl_iface_karma_enable_disable(hapd, 0))
-			reply_len = -1;
-	} else if (os_strcmp(buf, "KARMA_ENABLE") == 0) {
-		if (hostapd_ctrl_iface_karma_enable_disable(hapd, 1))
-			reply_len = -1;
-	// END KARMA
+	} else if (os_strncmp(buf, "VENDOR ", 7) == 0) {
+		reply_len = hostapd_ctrl_iface_vendor(hapd, buf + 7, reply,
+						      reply_size);
+
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;
@@ -1786,6 +1842,12 @@ static void hostapd_global_ctrl_iface_receive(int sock, void *eloop_ctx,
 	} else if (os_strncmp(buf, "REMOVE ", 7) == 0) {
 		if (hostapd_ctrl_iface_remove(interfaces, buf + 7) < 0)
 			reply_len = -1;
+#ifdef CONFIG_MODULE_TESTS
+	} else if (os_strcmp(buf, "MODULE_TESTS") == 0) {
+		int hapd_module_tests(void);
+		if (hapd_module_tests() < 0)
+			reply_len = -1;
+#endif /* CONFIG_MODULE_TESTS */
 	} else {
 		wpa_printf(MSG_DEBUG, "Unrecognized global ctrl_iface command "
 			   "ignored");

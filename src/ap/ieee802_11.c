@@ -38,6 +38,7 @@
 #include "ap_drv_ops.h"
 #include "wnm_ap.h"
 #include "ieee802_11.h"
+#include "dfs.h"
 
 
 u8 * hostapd_eid_supp_rates(struct hostapd_data *hapd, u8 *eid)
@@ -61,7 +62,6 @@ u8 * hostapd_eid_supp_rates(struct hostapd_data *hapd, u8 *eid)
 	}
 
 	*pos++ = num;
-	count = 0;
 	for (i = 0, count = 0; i < hapd->iface->num_rates && count < num;
 	     i++) {
 		count++;
@@ -104,7 +104,6 @@ u8 * hostapd_eid_ext_supp_rates(struct hostapd_data *hapd, u8 *eid)
 
 	*pos++ = WLAN_EID_EXT_SUPP_RATES;
 	*pos++ = num;
-	count = 0;
 	for (i = 0, count = 0; i < hapd->iface->num_rates && count < num + 8;
 	     i++) {
 		count++;
@@ -137,6 +136,15 @@ u16 hostapd_own_capab_info(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	int capab = WLAN_CAPABILITY_ESS;
 	int privacy;
+	int dfs;
+
+	/* Check if any of configured channels require DFS */
+	dfs = hostapd_is_dfs_required(hapd->iface);
+	if (dfs < 0) {
+		wpa_printf(MSG_WARNING, "Failed to check if DFS is required; ret=%d",
+			   dfs);
+		dfs = 0;
+	}
 
 	if (hapd->iface->num_sta_no_short_preamble == 0 &&
 	    hapd->iconf->preamble == SHORT_PREAMBLE)
@@ -151,6 +159,11 @@ u16 hostapd_own_capab_info(struct hostapd_data *hapd, struct sta_info *sta,
 
 	if (hapd->conf->wpa)
 		privacy = 1;
+
+#ifdef CONFIG_HS20
+	if (hapd->conf->osen)
+		privacy = 1;
+#endif /* CONFIG_HS20 */
 
 	if (sta) {
 		int policy, def_klen;
@@ -174,22 +187,18 @@ u16 hostapd_own_capab_info(struct hostapd_data *hapd, struct sta_info *sta,
 	    hapd->iface->num_sta_no_short_slot_time == 0)
 		capab |= WLAN_CAPABILITY_SHORT_SLOT_TIME;
 
+	/*
+	 * Currently, Spectrum Management capability bit is set when directly
+	 * requested in configuration by spectrum_mgmt_required or when AP is
+	 * running on DFS channel.
+	 * TODO: Also consider driver support for TPC to set Spectrum Mgmt bit
+	 */
+	if (hapd->iface->current_mode &&
+	    hapd->iface->current_mode->mode == HOSTAPD_MODE_IEEE80211A &&
+	    (hapd->iconf->spectrum_mgmt_required || dfs))
+		capab |= WLAN_CAPABILITY_SPECTRUM_MGMT;
+
 	return capab;
-}
-
-
-void ieee802_11_print_ssid(char *buf, const u8 *ssid, u8 len)
-{
-	int i;
-	if (len > HOSTAPD_MAX_SSID_LEN)
-		len = HOSTAPD_MAX_SSID_LEN;
-	for (i = 0; i < len; i++) {
-		if (ssid[i] >= 32 && ssid[i] < 127)
-			buf[i] = ssid[i];
-		else
-			buf[i] = '.';
-	}
-	buf[len] = '\0';
 }
 
 
@@ -486,6 +495,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 				       HOSTAPD_LEVEL_DEBUG,
 				       "SAE confirm before commit");
 			resp = WLAN_STATUS_UNKNOWN_AUTH_TRANSACTION;
+			goto failed;
 		}
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG,
@@ -517,6 +527,7 @@ static void handle_auth_sae(struct hostapd_data *hapd, struct sta_info *sta,
 		resp = WLAN_STATUS_UNKNOWN_AUTH_TRANSACTION;
 	}
 
+failed:
 	sta->auth_alg = WLAN_AUTH_SAE;
 
 	send_auth_reply(hapd, mgmt->sa, mgmt->bssid, WLAN_AUTH_SAE,
@@ -552,7 +563,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 
 #ifdef CONFIG_TESTING_OPTIONS
-	if (hapd->iconf->ignore_auth_probability > 0.0d &&
+	if (hapd->iconf->ignore_auth_probability > 0.0 &&
 	    drand48() < hapd->iconf->ignore_auth_probability) {
 		wpa_printf(MSG_INFO,
 			   "TESTING: ignoring auth frame from " MACSTR,
@@ -779,28 +790,16 @@ static u16 check_ssid(struct hostapd_data *hapd, struct sta_info *sta,
 	if (ssid_ie == NULL)
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 
-	// KARMA
-	if (hapd->iconf->enable_karma) {
-		char ssid_txt[33];
-		ieee802_11_print_ssid(ssid_txt, ssid_ie, ssid_ie_len);
-		wpa_printf(MSG_MSGDUMP, "KARMA: Checking SSID for start of association, pass through %s", ssid_txt);
-
-		return WLAN_STATUS_SUCCESS;
-	} else {
-		if (ssid_ie_len != hapd->conf->ssid.ssid_len ||
-			os_memcmp(ssid_ie, hapd->conf->ssid.ssid, ssid_ie_len) != 0) {
-			char ssid_txt[33];
-			ieee802_11_print_ssid(ssid_txt, ssid_ie, ssid_ie_len);
-			hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-					   HOSTAPD_LEVEL_INFO,
-					   "Station tried to associate with unknown SSID "
-					   "'%s'", ssid_txt);
-			return WLAN_STATUS_UNSPECIFIED_FAILURE;
-		}
-
-		return WLAN_STATUS_SUCCESS;
+	if (ssid_ie_len != hapd->conf->ssid.ssid_len ||
+	    os_memcmp(ssid_ie, hapd->conf->ssid.ssid, ssid_ie_len) != 0) {
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "Station tried to associate with unknown SSID "
+			       "'%s'", wpa_ssid_txt(ssid_ie, ssid_ie_len));
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
-	// KARMA END
+
+	return WLAN_STATUS_SUCCESS;
 }
 
 
@@ -920,6 +919,11 @@ static u16 check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 				  elems.vht_capabilities_len);
 	if (resp != WLAN_STATUS_SUCCESS)
 		return resp;
+
+	resp = set_sta_vht_opmode(hapd, sta, elems.vht_opmode_notif);
+	if (resp != WLAN_STATUS_SUCCESS)
+		return resp;
+
 	if (hapd->iconf->ieee80211ac && hapd->iconf->require_vht &&
 	    !(sta->flags & WLAN_STA_VHT)) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
@@ -1088,6 +1092,29 @@ static u16 check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 			return WLAN_STATUS_CIPHER_REJECTED_PER_POLICY;
 		}
 #endif /* CONFIG_IEEE80211N */
+#ifdef CONFIG_HS20
+	} else if (hapd->conf->osen) {
+		if (elems.osen == NULL) {
+			hostapd_logger(
+				hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+				HOSTAPD_LEVEL_INFO,
+				"No HS 2.0 OSEN element in association request");
+			return WLAN_STATUS_INVALID_IE;
+		}
+
+		wpa_printf(MSG_DEBUG, "HS 2.0: OSEN association");
+		if (sta->wpa_sm == NULL)
+			sta->wpa_sm = wpa_auth_sta_init(hapd->wpa_auth,
+							sta->addr, NULL);
+		if (sta->wpa_sm == NULL) {
+			wpa_printf(MSG_WARNING, "Failed to initialize WPA "
+				   "state machine");
+			return WLAN_STATUS_UNSPECIFIED_FAILURE;
+		}
+		if (wpa_validate_osen(hapd->wpa_auth, sta->wpa_sm,
+				      elems.osen - 2, elems.osen_len + 2) < 0)
+			return WLAN_STATUS_INVALID_IE;
+#endif /* CONFIG_HS20 */
 	} else
 		wpa_auth_sta_no_wpa(sta->wpa_sm);
 
@@ -1154,8 +1181,7 @@ static void send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	reply->u.assoc_resp.capab_info =
 		host_to_le16(hostapd_own_capab_info(hapd, sta, 0));
 	reply->u.assoc_resp.status_code = host_to_le16(status_code);
-	reply->u.assoc_resp.aid = host_to_le16((sta ? sta->aid : 0)
-					       | BIT(14) | BIT(15));
+	reply->u.assoc_resp.aid = host_to_le16(sta->aid | BIT(14) | BIT(15));
 	/* Supported rates */
 	p = hostapd_eid_supp_rates(hapd, reply->u.assoc_resp.variable);
 	/* Extended supported rates */
@@ -1263,7 +1289,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 #ifdef CONFIG_TESTING_OPTIONS
 	if (reassoc) {
-		if (hapd->iconf->ignore_reassoc_probability > 0.0d &&
+		if (hapd->iconf->ignore_reassoc_probability > 0.0 &&
 		    drand48() < hapd->iconf->ignore_reassoc_probability) {
 			wpa_printf(MSG_INFO,
 				   "TESTING: ignoring reassoc request from "
@@ -1271,7 +1297,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 			return;
 		}
 	} else {
-		if (hapd->iconf->ignore_assoc_probability > 0.0d &&
+		if (hapd->iconf->ignore_assoc_probability > 0.0 &&
 		    drand48() < hapd->iconf->ignore_assoc_probability) {
 			wpa_printf(MSG_INFO,
 				   "TESTING: ignoring assoc request from "
@@ -1416,17 +1442,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 		 */
 	}
 #endif /* CONFIG_IEEE80211W */
-
-	if (reassoc) {
-		os_memcpy(sta->previous_ap, mgmt->u.reassoc_req.current_ap,
-			  ETH_ALEN);
-	}
-
-	if (sta->last_assoc_req)
-		os_free(sta->last_assoc_req);
-	sta->last_assoc_req = os_malloc(len);
-	if (sta->last_assoc_req)
-		os_memcpy(sta->last_assoc_req, mgmt, len);
 
 	/* Make sure that the previously registered inactivity timer will not
 	 * remove the STA immediately. */
@@ -1611,7 +1626,8 @@ static int handle_action(struct hostapd_data *hapd,
 	switch (mgmt->u.action.category) {
 #ifdef CONFIG_IEEE80211R
 	case WLAN_ACTION_FT:
-		if (wpa_ft_action_rx(sta->wpa_sm, (u8 *) &mgmt->u.action,
+		if (!sta ||
+		    wpa_ft_action_rx(sta->wpa_sm, (u8 *) &mgmt->u.action,
 				     len - IEEE80211_HDRLEN))
 			break;
 		return 1;
@@ -1630,6 +1646,15 @@ static int handle_action(struct hostapd_data *hapd,
 #endif /* CONFIG_WNM */
 	case WLAN_ACTION_PUBLIC:
 	case WLAN_ACTION_PROTECTED_DUAL:
+#ifdef CONFIG_IEEE80211N
+		if (mgmt->u.action.u.public_action.action ==
+		    WLAN_PA_20_40_BSS_COEX) {
+			wpa_printf(MSG_DEBUG,
+				   "HT20/40 coex mgmt frame received from STA "
+				   MACSTR, MAC2STR(mgmt->sa));
+			hostapd_2040_coex_action(hapd, mgmt, len);
+		}
+#endif /* CONFIG_IEEE80211N */
 		if (hapd->public_action_cb) {
 			hapd->public_action_cb(hapd->public_action_cb_ctx,
 					       (u8 *) mgmt, len,
@@ -1709,19 +1734,6 @@ int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 	int broadcast;
 	u16 fc, stype;
 	int ret = 0;
-
-#ifdef CONFIG_TESTING_OPTIONS
-	if (hapd->ext_mgmt_frame_handling) {
-		size_t hex_len = 2 * len + 1;
-		char *hex = os_malloc(hex_len);
-		if (hex) {
-			wpa_snprintf_hex(hex, hex_len, buf, len);
-			wpa_msg(hapd->msg_ctx, MSG_INFO, "MGMT-RX %s", hex);
-			os_free(hex);
-		}
-		return 1;
-	}
-#endif /* CONFIG_TESTING_OPTIONS */
 
 	if (len < 24)
 		return 0;
@@ -1909,7 +1921,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		status = le_to_host16(mgmt->u.assoc_resp.status_code);
 
 	if (status != WLAN_STATUS_SUCCESS)
-		goto fail;
+		return;
 
 	/* Stop previous accounting session, if one is started, and allocate
 	 * new session id for the new session. */
@@ -1924,28 +1936,13 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		new_assoc = 0;
 	sta->flags |= WLAN_STA_ASSOC;
 	sta->flags &= ~WLAN_STA_WNM_SLEEP_MODE;
-	if ((!hapd->conf->ieee802_1x && !hapd->conf->wpa) ||
+	if ((!hapd->conf->ieee802_1x && !hapd->conf->wpa && !hapd->conf->osen) ||
 	    sta->auth_alg == WLAN_AUTH_FT) {
 		/*
 		 * Open, static WEP, or FT protocol; no separate authorization
 		 * step.
 		 */
 		ap_sta_set_authorized(hapd, sta, 1);
-
-		// KARMA
-		// Print that it has associated and give the MAC and AP
-		// Doesn't currently work though as can't find ESSID
-		if (hapd->iconf->enable_karma) {
-			// This gives the ESSID of the AP and not the one from the probe.
-			//struct hostapd_ssid *ssid = sta->ssid;
-
-			// printf("KARMA: Successful association of " MACSTR " to ESSID '%s'\n",
-			//	   MAC2STR(mgmt->da), ssid->ssid);
-			printf("KARMA: Successful association of " MACSTR "\n",
-				   MAC2STR(mgmt->da));
-		}
-
-		// KARMA END
 	}
 
 	if (reassoc)
@@ -1978,7 +1975,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 			    sta->listen_interval,
 			    sta->flags & WLAN_STA_HT ? &ht_cap : NULL,
 			    sta->flags & WLAN_STA_VHT ? &vht_cap : NULL,
-			    sta->flags, sta->qosinfo)) {
+			    sta->flags, sta->qosinfo, sta->vht_opmode)) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_NOTICE,
 			       "Could not add STA to kernel driver");
@@ -1986,7 +1983,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		ap_sta_disconnect(hapd, sta, sta->addr,
 				  WLAN_REASON_DISASSOC_AP_BUSY);
 
-		goto fail;
+		return;
 	}
 
 	if (sta->flags & WLAN_STA_WDS) {
@@ -2006,11 +2003,11 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		 * interface selection is not going to change anymore.
 		 */
 		if (ap_sta_bind_vlan(hapd, sta, 0) < 0)
-			goto fail;
+			return;
 	} else if (sta->vlan_id) {
 		/* VLAN ID already set (e.g., by PMKSA caching), so bind STA */
 		if (ap_sta_bind_vlan(hapd, sta, 0) < 0)
-			goto fail;
+			return;
 	}
 
 	hostapd_set_sta_flags(hapd, sta);
@@ -2022,13 +2019,6 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 	hapd->new_assoc_sta_cb(hapd, sta, !new_assoc);
 
 	ieee802_1x_notify_port_enabled(sta->eapol_sm, 1);
-
- fail:
-	/* Copy of the association request is not needed anymore */
-	if (sta->last_assoc_req) {
-		os_free(sta->last_assoc_req);
-		sta->last_assoc_req = NULL;
-	}
 }
 
 

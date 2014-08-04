@@ -45,6 +45,7 @@ struct eap_pwd_data {
 
 	u8 msk[EAP_MSK_LEN];
 	u8 emsk[EAP_EMSK_LEN];
+	u8 session_id[1 + SHA256_MAC_LEN];
 
 	BN_CTX *bnctx;
 };
@@ -123,7 +124,8 @@ static void * eap_pwd_init(struct eap_sm *sm)
 
 	data->in_frag_pos = data->out_frag_pos = 0;
 	data->inbuf = data->outbuf = NULL;
-	data->mtu = 1020; /* default from RFC 5931, make it configurable! */
+	/* use default MTU from RFC 5931 if not configured otherwise */
+	data->mtu = sm->fragment_size > 0 ? sm->fragment_size : 1020;
 
 	return data;
 }
@@ -150,6 +152,8 @@ static void eap_pwd_reset(struct eap_sm *sm, void *priv)
 		BN_free(data->grp->prime);
 		os_free(data->grp);
 	}
+	wpabuf_free(data->inbuf);
+	wpabuf_free(data->outbuf);
 	os_free(data);
 }
 
@@ -523,6 +527,7 @@ eap_pwd_build_req(struct eap_sm *sm, void *priv, u8 id)
 	 */
 	if (data->out_frag_pos >= wpabuf_len(data->outbuf)) {
 		wpabuf_free(data->outbuf);
+		data->outbuf = NULL;
 		data->out_frag_pos = 0;
 	}
 
@@ -595,7 +600,8 @@ static void eap_pwd_process_id_resp(struct eap_sm *sm,
 	wpa_hexdump_ascii(MSG_DEBUG, "EAP-PWD (server): peer sent id of",
 			  data->id_peer, data->id_peer_len);
 
-	if ((data->grp = os_malloc(sizeof(EAP_PWD_group))) == NULL) {
+	data->grp = os_zalloc(sizeof(EAP_PWD_group));
+	if (data->grp == NULL) {
 		wpa_printf(MSG_INFO, "EAP-PWD: failed to allocate memory for "
 			   "group");
 		return;
@@ -838,7 +844,8 @@ eap_pwd_process_confirm_resp(struct eap_sm *sm, struct eap_pwd_data *data,
 	wpa_printf(MSG_DEBUG, "EAP-pwd (server): confirm verified");
 	if (compute_keys(data->grp, data->bnctx, data->k,
 			 data->peer_scalar, data->my_scalar, conf,
-			 data->my_confirm, &cs, data->msk, data->emsk) < 0)
+			 data->my_confirm, &cs, data->msk, data->emsk,
+			 data->session_id) < 0)
 		eap_pwd_state(data, FAILURE);
 	else
 		eap_pwd_state(data, SUCCESS);
@@ -949,6 +956,7 @@ static void eap_pwd_process(struct eap_sm *sm, void *priv,
 	 */
 	if (data->in_frag_pos) {
 		wpabuf_free(data->inbuf);
+		data->inbuf = NULL;
 		data->in_frag_pos = 0;
 	}
 }

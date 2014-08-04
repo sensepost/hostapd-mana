@@ -27,6 +27,7 @@
 #define WLAN_STA_GAS BIT(17)
 #define WLAN_STA_VHT BIT(18)
 #define WLAN_STA_WNM_SLEEP_MODE BIT(19)
+#define WLAN_STA_VHT_OPMODE_ENABLED BIT(20)
 #define WLAN_STA_PENDING_DISASSOC_CB BIT(29)
 #define WLAN_STA_PENDING_DEAUTH_CB BIT(30)
 #define WLAN_STA_NONERP BIT(31)
@@ -53,12 +54,14 @@ struct sta_info {
 	unsigned int no_short_preamble_set:1;
 	unsigned int no_ht_gf_set:1;
 	unsigned int no_ht_set:1;
+	unsigned int ht40_intolerant_set:1;
 	unsigned int ht_20mhz_set:1;
 	unsigned int no_p2p_set:1;
 	unsigned int qos_map_enabled:1;
+	unsigned int remediation:1;
+	unsigned int hs20_deauth_requested:1;
 
 	u16 auth_alg;
-	u8 previous_ap[6];
 
 	enum {
 		STA_NULLFUNC = 0, STA_DISASSOC, STA_DEAUTH, STA_REMOVE,
@@ -70,9 +73,6 @@ struct sta_info {
 
 	/* IEEE 802.1X related data */
 	struct eapol_state_machine *eapol_sm;
-
-	/* IEEE 802.11f (IAPP) related data */
-	struct ieee80211_mgmt *last_assoc_req;
 
 	u32 acct_session_id_hi;
 	u32 acct_session_id_lo;
@@ -93,7 +93,6 @@ struct sta_info {
 
 	struct hostapd_ssid *ssid; /* SSID selection based on (Re)AssocReq */
 	struct hostapd_ssid *ssid_probe; /* SSID selection based on ProbeReq */
-	struct hostapd_ssid *ssid_probe_karma; /* SSID selection based on ProbeReq */
 
 	int vlan_id;
 	 /* PSKs from RADIUS authentication server */
@@ -104,6 +103,7 @@ struct sta_info {
 
 	struct ieee80211_ht_capabilities *ht_capabilities;
 	struct ieee80211_vht_capabilities *vht_capabilities;
+	u8 vht_opmode;
 
 #ifdef CONFIG_IEEE80211W
 	int sa_query_count; /* number of pending SA Query requests;
@@ -124,6 +124,11 @@ struct sta_info {
 	struct wpabuf *wps_ie; /* WPS IE from (Re)Association Request */
 	struct wpabuf *p2p_ie; /* P2P IE from (Re)Association Request */
 	struct wpabuf *hs20_ie; /* HS 2.0 IE from (Re)Association Request */
+	u8 remediation_method;
+	char *remediation_url; /* HS 2.0 Subscription Remediation Server URL */
+	struct wpabuf *hs20_deauth_req;
+	char *hs20_session_info_url;
+	int hs20_disassoc_timer;
 
 	struct os_reltime connected_time;
 
@@ -167,6 +172,8 @@ void ap_sta_session_timeout(struct hostapd_data *hapd, struct sta_info *sta,
 			    u32 session_timeout);
 void ap_sta_no_session_timeout(struct hostapd_data *hapd,
 			       struct sta_info *sta);
+void ap_sta_session_warning_timeout(struct hostapd_data *hapd,
+				    struct sta_info *sta, int warning_time);
 struct sta_info * ap_sta_add(struct hostapd_data *hapd, const u8 *addr);
 void ap_sta_disassociate(struct hostapd_data *hapd, struct sta_info *sta,
 			 u16 reason);

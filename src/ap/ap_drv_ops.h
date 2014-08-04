@@ -40,7 +40,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    u16 listen_interval,
 		    const struct ieee80211_ht_capabilities *ht_capab,
 		    const struct ieee80211_vht_capabilities *vht_capab,
-		    u32 flags, u8 qosinfo);
+		    u32 flags, u8 qosinfo, u8 vht_opmode);
 int hostapd_set_privacy(struct hostapd_data *hapd, int enabled);
 int hostapd_set_generic_elem(struct hostapd_data *hapd, const u8 *elem,
 			     size_t elem_len);
@@ -278,6 +278,17 @@ static inline int hostapd_drv_status(struct hostapd_data *hapd, char *buf,
 	if (hapd->driver == NULL || hapd->driver->status == NULL)
 		return -1;
 	return hapd->driver->status(hapd->drv_priv, buf, buflen);
+}
+
+static inline int hostapd_drv_vendor_cmd(struct hostapd_data *hapd,
+					 int vendor_id, int subcmd,
+					 const u8 *data, size_t data_len,
+					 struct wpabuf *buf)
+{
+	if (hapd->driver == NULL || hapd->driver->vendor_cmd == NULL)
+		return -1;
+	return hapd->driver->vendor_cmd(hapd->drv_priv, vendor_id, subcmd, data,
+					data_len, buf);
 }
 
 #endif /* AP_DRV_OPS */

@@ -50,6 +50,14 @@ enum reg_change_initiator {
 	REGDOM_BEACON_HINT,
 };
 
+enum reg_type {
+	REGDOM_TYPE_UNKNOWN,
+	REGDOM_TYPE_COUNTRY,
+	REGDOM_TYPE_WORLD,
+	REGDOM_TYPE_CUSTOM_WORLD,
+	REGDOM_TYPE_INTERSECTION,
+};
+
 /**
  * struct hostapd_channel_data - Channel information
  */
@@ -93,6 +101,9 @@ struct hostapd_channel_data {
 	 */
 	long double interference_factor;
 #endif /* CONFIG_ACS */
+
+	/* DFS CAC time in milliseconds */
+	unsigned int dfs_cac_ms;
 };
 
 #define HOSTAPD_MODE_FLAG_HT_INFO_KNOWN BIT(0)
@@ -404,6 +415,16 @@ struct wpa_driver_associate_params {
 	const u8 *bssid;
 
 	/**
+	 * bssid_hint - BSSID of a proposed AP
+	 *
+	 * This indicates which BSS has been found a suitable candidate for
+	 * initial association for drivers that use driver/firmwate-based BSS
+	 * selection. Unlike the @bssid parameter, @bssid_hint does not limit
+	 * the driver from selecting other BSSes in the ESS.
+	 */
+	const u8 *bssid_hint;
+
+	/**
 	 * ssid - The selected SSID
 	 */
 	const u8 *ssid;
@@ -421,11 +442,26 @@ struct wpa_driver_associate_params {
 	int freq;
 
 	/**
+	 * freq_hint - Frequency of the channel the proposed AP is using
+	 *
+	 * This provides a channel on which a suitable BSS has been found as a
+	 * hint for the driver. Unlike the @freq parameter, @freq_hint does not
+	 * limit the driver from selecting other channels for
+	 * driver/firmware-based BSS selection.
+	 */
+	int freq_hint;
+
+	/**
 	 * bg_scan_period - Background scan period in seconds, 0 to disable
 	 * background scan, or -1 to indicate no change to default driver
 	 * configuration
 	 */
 	int bg_scan_period;
+
+	/**
+	 * beacon_int - Beacon interval for IBSS or 0 to use driver default
+	 */
+	int beacon_int;
 
 	/**
 	 * wpa_ie - WPA information element for (Re)Association Request
@@ -646,6 +682,16 @@ enum hide_ssid {
 	HIDDEN_SSID_ZERO_CONTENTS
 };
 
+struct wowlan_triggers {
+	u8 any;
+	u8 disconnect;
+	u8 magic_pkt;
+	u8 gtk_rekey_failure;
+	u8 eap_identity_req;
+	u8 four_way_handshake;
+	u8 rfkill_release;
+};
+
 struct wpa_driver_ap_params {
 	/**
 	 * head - Beacon head from IEEE 802.11 header to IEs before TIM IE
@@ -827,6 +873,16 @@ struct wpa_driver_ap_params {
 	 * disable_dgaf - Whether group-addressed frames are disabled
 	 */
 	int disable_dgaf;
+
+	/**
+	 * osen - Whether OSEN security is enabled
+	 */
+	int osen;
+
+	/**
+	 * freq - Channel parameters for dynamic bandwidth changes
+	 */
+	struct hostapd_freq_params *freq;
 };
 
 /**
@@ -855,6 +911,7 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_CAPA_ENC_BIP_GMAC_128	0x00000200
 #define WPA_DRIVER_CAPA_ENC_BIP_GMAC_256	0x00000400
 #define WPA_DRIVER_CAPA_ENC_BIP_CMAC_256	0x00000800
+#define WPA_DRIVER_CAPA_ENC_GTK_NOT_USED	0x00001000
 	unsigned int enc;
 
 #define WPA_DRIVER_AUTH_OPEN		0x00000001
@@ -866,7 +923,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS_DRIVER_IE	0x00000001
 /* Driver needs static WEP key setup after association command */
 #define WPA_DRIVER_FLAGS_SET_KEYS_AFTER_ASSOC 0x00000002
-/* unused: 0x00000004 */
+/* Driver takes care of all DFS operations */
+#define WPA_DRIVER_FLAGS_DFS_OFFLOAD			0x00000004
 /* Driver takes care of RSN 4-way handshake internally; PMK is configured with
  * struct wpa_driver_ops::set_key using alg = WPA_ALG_PMK */
 #define WPA_DRIVER_FLAGS_4WAY_HANDSHAKE 0x00000008
@@ -878,7 +936,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS_AP		0x00000040
 /* Driver needs static WEP key setup after association has been completed */
 #define WPA_DRIVER_FLAGS_SET_KEYS_AFTER_ASSOC_DONE	0x00000080
-/* unused: 0x00000100 */
+/* Driver supports dynamic HT 20/40 MHz channel changes during BSS lifetime */
+#define WPA_DRIVER_FLAGS_HT_2040_COEX			0x00000100
 /* Driver supports concurrent P2P operations */
 #define WPA_DRIVER_FLAGS_P2P_CONCURRENT	0x00000200
 /*
@@ -888,7 +947,8 @@ struct wpa_driver_capa {
 #define WPA_DRIVER_FLAGS_P2P_DEDICATED_INTERFACE	0x00000400
 /* This interface is P2P capable (P2P GO or P2P Client) */
 #define WPA_DRIVER_FLAGS_P2P_CAPABLE	0x00000800
-/* unused: 0x00001000 */
+/* Driver supports station and key removal when stopping an AP */
+#define WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT		0x00001000
 /*
  * Driver uses the initial interface for P2P management interface and non-P2P
  * purposes (e.g., connect to infra AP), but this interface cannot be used for
@@ -982,6 +1042,8 @@ struct wpa_driver_capa {
 	 */
 	const u8 *extended_capa, *extended_capa_mask;
 	unsigned int extended_capa_len;
+
+	struct wowlan_triggers wowlan_triggers;
 };
 
 
@@ -1008,6 +1070,8 @@ struct hostapd_sta_add_params {
 	u16 listen_interval;
 	const struct ieee80211_ht_capabilities *ht_capabilities;
 	const struct ieee80211_vht_capabilities *vht_capabilities;
+	int vht_opmode_enabled;
+	u8 vht_opmode;
 	u32 flags; /* bitmask of WPA_STA_* flags */
 	int set; /* Set STA parameters instead of add */
 	u8 qosinfo;
@@ -1233,6 +1297,22 @@ struct csa_settings {
 	u16 counter_offset_beacon;
 	u16 counter_offset_presp;
 };
+
+/* TDLS peer capabilities for send_tdls_mgmt() */
+enum tdls_peer_capability {
+	TDLS_PEER_HT = BIT(0),
+	TDLS_PEER_VHT = BIT(1),
+	TDLS_PEER_WMM = BIT(2),
+};
+
+#ifdef CONFIG_MACSEC
+struct macsec_init_params {
+	Boolean always_include_sci;
+	Boolean use_es;
+	Boolean use_scb;
+};
+#endif /* CONFIG_MACSEC */
+
 
 /**
  * struct wpa_driver_ops - Driver interface API definition
@@ -2111,7 +2191,7 @@ struct wpa_driver_ops {
 	 * @session_timeout: Session timeout for the station
 	 * Returns: 0 on success, -1 on failure
 	 */
-	int (*set_radius_acl_auth)(void *priv, const u8 *mac, int accepted, 
+	int (*set_radius_acl_auth)(void *priv, const u8 *mac, int accepted,
 				   u32 session_timeout);
 
 	/**
@@ -2175,7 +2255,7 @@ struct wpa_driver_ops {
 	 * Returns: 0 on success, -1 on failure
 	 */
 	int (*set_wds_sta)(void *priv, const u8 *addr, int aid, int val,
-	                   const char *bridge_ifname, char *ifname_wds);
+			   const char *bridge_ifname, char *ifname_wds);
 
 	/**
 	 * send_action - Transmit an Action frame
@@ -2414,6 +2494,7 @@ struct wpa_driver_ops {
 	 * @action_code: TDLS action code for the mssage
 	 * @dialog_token: Dialog Token to use in the message (if needed)
 	 * @status_code: Status Code or Reason Code to use (if needed)
+	 * @peer_capab: TDLS peer capability (TDLS_PEER_* bitfield)
 	 * @buf: TDLS IEs to add to the message
 	 * @len: Length of buf in octets
 	 * Returns: 0 on success, negative (<0) on failure
@@ -2422,7 +2503,7 @@ struct wpa_driver_ops {
 	 * responsible for receiving and sending all TDLS packets.
 	 */
 	int (*send_tdls_mgmt)(void *priv, const u8 *dst, u8 action_code,
-			      u8 dialog_token, u16 status_code,
+			      u8 dialog_token, u16 status_code, u32 peer_capab,
 			      const u8 *buf, size_t len);
 
 	/**
@@ -2459,10 +2540,17 @@ struct wpa_driver_ops {
 			   u8 qos_map_set_len);
 
 	/**
+	 * set_wowlan - Set wake-on-wireless triggers
+	 * @priv: Private driver interface data
+	 * @triggers: wowlan triggers
+	 */
+	int (*set_wowlan)(void *priv, const struct wowlan_triggers *triggers);
+
+	/**
 	 * signal_poll - Get current connection information
 	 * @priv: Private driver interface data
 	 * @signal_info: Connection info structure
-         */
+	 */
 	int (*signal_poll)(void *priv, struct wpa_signal_info *signal_info);
 
 	/**
@@ -2490,6 +2578,30 @@ struct wpa_driver_ops {
 	 */
 	int (*driver_cmd)(void *priv, char *cmd, char *buf, size_t buf_len);
 #endif /* ANDROID */
+
+	/**
+	 * vendor_cmd - Execute vendor specific command
+	 * @priv: Private driver interface data
+	 * @vendor_id: Vendor id
+	 * @subcmd: Vendor command id
+	 * @data: Vendor command parameters (%NULL if no parameters)
+	 * @data_len: Data length
+	 * @buf: Return buffer (%NULL to ignore reply)
+	 * Returns: 0 on success, negative (<0) on failure
+	 *
+	 * This function handles vendor specific commands that are passed to
+	 * the driver/device. The command is identified by vendor id and
+	 * command id. Parameters can be passed as argument to the command
+	 * in the data buffer. Reply (if any) will be filled in the supplied
+	 * return buffer.
+	 *
+	 * The exact driver behavior is driver interface and vendor specific. As
+	 * an example, this will be converted to a vendor specific cfg80211
+	 * command in case of the nl80211 driver interface.
+	 */
+	int (*vendor_cmd)(void *priv, unsigned int vendor_id,
+			  unsigned int subcmd, const u8 *data, size_t data_len,
+			  struct wpabuf *buf);
 
 	/**
 	 * set_rekey_info - Set rekey information
@@ -2683,6 +2795,203 @@ struct wpa_driver_ops {
 	 * Returns: Length of written status information or -1 on failure
 	 */
 	int (*status)(void *priv, char *buf, size_t buflen);
+
+#ifdef CONFIG_MACSEC
+	int (*macsec_init)(void *priv, struct macsec_init_params *params);
+
+	int (*macsec_deinit)(void *priv);
+
+	/**
+	 * enable_protect_frames - Set protect frames status
+	 * @priv: Private driver interface data
+	 * @enabled: TRUE = protect frames enabled
+	 *           FALSE = protect frames disabled
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*enable_protect_frames)(void *priv, Boolean enabled);
+
+	/**
+	 * set_replay_protect - Set replay protect status and window size
+	 * @priv: Private driver interface data
+	 * @enabled: TRUE = replay protect enabled
+	 *           FALSE = replay protect disabled
+	 * @window: replay window size, valid only when replay protect enabled
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*set_replay_protect)(void *priv, Boolean enabled, u32 window);
+
+	/**
+	 * set_current_cipher_suite - Set current cipher suite
+	 * @priv: Private driver interface data
+	 * @cs: EUI64 identifier
+	 * @cs_len: Length of the cs buffer in octets
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*set_current_cipher_suite)(void *priv, const u8 *cs,
+					size_t cs_len);
+
+	/**
+	 * enable_controlled_port - Set controlled port status
+	 * @priv: Private driver interface data
+	 * @enabled: TRUE = controlled port enabled
+	 *           FALSE = controlled port disabled
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*enable_controlled_port)(void *priv, Boolean enabled);
+
+	/**
+	 * get_receive_lowest_pn - Get receive lowest pn
+	 * @priv: Private driver interface data
+	 * @channel: secure channel
+	 * @an: association number
+	 * @lowest_pn: lowest accept pn
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*get_receive_lowest_pn)(void *priv, u32 channel, u8 an,
+				     u32 *lowest_pn);
+
+	/**
+	 * get_transmit_next_pn - Get transmit next pn
+	 * @priv: Private driver interface data
+	 * @channel: secure channel
+	 * @an: association number
+	 * @next_pn: next pn
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*get_transmit_next_pn)(void *priv, u32 channel, u8 an,
+				    u32 *next_pn);
+
+	/**
+	 * set_transmit_next_pn - Set transmit next pn
+	 * @priv: Private driver interface data
+	 * @channel: secure channel
+	 * @an: association number
+	 * @next_pn: next pn
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*set_transmit_next_pn)(void *priv, u32 channel, u8 an,
+				    u32 next_pn);
+
+	/**
+	 * get_available_receive_sc - get available receive channel
+	 * @priv: Private driver interface data
+	 * @channel: secure channel
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*get_available_receive_sc)(void *priv, u32 *channel);
+
+	/**
+	 * create_receive_sc - create secure channel for receiving
+	 * @priv: Private driver interface data
+	 * @channel: secure channel
+	 * @sci_addr: secure channel identifier - address
+	 * @sci_port: secure channel identifier - port
+	 * @conf_offset: confidentiality offset (0, 30, or 50)
+	 * @validation: frame validation policy (0 = Disabled, 1 = Checked,
+	 *	2 = Strict)
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*create_receive_sc)(void *priv, u32 channel, const u8 *sci_addr,
+				 u16 sci_port, unsigned int conf_offset,
+				 int validation);
+
+	/**
+	 * delete_receive_sc - delete secure connection for receiving
+	 * @priv: private driver interface data from init()
+	 * @channel: secure channel
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*delete_receive_sc)(void *priv, u32 channel);
+
+	/**
+	 * create_receive_sa - create secure association for receive
+	 * @priv: private driver interface data from init()
+	 * @channel: secure channel
+	 * @an: association number
+	 * @lowest_pn: the lowest packet number can be received
+	 * @sak: the secure association key
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*create_receive_sa)(void *priv, u32 channel, u8 an,
+				 u32 lowest_pn, const u8 *sak);
+
+	/**
+	 * enable_receive_sa - enable the SA for receive
+	 * @priv: private driver interface data from init()
+	 * @channel: secure channel
+	 * @an: association number
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*enable_receive_sa)(void *priv, u32 channel, u8 an);
+
+	/**
+	 * disable_receive_sa - disable SA for receive
+	 * @priv: private driver interface data from init()
+	 * @channel: secure channel index
+	 * @an: association number
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*disable_receive_sa)(void *priv, u32 channel, u8 an);
+
+	/**
+	 * get_available_transmit_sc - get available transmit channel
+	 * @priv: Private driver interface data
+	 * @channel: secure channel
+	 * Returns: 0 on success, -1 on failure (or if not supported)
+	 */
+	int (*get_available_transmit_sc)(void *priv, u32 *channel);
+
+	/**
+	 * create_transmit_sc - create secure connection for transmit
+	 * @priv: private driver interface data from init()
+	 * @channel: secure channel
+	 * @sci_addr: secure channel identifier - address
+	 * @sci_port: secure channel identifier - port
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*create_transmit_sc)(void *priv, u32 channel, const u8 *sci_addr,
+				  u16 sci_port, unsigned int conf_offset);
+
+	/**
+	 * delete_transmit_sc - delete secure connection for transmit
+	 * @priv: private driver interface data from init()
+	 * @channel: secure channel
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*delete_transmit_sc)(void *priv, u32 channel);
+
+	/**
+	 * create_transmit_sa - create secure association for transmit
+	 * @priv: private driver interface data from init()
+	 * @channel: secure channel index
+	 * @an: association number
+	 * @next_pn: the packet number used as next transmit packet
+	 * @confidentiality: True if the SA is to provide confidentiality
+	 *                   as well as integrity
+	 * @sak: the secure association key
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*create_transmit_sa)(void *priv, u32 channel, u8 an, u32 next_pn,
+				  Boolean confidentiality, const u8 *sak);
+
+	/**
+	 * enable_transmit_sa - enable SA for transmit
+	 * @priv: private driver interface data from init()
+	 * @channel: secure channel
+	 * @an: association number
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*enable_transmit_sa)(void *priv, u32 channel, u8 an);
+
+	/**
+	 * disable_transmit_sa - disable SA for transmit
+	 * @priv: private driver interface data from init()
+	 * @channel: secure channel
+	 * @an: association number
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*disable_transmit_sa)(void *priv, u32 channel, u8 an);
+#endif /* CONFIG_MACSEC */
 };
 
 
@@ -3527,6 +3836,15 @@ union wpa_event_data {
 		u32 datarate;
 
 		/**
+		 * drv_priv - Pointer to store driver private BSS information
+		 *
+		 * If not set to NULL, this is used for comparison with
+		 * hostapd_data->drv_priv to determine which BSS should process
+		 * the frame.
+		 */
+		void *drv_priv;
+
+		/**
 		 * freq - Frequency (in MHz) on which the frame was received
 		 */
 		int freq;
@@ -3772,9 +4090,13 @@ union wpa_event_data {
 	/**
 	 * channel_list_changed - Data for EVENT_CHANNEL_LIST_CHANGED
 	 * @initiator: Initiator of the regulatory change
+	 * @type: Regulatory change type
+	 * @alpha2: Country code (or "" if not available)
 	 */
 	struct channel_list_changed {
 		enum reg_change_initiator initiator;
+		enum reg_type type;
+		char alpha2[3];
 	} channel_list_changed;
 
 	/**

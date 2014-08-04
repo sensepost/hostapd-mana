@@ -271,6 +271,10 @@ struct crypto_private_key;
  */
 struct crypto_public_key * crypto_public_key_import(const u8 *key, size_t len);
 
+struct crypto_public_key *
+crypto_public_key_import_parts(const u8 *n, size_t n_len,
+			       const u8 *e, size_t e_len);
+
 /**
  * crypto_private_key_import - Import an RSA private key
  * @key: Key buffer (DER encoded RSA private key)
@@ -532,16 +536,6 @@ int crypto_bignum_exptmod(const struct crypto_bignum *a,
 			  const struct crypto_bignum *b,
 			  const struct crypto_bignum *c,
 			  struct crypto_bignum *d);
-
-/**
- * crypto_bignum_rshift - b = a >> n
- * @a: Bignum
- * @n: Number of bits to shift
- * @b: Bignum; used to store the result of a >> n
- * Returns: 0 on success, -1 on failure
- */
-int crypto_bignum_rshift(const struct crypto_bignum *a, int n,
-			 struct crypto_bignum *b);
 
 /**
  * crypto_bignum_inverse - Inverse a bignum so that a * c = 1 (mod b)

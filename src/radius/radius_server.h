@@ -22,6 +22,11 @@ struct radius_server_conf {
 	int auth_port;
 
 	/**
+	 * acct_port - UDP port to listen to as an accounting server
+	 */
+	int acct_port;
+
+	/**
 	 * client_file - RADIUS client configuration file
 	 *
 	 * This file contains the RADIUS clients and the shared secret to be
@@ -33,6 +38,11 @@ struct radius_server_conf {
 	 * with '#' are skipped and can be used as comments.
 	 */
 	char *client_file;
+
+	/**
+	 * sqlite_file - SQLite database for storing debug log information
+	 */
+	const char *sqlite_file;
 
 	/**
 	 * conf_ctx - Context pointer for callbacks
@@ -204,6 +214,9 @@ struct radius_server_conf {
 #ifdef CONFIG_RADIUS_TEST
 	const char *dump_msk_file;
 #endif /* CONFIG_RADIUS_TEST */
+
+	char *subscr_remediation_url;
+	u8 subscr_remediation_method;
 };
 
 

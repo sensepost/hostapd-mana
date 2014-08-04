@@ -12,6 +12,8 @@
 #include "utils/list.h"
 #include "p2p.h"
 
+#define P2P_GO_NEG_CNF_MAX_RETRY_COUNT 1
+
 enum p2p_role_indication;
 
 enum p2p_go_state {
@@ -81,8 +83,6 @@ struct p2p_device {
 #define P2P_DEV_PROBE_REQ_ONLY BIT(0)
 #define P2P_DEV_REPORTED BIT(1)
 #define P2P_DEV_NOT_YET_READY BIT(2)
-#define P2P_DEV_SD_INFO BIT(3)
-#define P2P_DEV_SD_SCHEDULE BIT(4)
 #define P2P_DEV_PD_PEER_DISPLAY BIT(5)
 #define P2P_DEV_PD_PEER_KEYPAD BIT(6)
 #define P2P_DEV_USER_REJECTED BIT(7)
@@ -97,9 +97,11 @@ struct p2p_device {
 #define P2P_DEV_PREFER_PERSISTENT_RECONN BIT(16)
 #define P2P_DEV_PD_BEFORE_GO_NEG BIT(17)
 #define P2P_DEV_NO_PREF_CHAN BIT(18)
+#define P2P_DEV_WAIT_INV_REQ_ACK BIT(19)
 	unsigned int flags;
 
 	int status; /* enum p2p_status_code */
+	struct os_reltime go_neg_wait_started;
 	unsigned int wait_count;
 	unsigned int connect_reqs;
 	unsigned int invitation_reqs;
@@ -109,6 +111,23 @@ struct p2p_device {
 
 	u8 go_timeout;
 	u8 client_timeout;
+
+	/**
+	 * go_neg_conf_sent - Number of GO Negotiation Confirmation retries
+	 */
+	u8 go_neg_conf_sent;
+
+	/**
+	 * freq - Frquency on which the GO Negotiation Confirmation is sent
+	 */
+	int go_neg_conf_freq;
+
+	/**
+	 * go_neg_conf - GO Negotiation Confirmation frame
+	 */
+	struct wpabuf *go_neg_conf;
+
+	int sd_pending_bcast_queries;
 };
 
 struct p2p_sd_query {
@@ -255,6 +274,12 @@ struct p2p_data {
 	 */
 	struct p2p_sd_query *sd_query;
 
+	/**
+	 * num_p2p_sd_queries - Total number of broadcast SD queries present in
+	 * the list
+	 */
+	int num_p2p_sd_queries;
+
 	/* GO Negotiation data */
 
 	/**
@@ -383,6 +408,7 @@ struct p2p_data {
 	u8 after_scan_peer[ETH_ALEN];
 	struct p2p_pending_action_tx *after_scan_tx;
 	unsigned int after_scan_tx_in_progress:1;
+	unsigned int send_action_in_progress:1;
 
 	/* Requested device types for find/search */
 	unsigned int num_req_dev_types;
@@ -585,6 +611,8 @@ void p2p_channels_dump(struct p2p_data *p2p, const char *title,
 		       const struct p2p_channels *chan);
 int p2p_channel_select(struct p2p_channels *chans, const int *classes,
 		       u8 *op_class, u8 *op_channel);
+int p2p_channel_random_social(struct p2p_channels *chans, u8 *op_class,
+			      u8 *op_channel);
 
 /* p2p_parse.c */
 int p2p_parse_p2p_ie(const struct wpabuf *buf, struct p2p_message *msg);

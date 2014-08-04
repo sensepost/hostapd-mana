@@ -24,7 +24,6 @@ enum wps_event;
 union wps_event_data;
 
 struct hostapd_iface;
-struct hostapd_dynamic_iface;
 
 struct hapd_interfaces {
 	int (*reload_config)(struct hostapd_iface *iface);
@@ -37,7 +36,6 @@ struct hapd_interfaces {
 	int (*driver_init)(struct hostapd_iface *iface);
 
 	size_t count;
-	size_t count_dynamic;
 	int global_ctrl_sock;
 	char *global_iface_path;
 	char *global_iface_name;
@@ -45,7 +43,6 @@ struct hapd_interfaces {
 	gid_t ctrl_iface_group;
 #endif /* CONFIG_NATIVE_WINDOWS */
 	struct hostapd_iface **iface;
-	struct hostapd_dynamic_iface **dynamic_iface;
 
 	size_t terminate_on_error;
 };
@@ -273,6 +270,12 @@ struct hostapd_iface {
 	unsigned int wait_channel_update:1;
 	unsigned int cac_started:1;
 
+	/*
+	 * When set, indicates that the driver will handle the AP
+	 * teardown: delete global keys, station keys, and stations.
+	 */
+	unsigned int driver_ap_teardown:1;
+
 	int num_ap; /* number of entries in ap_list */
 	struct ap_info *ap_list; /* AP info list head */
 	struct ap_info *ap_hash[STA_HASH_SIZE];
@@ -324,6 +327,9 @@ struct hostapd_iface {
 	/* Number of HT associated stations 20 MHz */
 	int num_sta_ht_20mhz;
 
+	/* Number of HT40 intolerant stations */
+	int num_sta_ht40_intolerant;
+
 	/* Overlapping BSS information */
 	int olbc_ht;
 
@@ -345,21 +351,19 @@ struct hostapd_iface {
 	unsigned int cs_c_off_proberesp;
 	int csa_in_progress;
 
+	unsigned int dfs_cac_ms;
+	struct os_reltime dfs_cac_start;
+
+	/* Latched with the actual secondary channel information and will be
+	 * used while juggling between HT20 and HT40 modes. */
+	int secondary_ch;
+
 #ifdef CONFIG_ACS
 	unsigned int acs_num_completed_scans;
 #endif /* CONFIG_ACS */
 
 	void (*scan_cb)(struct hostapd_iface *iface);
-};
-
-/**
- * struct hostapd_dynamic_iface - hostapd per dynamically allocated
- * or added interface data structure
- */
-struct hostapd_dynamic_iface {
-	char parent[IFNAMSIZ + 1];
-	char iface[IFNAMSIZ + 1];
-	unsigned int usage;
+	int num_ht40_scan_tries;
 };
 
 /* hostapd.c */

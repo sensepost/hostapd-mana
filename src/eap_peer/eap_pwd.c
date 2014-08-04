@@ -16,7 +16,8 @@
 
 struct eap_pwd_data {
 	enum {
-		PWD_ID_Req, PWD_Commit_Req, PWD_Confirm_Req, SUCCESS, FAILURE
+		PWD_ID_Req, PWD_Commit_Req, PWD_Confirm_Req,
+		SUCCESS_ON_FRAG_COMPLETION, SUCCESS, FAILURE
 	} state;
 	u8 *id_peer;
 	size_t id_peer_len;
@@ -42,6 +43,7 @@ struct eap_pwd_data {
 
 	u8 msk[EAP_MSK_LEN];
 	u8 emsk[EAP_EMSK_LEN];
+	u8 session_id[1 + SHA256_MAC_LEN];
 
 	BN_CTX *bnctx;
 };
@@ -57,6 +59,8 @@ static const char * eap_pwd_state_txt(int state)
 		return "PWD-Commit-Req";
         case PWD_Confirm_Req:
 		return "PWD-Confirm-Req";
+	case SUCCESS_ON_FRAG_COMPLETION:
+		return "SUCCESS_ON_FRAG_COMPLETION";
         case SUCCESS:
 		return "SUCCESS";
         case FAILURE:
@@ -161,6 +165,8 @@ static void eap_pwd_deinit(struct eap_sm *sm, void *priv)
 		BN_free(data->grp->prime);
 		os_free(data->grp);
 	}
+	wpabuf_free(data->inbuf);
+	wpabuf_free(data->outbuf);
 	os_free(data);
 }
 
@@ -181,6 +187,25 @@ static u8 * eap_pwd_getkey(struct eap_sm *sm, void *priv, size_t *len)
 	*len = EAP_MSK_LEN;
 
 	return key;
+}
+
+
+static u8 * eap_pwd_get_session_id(struct eap_sm *sm, void *priv, size_t *len)
+{
+	struct eap_pwd_data *data = priv;
+	u8 *id;
+
+	if (data->state != SUCCESS)
+		return NULL;
+
+	id = os_malloc(1 + SHA256_MAC_LEN);
+	if (id == NULL)
+		return NULL;
+
+	os_memcpy(id, data->session_id, 1 + SHA256_MAC_LEN);
+	*len = 1 + SHA256_MAC_LEN;
+
+	return id;
 }
 
 
@@ -227,8 +252,8 @@ eap_pwd_perform_id_exchange(struct eap_sm *sm, struct eap_pwd_data *data,
 	wpa_hexdump_ascii(MSG_INFO, "EAP-PWD (peer): server sent id of",
 			  data->id_server, data->id_server_len);
 
-	if ((data->grp = (EAP_PWD_group *) os_malloc(sizeof(EAP_PWD_group))) ==
-	    NULL) {
+	data->grp = os_zalloc(sizeof(EAP_PWD_group));
+	if (data->grp == NULL) {
 		wpa_printf(MSG_INFO, "EAP-PWD: failed to allocate memory for "
 			   "group");
 		eap_pwd_state(data, FAILURE);
@@ -642,7 +667,7 @@ eap_pwd_perform_confirm_exchange(struct eap_sm *sm, struct eap_pwd_data *data,
 
 	if (compute_keys(data->grp, data->bnctx, data->k,
 			 data->my_scalar, data->server_scalar, conf, ptr,
-			 &cs, data->msk, data->emsk) < 0) {
+			 &cs, data->msk, data->emsk, data->session_id) < 0) {
 		wpa_printf(MSG_INFO, "EAP-PWD (peer): unable to compute MSK | "
 			   "EMSK");
 		goto fin;
@@ -658,13 +683,12 @@ fin:
 	os_free(cruft);
 	BN_free(x);
 	BN_free(y);
-	ret->methodState = METHOD_DONE;
 	if (data->outbuf == NULL) {
+		ret->methodState = METHOD_DONE;
 		ret->decision = DECISION_FAIL;
 		eap_pwd_state(data, FAILURE);
 	} else {
-		ret->decision = DECISION_UNCOND_SUCC;
-		eap_pwd_state(data, SUCCESS);
+		eap_pwd_state(data, SUCCESS_ON_FRAG_COMPLETION);
 	}
 }
 
@@ -741,6 +765,11 @@ eap_pwd_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret,
 		wpa_printf(MSG_DEBUG, "EAP-pwd: Send %s fragment of %d bytes",
 			   data->out_frag_pos == 0 ? "last" : "next",
 			   (int) len);
+		if (data->state == SUCCESS_ON_FRAG_COMPLETION) {
+			ret->methodState = METHOD_DONE;
+			ret->decision = DECISION_UNCOND_SUCC;
+			eap_pwd_state(data, SUCCESS);
+		}
 		return resp;
 	}
 
@@ -773,6 +802,7 @@ eap_pwd_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret,
 				   (int) data->in_frag_pos,
 				   (int) wpabuf_len(data->inbuf));
 			wpabuf_free(data->inbuf);
+			data->inbuf = NULL;
 			data->in_frag_pos = 0;
 			return NULL;
 		}
@@ -824,11 +854,15 @@ eap_pwd_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret,
 	 */
 	if (data->in_frag_pos) {
 		wpabuf_free(data->inbuf);
+		data->inbuf = NULL;
 		data->in_frag_pos = 0;
 	}
 
-	if (data->outbuf == NULL)
+	if (data->outbuf == NULL) {
+		ret->methodState = METHOD_DONE;
+		ret->decision = DECISION_FAIL;
 		return NULL;        /* generic failure */
+	}
 
 	/*
 	 * we have output! Do we need to fragment it?
@@ -871,6 +905,11 @@ eap_pwd_process(struct eap_sm *sm, void *priv, struct eap_method_ret *ret,
 		wpabuf_free(data->outbuf);
 		data->outbuf = NULL;
 		data->out_frag_pos = 0;
+		if (data->state == SUCCESS_ON_FRAG_COMPLETION) {
+			ret->methodState = METHOD_DONE;
+			ret->decision = DECISION_UNCOND_SUCC;
+			eap_pwd_state(data, SUCCESS);
+		}
 	}
 
 	return resp;
@@ -918,6 +957,7 @@ int eap_peer_pwd_register(void)
 	eap->process = eap_pwd_process;
 	eap->isKeyAvailable = eap_pwd_key_available;
 	eap->getKey = eap_pwd_getkey;
+	eap->getSessionId = eap_pwd_get_session_id;
 	eap->get_emsk = eap_pwd_get_emsk;
 
 	ret = eap_peer_method_register(eap);

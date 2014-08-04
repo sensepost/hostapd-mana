@@ -32,8 +32,11 @@ struct eap_user {
 			    * nt_password_hash() */
 	int phase2;
 	int force_version;
+	unsigned int remediation:1;
+	unsigned int macacl:1;
 	int ttls_auth; /* bitfield of
 			* EAP_TTLS_AUTH_{PAP,CHAP,MSCHAP,MSCHAPV2} */
+	struct hostapd_radius_attr *accept_attr;
 };
 
 struct eap_eapol_interface {
@@ -79,6 +82,7 @@ struct eapol_callbacks {
 	int (*get_eap_user)(void *ctx, const u8 *identity, size_t identity_len,
 			    int phase2, struct eap_user *user);
 	const char * (*get_eap_req_id_text)(void *ctx, size_t *len);
+	void (*log_msg)(void *ctx, const char *msg);
 };
 
 struct eap_config {
@@ -107,6 +111,10 @@ struct eap_config {
 
 	const u8 *server_id;
 	size_t server_id_len;
+
+#ifdef CONFIG_TESTING_OPTIONS
+	u32 tls_test_flags;
+#endif /* CONFIG_TESTING_OPTIONS */
 };
 
 

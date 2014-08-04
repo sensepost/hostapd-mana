@@ -98,6 +98,10 @@ int p2p_channel_to_freq(int op_class, int channel)
 		if (channel < 36 || channel > 161)
 			return -1;
 		return 5000 + 5 * channel;
+	case 180: /* 60 GHz band, channels 1..4 */
+		if (channel < 1 || channel > 4)
+			return -1;
+		return 56160 + 2160 * channel;
 	}
 	return -1;
 }
@@ -384,23 +388,14 @@ unsigned int p2p_get_pref_freq(struct p2p_data *p2p,
 			       const struct p2p_channels *channels)
 {
 	unsigned int i;
-	int freq = 0;
-
-	if (channels == NULL) {
-		if (p2p->cfg->num_pref_chan) {
-			freq = p2p_channel_to_freq(
-				p2p->cfg->pref_chan[0].op_class,
-				p2p->cfg->pref_chan[0].chan);
-			if (freq < 0)
-				freq = 0;
-		}
-		return freq;
-	}
+	int freq;
 
 	for (i = 0; p2p->cfg->pref_chan && i < p2p->cfg->num_pref_chan; i++) {
 		freq = p2p_channel_to_freq(p2p->cfg->pref_chan[i].op_class,
 					   p2p->cfg->pref_chan[i].chan);
-		if (p2p_channels_includes_freq(channels, freq))
+		if (freq <= 0)
+			continue;
+		if (!channels || p2p_channels_includes_freq(channels, freq))
 			return freq;
 	}
 
@@ -441,31 +436,65 @@ void p2p_channels_dump(struct p2p_data *p2p, const char *title,
 }
 
 
+static u8 p2p_channel_pick_random(const u8 *channels, unsigned int num_channels)
+{
+	unsigned int r;
+	os_get_random((u8 *) &r, sizeof(r));
+	r %= num_channels;
+	return channels[r];
+}
+
+
 int p2p_channel_select(struct p2p_channels *chans, const int *classes,
 		       u8 *op_class, u8 *op_channel)
 {
-	unsigned int i, j, r;
+	unsigned int i, j;
 
-	for (j = 0; classes[j]; j++) {
+	for (j = 0; classes == NULL || classes[j]; j++) {
 		for (i = 0; i < chans->reg_classes; i++) {
 			struct p2p_reg_class *c = &chans->reg_class[i];
 
 			if (c->channels == 0)
 				continue;
 
-			if (c->reg_class == classes[j]) {
+			if (classes == NULL || c->reg_class == classes[j]) {
 				/*
 				 * Pick one of the available channels in the
 				 * operating class at random.
 				 */
-				os_get_random((u8 *) &r, sizeof(r));
-				r %= c->channels;
 				*op_class = c->reg_class;
-				*op_channel = c->channel[r];
+				*op_channel = p2p_channel_pick_random(
+					c->channel, c->channels);
 				return 0;
 			}
 		}
+		if (classes == NULL)
+			break;
 	}
 
 	return -1;
+}
+
+
+int p2p_channel_random_social(struct p2p_channels *chans, u8 *op_class,
+			      u8 *op_channel)
+{
+	u8 chan[3];
+	unsigned int num_channels = 0;
+
+	/* Try to find available social channels from 2.4 GHz */
+	if (p2p_channels_includes(chans, 81, 1))
+		chan[num_channels++] = 1;
+	if (p2p_channels_includes(chans, 81, 6))
+		chan[num_channels++] = 6;
+	if (p2p_channels_includes(chans, 81, 11))
+		chan[num_channels++] = 11;
+
+	if (num_channels == 0)
+		return -1;
+
+	*op_class = 81;
+	*op_channel = p2p_channel_pick_random(chan, num_channels);
+
+	return 0;
 }

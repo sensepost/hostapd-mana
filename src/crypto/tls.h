@@ -41,8 +41,7 @@ enum tls_fail_reason {
 	TLS_FAIL_ALTSUBJECT_MISMATCH = 6,
 	TLS_FAIL_BAD_CERTIFICATE = 7,
 	TLS_FAIL_SERVER_CHAIN_PROBE = 8,
-	TLS_FAIL_DOMAIN_SUFFIX_MISMATCH = 9,
-	TLS_FAIL_SERVER_USED_CLIENT_CERT = 10
+	TLS_FAIL_DOMAIN_SUFFIX_MISMATCH = 9
 };
 
 union tls_event_data {
@@ -86,6 +85,8 @@ struct tls_config {
 #define TLS_CONN_DISABLE_SESSION_TICKET BIT(2)
 #define TLS_CONN_REQUEST_OCSP BIT(3)
 #define TLS_CONN_REQUIRE_OCSP BIT(4)
+#define TLS_CONN_DISABLE_TLSv1_1 BIT(5)
+#define TLS_CONN_DISABLE_TLSv1_2 BIT(6)
 
 /**
  * struct tls_connection_params - Parameters for TLS connection
@@ -535,5 +536,20 @@ typedef int (*tls_session_ticket_cb)
 int __must_check  tls_connection_set_session_ticket_cb(
 	void *tls_ctx, struct tls_connection *conn,
 	tls_session_ticket_cb cb, void *ctx);
+
+void tls_connection_set_log_cb(struct tls_connection *conn,
+			       void (*log_cb)(void *ctx, const char *msg),
+			       void *ctx);
+
+#define TLS_BREAK_VERIFY_DATA BIT(0)
+#define TLS_BREAK_SRV_KEY_X_HASH BIT(1)
+#define TLS_BREAK_SRV_KEY_X_SIGNATURE BIT(2)
+#define TLS_DHE_PRIME_511B BIT(3)
+#define TLS_DHE_PRIME_767B BIT(4)
+#define TLS_DHE_PRIME_15 BIT(5)
+#define TLS_DHE_PRIME_58B BIT(6)
+#define TLS_DHE_NON_PRIME BIT(7)
+
+void tls_connection_set_test_flags(struct tls_connection *conn, u32 flags);
 
 #endif /* TLS_H */

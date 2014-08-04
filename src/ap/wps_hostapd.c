@@ -40,6 +40,7 @@ static int hostapd_wps_probe_req_rx(void *ctx, const u8 *addr, const u8 *da,
 				    const u8 *ie, size_t ie_len,
 				    int ssi_signal);
 static void hostapd_wps_ap_pin_timeout(void *eloop_data, void *user_ctx);
+static void hostapd_wps_nfc_clear(struct wps_context *wps);
 
 
 struct wps_for_each_data {
@@ -377,40 +378,11 @@ static int hapd_wps_reconfig_in_memory(struct hostapd_data *hapd,
 		}
 		bss->auth_algs = 1;
 	} else {
-		if ((cred->auth_type & WPS_AUTH_OPEN) &&
-		    (cred->auth_type & WPS_AUTH_SHARED))
-			bss->auth_algs = 3;
-		else if (cred->auth_type & WPS_AUTH_SHARED)
-			bss->auth_algs = 2;
-		else
-			bss->auth_algs = 1;
-		if (cred->encr_type & WPS_ENCR_WEP && cred->key_idx > 0 &&
-		    cred->key_idx <= 4) {
-			struct hostapd_wep_keys *wep = &bss->ssid.wep;
-			int idx = cred->key_idx;
-			if (idx)
-				idx--;
-			wep->idx = idx;
-			if (cred->key_len == 10 || cred->key_len == 26) {
-				os_free(wep->key[idx]);
-				wep->key[idx] = os_malloc(cred->key_len / 2);
-				if (wep->key[idx] == NULL ||
-				    hexstr2bin((const char *) cred->key,
-					       wep->key[idx],
-					       cred->key_len / 2))
-					return -1;
-				wep->len[idx] = cred->key_len / 2;
-			} else {
-				os_free(wep->key[idx]);
-				wep->key[idx] = os_malloc(cred->key_len);
-				if (wep->key[idx] == NULL)
-					return -1;
-				os_memcpy(wep->key[idx], cred->key,
-					  cred->key_len);
-				wep->len[idx] = cred->key_len;
-			}
-			wep->keys_set = 1;
-		}
+		/*
+		 * WPS 2.0 does not allow WEP to be configured, so no need to
+		 * process that option here either.
+		 */
+		bss->auth_algs = 1;
 	}
 
 	/* Schedule configuration reload after short period of time to allow
@@ -471,6 +443,8 @@ static int hapd_wps_cred_cb(struct hostapd_data *hapd, void *ctx)
 	hapd->wps->ssid_len = cred->ssid_len;
 	hapd->wps->encr_types = cred->encr_type;
 	hapd->wps->auth_types = cred->auth_type;
+	hapd->wps->ap_encr_type = cred->encr_type;
+	hapd->wps->ap_auth_type = cred->auth_type;
 	if (cred->key_len == 0) {
 		os_free(hapd->wps->network_key);
 		hapd->wps->network_key = NULL;
@@ -583,31 +557,11 @@ static int hapd_wps_cred_cb(struct hostapd_data *hapd, void *ctx)
 
 		fprintf(nconf, "auth_algs=1\n");
 	} else {
-		if ((cred->auth_type & WPS_AUTH_OPEN) &&
-		    (cred->auth_type & WPS_AUTH_SHARED))
-			fprintf(nconf, "auth_algs=3\n");
-		else if (cred->auth_type & WPS_AUTH_SHARED)
-			fprintf(nconf, "auth_algs=2\n");
-		else
-			fprintf(nconf, "auth_algs=1\n");
-
-		if (cred->encr_type & WPS_ENCR_WEP && cred->key_idx <= 4) {
-			int key_idx = cred->key_idx;
-			if (key_idx)
-				key_idx--;
-			fprintf(nconf, "wep_default_key=%d\n", key_idx);
-			fprintf(nconf, "wep_key%d=", key_idx);
-			if (cred->key_len == 10 || cred->key_len == 26) {
-				/* WEP key as a hex string */
-				for (i = 0; i < cred->key_len; i++)
-					fputc(cred->key[i], nconf);
-			} else {
-				/* Raw WEP key; convert to hex */
-				for (i = 0; i < cred->key_len; i++)
-					fprintf(nconf, "%02x", cred->key[i]);
-			}
-			fprintf(nconf, "\n");
-		}
+		/*
+		 * WPS 2.0 does not allow WEP to be configured, so no need to
+		 * process that option here either.
+		 */
+		fprintf(nconf, "auth_algs=1\n");
 	}
 
 	fprintf(nconf, "# WPS configuration - END\n");
@@ -895,13 +849,16 @@ static int hostapd_wps_rf_band_cb(void *ctx)
 }
 
 
-static void hostapd_wps_clear_ies(struct hostapd_data *hapd)
+static void hostapd_wps_clear_ies(struct hostapd_data *hapd, int deinit_only)
 {
 	wpabuf_free(hapd->wps_beacon_ie);
 	hapd->wps_beacon_ie = NULL;
 
 	wpabuf_free(hapd->wps_probe_resp_ie);
 	hapd->wps_probe_resp_ie = NULL;
+
+	if (deinit_only)
+		return;
 
 	hostapd_set_ap_wps_ie(hapd);
 }
@@ -985,6 +942,21 @@ static int hostapd_wps_set_vendor_ext(struct hostapd_data *hapd,
 }
 
 
+static void hostapd_free_wps(struct wps_context *wps)
+{
+	int i;
+
+	for (i = 0; i < MAX_WPS_VENDOR_EXTENSIONS; i++)
+		wpabuf_free(wps->dev.vendor_ext[i]);
+	wps_device_data_free(&wps->dev);
+	os_free(wps->network_key);
+	hostapd_wps_nfc_clear(wps);
+	wpabuf_free(wps->dh_pubkey);
+	wpabuf_free(wps->dh_privkey);
+	os_free(wps);
+}
+
+
 int hostapd_init_wps(struct hostapd_data *hapd,
 		     struct hostapd_bss_config *conf)
 {
@@ -992,7 +964,7 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 	struct wps_registrar_config cfg;
 
 	if (conf->wps_state == 0) {
-		hostapd_wps_clear_ies(hapd);
+		hostapd_wps_clear_ies(hapd, 0);
 		return 0;
 	}
 
@@ -1041,7 +1013,6 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 		os_strdup(hapd->conf->serial_number) : NULL;
 	wps->config_methods =
 		wps_config_methods_str2bin(hapd->conf->config_methods);
-#ifdef CONFIG_WPS2
 	if ((wps->config_methods &
 	     (WPS_CONFIG_DISPLAY | WPS_CONFIG_VIRT_DISPLAY |
 	      WPS_CONFIG_PHY_DISPLAY)) == WPS_CONFIG_DISPLAY) {
@@ -1056,14 +1027,11 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 			   "virtual_push_button for WPS 2.0 compliance");
 		wps->config_methods |= WPS_CONFIG_VIRT_PUSHBUTTON;
 	}
-#endif /* CONFIG_WPS2 */
 	os_memcpy(wps->dev.pri_dev_type, hapd->conf->device_type,
 		  WPS_DEV_TYPE_LEN);
 
-	if (hostapd_wps_set_vendor_ext(hapd, wps) < 0) {
-		os_free(wps);
-		return -1;
-	}
+	if (hostapd_wps_set_vendor_ext(hapd, wps) < 0)
+		goto fail;
 
 	wps->dev.os_version = WPA_GET_BE32(hapd->conf->os_version);
 
@@ -1102,18 +1070,6 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 	if (conf->ssid.security_policy == SECURITY_PLAINTEXT) {
 		wps->encr_types |= WPS_ENCR_NONE;
 		wps->auth_types |= WPS_AUTH_OPEN;
-	} else if (conf->ssid.security_policy == SECURITY_STATIC_WEP) {
-		wps->encr_types |= WPS_ENCR_WEP;
-		if (conf->auth_algs & WPA_AUTH_ALG_OPEN)
-			wps->auth_types |= WPS_AUTH_OPEN;
-		if (conf->auth_algs & WPA_AUTH_ALG_SHARED)
-			wps->auth_types |= WPS_AUTH_SHARED;
-	} else if (conf->ssid.security_policy == SECURITY_IEEE_802_1X) {
-		wps->auth_types |= WPS_AUTH_OPEN;
-		if (conf->default_wep_key_len)
-			wps->encr_types |= WPS_ENCR_WEP;
-		else
-			wps->encr_types |= WPS_ENCR_NONE;
 	}
 
 	if (conf->ssid.wpa_psk_file) {
@@ -1123,19 +1079,15 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 		wps->network_key_len = os_strlen(conf->ssid.wpa_passphrase);
 	} else if (conf->ssid.wpa_psk) {
 		wps->network_key = os_malloc(2 * PMK_LEN + 1);
-		if (wps->network_key == NULL) {
-			os_free(wps);
-			return -1;
-		}
+		if (wps->network_key == NULL)
+			goto fail;
 		wpa_snprintf_hex((char *) wps->network_key, 2 * PMK_LEN + 1,
 				 conf->ssid.wpa_psk->psk, PMK_LEN);
 		wps->network_key_len = 2 * PMK_LEN;
 	} else if (conf->ssid.wep.keys_set && conf->ssid.wep.key[0]) {
 		wps->network_key = os_malloc(conf->ssid.wep.len[0]);
-		if (wps->network_key == NULL) {
-			os_free(wps);
-			return -1;
-		}
+		if (wps->network_key == NULL)
+			goto fail;
 		os_memcpy(wps->network_key, conf->ssid.wep.key[0],
 			  conf->ssid.wep.len[0]);
 		wps->network_key_len = conf->ssid.wep.len[0];
@@ -1146,6 +1098,8 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 		wps->psk_set = 1;
 	}
 
+	wps->ap_auth_type = wps->auth_types;
+	wps->ap_encr_type = wps->encr_types;
 	if (conf->wps_state == WPS_STATE_NOT_CONFIGURED) {
 		/* Override parameters to enable security by default */
 		wps->auth_types = WPS_AUTH_WPA2PSK | WPS_AUTH_WPAPSK;
@@ -1179,9 +1133,7 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 	wps->registrar = wps_registrar_init(wps, &cfg);
 	if (wps->registrar == NULL) {
 		wpa_printf(MSG_ERROR, "Failed to initialize WPS Registrar");
-		os_free(wps->network_key);
-		os_free(wps);
-		return -1;
+		goto fail;
 	}
 
 #ifdef CONFIG_WPS_UPNP
@@ -1197,6 +1149,10 @@ int hostapd_init_wps(struct hostapd_data *hapd,
 	hapd->wps = wps;
 
 	return 0;
+
+fail:
+	hostapd_free_wps(wps);
+	return -1;
 }
 
 
@@ -1211,8 +1167,7 @@ int hostapd_init_wps_complete(struct hostapd_data *hapd)
 	if (hostapd_wps_upnp_init(hapd, wps) < 0) {
 		wpa_printf(MSG_ERROR, "Failed to initialize WPS UPnP");
 		wps_registrar_deinit(wps->registrar);
-		os_free(wps->network_key);
-		os_free(wps);
+		hostapd_free_wps(wps);
 		hapd->wps = NULL;
 		return -1;
 	}
@@ -1242,21 +1197,18 @@ void hostapd_deinit_wps(struct hostapd_data *hapd)
 	eloop_cancel_timeout(hostapd_wps_reenable_ap_pin, hapd, NULL);
 	eloop_cancel_timeout(hostapd_wps_ap_pin_timeout, hapd, NULL);
 	eloop_cancel_timeout(wps_reload_config, hapd->iface, NULL);
-	if (hapd->wps == NULL)
+	if (hapd->wps == NULL) {
+		hostapd_wps_clear_ies(hapd, 1);
 		return;
+	}
 #ifdef CONFIG_WPS_UPNP
 	hostapd_wps_upnp_deinit(hapd);
 #endif /* CONFIG_WPS_UPNP */
 	wps_registrar_deinit(hapd->wps->registrar);
-	os_free(hapd->wps->network_key);
-	wps_device_data_free(&hapd->wps->dev);
-	wpabuf_free(hapd->wps->dh_pubkey);
-	wpabuf_free(hapd->wps->dh_privkey);
 	wps_free_pending_msgs(hapd->wps->upnp_msgs);
-	hostapd_wps_nfc_clear(hapd->wps);
-	os_free(hapd->wps);
+	hostapd_free_wps(hapd->wps);
 	hapd->wps = NULL;
-	hostapd_wps_clear_ies(hapd);
+	hostapd_wps_clear_ies(hapd, 1);
 }
 
 
@@ -1338,7 +1290,7 @@ static int wps_button_pushed(struct hostapd_data *hapd, void *ctx)
 {
 	const u8 *p2p_dev_addr = ctx;
 	if (hapd->wps == NULL)
-		return 0;
+		return -1;
 	return wps_registrar_button_pushed(hapd->wps->registrar, p2p_dev_addr);
 }
 
@@ -1354,7 +1306,7 @@ int hostapd_wps_button_pushed(struct hostapd_data *hapd,
 static int wps_cancel(struct hostapd_data *hapd, void *ctx)
 {
 	if (hapd->wps == NULL)
-		return 0;
+		return -1;
 
 	wps_registrar_wps_cancel(hapd->wps->registrar);
 	ap_for_each_sta(hapd, ap_sta_wps_cancel, NULL);
@@ -1472,6 +1424,16 @@ static int hostapd_rx_req_put_wlan_response(
 
 	if (!sta || !(sta->flags & WLAN_STA_WPS)) {
 		wpa_printf(MSG_DEBUG, "WPS UPnP: No matching STA found");
+		return 0;
+	}
+
+	if (!sta->eapol_sm) {
+		/*
+		 * This can happen, e.g., if an ER sends an extra message after
+		 * the station has disassociated (but not fully
+		 * deauthenticated).
+		 */
+		wpa_printf(MSG_DEBUG, "WPS UPnP: Matching STA did not have EAPOL state machine initialized");
 		return 0;
 	}
 
@@ -1668,8 +1630,6 @@ int hostapd_wps_config_ap(struct hostapd_data *hapd, const char *ssid,
 	if (encr) {
 		if (os_strncmp(encr, "NONE", 4) == 0)
 			cred.encr_type = WPS_ENCR_NONE;
-		else if (os_strncmp(encr, "WEP", 3) == 0)
-			cred.encr_type = WPS_ENCR_WEP;
 		else if (os_strncmp(encr, "TKIP", 4) == 0)
 			cred.encr_type = WPS_ENCR_TKIP;
 		else if (os_strncmp(encr, "CCMP", 4) == 0)

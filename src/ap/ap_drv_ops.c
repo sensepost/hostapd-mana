@@ -128,14 +128,14 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_P2P_MANAGER */
 
-#ifdef CONFIG_WPS2
+#ifdef CONFIG_WPS
 	if (hapd->conf->wps_state) {
 		struct wpabuf *a = wps_build_assoc_resp_ie();
 		if (a && wpabuf_resize(&assocresp, wpabuf_len(a)) == 0)
 			wpabuf_put_buf(assocresp, a);
 		wpabuf_free(a);
 	}
-#endif /* CONFIG_WPS2 */
+#endif /* CONFIG_WPS */
 
 #ifdef CONFIG_P2P_MANAGER
 	if (hapd->conf->p2p & P2P_MANAGE) {
@@ -161,6 +161,17 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 #ifdef CONFIG_HS20
 	pos = buf;
 	pos = hostapd_eid_hs20_indication(hapd, pos);
+	if (pos != buf) {
+		if (wpabuf_resize(&beacon, pos - buf) != 0)
+			goto fail;
+		wpabuf_put_data(beacon, buf, pos - buf);
+
+		if (wpabuf_resize(&proberesp, pos - buf) != 0)
+			goto fail;
+		wpabuf_put_data(proberesp, buf, pos - buf);
+	}
+
+	pos = hostapd_eid_osen(hapd, buf);
 	if (pos != buf) {
 		if (wpabuf_resize(&beacon, pos - buf) != 0)
 			goto fail;
@@ -269,7 +280,8 @@ int hostapd_set_drv_ieee8021x(struct hostapd_data *hapd, const char *ifname,
 		params.wpa = hapd->conf->wpa;
 		params.ieee802_1x = hapd->conf->ieee802_1x;
 		params.wpa_group = hapd->conf->wpa_group;
-		params.wpa_pairwise = hapd->conf->wpa_pairwise;
+		params.wpa_pairwise = hapd->conf->wpa_pairwise |
+			hapd->conf->rsn_pairwise;
 		params.wpa_key_mgmt = hapd->conf->wpa_key_mgmt;
 		params.rsn_preauth = hapd->conf->rsn_preauth;
 #ifdef CONFIG_IEEE80211W
@@ -346,7 +358,7 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    u16 listen_interval,
 		    const struct ieee80211_ht_capabilities *ht_capab,
 		    const struct ieee80211_vht_capabilities *vht_capab,
-		    u32 flags, u8 qosinfo)
+		    u32 flags, u8 qosinfo, u8 vht_opmode)
 {
 	struct hostapd_sta_add_params params;
 
@@ -364,6 +376,8 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.listen_interval = listen_interval;
 	params.ht_capabilities = ht_capab;
 	params.vht_capabilities = vht_capab;
+	params.vht_opmode_enabled = !!(flags & WLAN_STA_VHT_OPMODE_ENABLED);
+	params.vht_opmode = vht_opmode;
 	params.flags = hostapd_sta_flags_to_drv(flags);
 	params.qosinfo = qosinfo;
 	return hapd->driver->sta_add(hapd->drv_priv, &params);
@@ -490,7 +504,8 @@ int hostapd_set_freq_params(struct hostapd_freq_params *data, int mode,
 	case VHT_CHANWIDTH_USE_HT:
 		if (center_segment1)
 			return -1;
-		if (5000 + center_segment0 * 5 != data->center_freq1 &&
+		if (center_segment0 != 0 &&
+		    5000 + center_segment0 * 5 != data->center_freq1 &&
 		    2407 + center_segment0 * 5 != data->center_freq1)
 			return -1;
 		break;
@@ -754,12 +769,16 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface, int mode, int freq,
 				    vht_enabled, sec_channel_offset,
 				    vht_oper_chwidth, center_segment0,
 				    center_segment1,
-				    iface->current_mode->vht_capab))
+				    iface->current_mode->vht_capab)) {
+		wpa_printf(MSG_ERROR, "Can't set freq params");
 		return -1;
+	}
 
 	res = hapd->driver->start_dfs_cac(hapd->drv_priv, &data);
-	if (!res)
+	if (!res) {
 		iface->cac_started = 1;
+		os_get_reltime(&iface->dfs_cac_start);
+	}
 
 	return res;
 }

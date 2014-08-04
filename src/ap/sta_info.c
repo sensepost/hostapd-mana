@@ -30,11 +30,13 @@
 #include "p2p_hostapd.h"
 #include "ap_drv_ops.h"
 #include "gas_serv.h"
+#include "wnm_ap.h"
 #include "sta_info.h"
 
 static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
 				       struct sta_info *sta);
 static void ap_handle_session_timer(void *eloop_ctx, void *timeout_ctx);
+static void ap_handle_session_warning_timer(void *eloop_ctx, void *timeout_ctx);
 static void ap_sta_deauth_cb_timeout(void *eloop_ctx, void *timeout_ctx);
 static void ap_sta_disassoc_cb_timeout(void *eloop_ctx, void *timeout_ctx);
 #ifdef CONFIG_IEEE80211W
@@ -154,7 +156,8 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	if (sta->flags & WLAN_STA_WDS)
 		hostapd_set_wds_sta(hapd, NULL, sta->addr, sta->aid, 0);
 
-	if (!(sta->flags & WLAN_STA_PREAUTH))
+	if (!hapd->iface->driver_ap_teardown &&
+	    !(sta->flags & WLAN_STA_PREAUTH))
 		hostapd_drv_sta_remove(hapd, sta->addr);
 
 	ap_sta_hash_del(hapd, sta);
@@ -203,6 +206,10 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		hapd->iface->num_sta_ht_20mhz--;
 	}
 
+#ifdef CONFIG_IEEE80211N
+	ht40_intolerant_remove(hapd->iface, sta);
+#endif /* CONFIG_IEEE80211N */
+
 #ifdef CONFIG_P2P
 	if (sta->no_p2p_set) {
 		sta->no_p2p_set = 0;
@@ -224,6 +231,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		   __func__, MAC2STR(sta->addr));
 	eloop_cancel_timeout(ap_handle_timer, hapd, sta);
 	eloop_cancel_timeout(ap_handle_session_timer, hapd, sta);
+	eloop_cancel_timeout(ap_handle_session_warning_timer, hapd, sta);
 	eloop_cancel_timeout(ap_sta_deauth_cb_timeout, hapd, sta);
 	eloop_cancel_timeout(ap_sta_disassoc_cb_timeout, hapd, sta);
 
@@ -235,7 +243,6 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 		radius_client_flush_auth(hapd->radius, sta->addr);
 #endif /* CONFIG_NO_RADIUS */
 
-	os_free(sta->last_assoc_req);
 	os_free(sta->challenge);
 
 #ifdef CONFIG_IEEE80211W
@@ -265,6 +272,9 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 	hostapd_free_psk_list(sta->psk);
 	os_free(sta->identity);
 	os_free(sta->radius_cui);
+	os_free(sta->remediation_url);
+	wpabuf_free(sta->hs20_deauth_req);
+	os_free(sta->hs20_session_info_url);
 
 #ifdef CONFIG_SAE
 	sae_clear_data(sta->sae);
@@ -466,7 +476,6 @@ static void ap_handle_session_timer(void *eloop_ctx, void *timeout_ctx)
 {
 	struct hostapd_data *hapd = eloop_ctx;
 	struct sta_info *sta = timeout_ctx;
-	u8 addr[ETH_ALEN];
 
 	if (!(sta->flags & WLAN_STA_AUTH)) {
 		if (sta->flags & WLAN_STA_GAS) {
@@ -477,6 +486,8 @@ static void ap_handle_session_timer(void *eloop_ctx, void *timeout_ctx)
 		return;
 	}
 
+	hostapd_drv_sta_deauth(hapd, sta->addr,
+			       WLAN_REASON_PREV_AUTH_NOT_VALID);
 	mlme_deauthenticate_indication(hapd, sta,
 				       WLAN_REASON_PREV_AUTH_NOT_VALID);
 	hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
@@ -484,9 +495,7 @@ static void ap_handle_session_timer(void *eloop_ctx, void *timeout_ctx)
 		       "session timeout");
 	sta->acct_terminate_cause =
 		RADIUS_ACCT_TERMINATE_CAUSE_SESSION_TIMEOUT;
-	os_memcpy(addr, sta->addr, ETH_ALEN);
 	ap_free_sta(hapd, sta);
-	hostapd_drv_sta_deauth(hapd, addr, WLAN_REASON_PREV_AUTH_NOT_VALID);
 }
 
 
@@ -517,6 +526,32 @@ void ap_sta_session_timeout(struct hostapd_data *hapd, struct sta_info *sta,
 void ap_sta_no_session_timeout(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	eloop_cancel_timeout(ap_handle_session_timer, hapd, sta);
+}
+
+
+static void ap_handle_session_warning_timer(void *eloop_ctx, void *timeout_ctx)
+{
+#ifdef CONFIG_WNM
+	struct hostapd_data *hapd = eloop_ctx;
+	struct sta_info *sta = timeout_ctx;
+
+	wpa_printf(MSG_DEBUG, "WNM: Session warning time reached for " MACSTR,
+		   MAC2STR(sta->addr));
+	if (sta->hs20_session_info_url == NULL)
+		return;
+
+	wnm_send_ess_disassoc_imminent(hapd, sta, sta->hs20_session_info_url,
+				       sta->hs20_disassoc_timer);
+#endif /* CONFIG_WNM */
+}
+
+
+void ap_sta_session_warning_timeout(struct hostapd_data *hapd,
+				    struct sta_info *sta, int warning_time)
+{
+	eloop_cancel_timeout(ap_handle_session_warning_timer, hapd, sta);
+	eloop_register_timeout(warning_time, 0, ap_handle_session_warning_timer,
+			       hapd, sta);
 }
 
 

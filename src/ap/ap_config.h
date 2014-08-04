@@ -45,7 +45,8 @@ typedef enum hostap_security_policy {
 	SECURITY_STATIC_WEP = 1,
 	SECURITY_IEEE_802_1X = 2,
 	SECURITY_WPA_PSK = 3,
-	SECURITY_WPA = 4
+	SECURITY_WPA = 4,
+	SECURITY_OSEN = 5
 } secpolicy;
 
 struct hostapd_ssid {
@@ -125,7 +126,10 @@ struct hostapd_eap_user {
 	unsigned int wildcard_prefix:1;
 	unsigned int password_hash:1; /* whether password is hashed with
 				       * nt_password_hash() */
+	unsigned int remediation:1;
+	unsigned int macacl:1;
 	int ttls_auth; /* EAP_TTLS_AUTH_* bitfield */
+	struct hostapd_radius_attr *accept_attr;
 };
 
 struct hostapd_radius_attr {
@@ -251,6 +255,7 @@ struct hostapd_bss_config {
 	int wpa_key_mgmt;
 #ifdef CONFIG_IEEE80211W
 	enum mfp_options ieee80211w;
+	int group_mgmt_cipher;
 	/* dot11AssociationSAQueryMaximumTimeout (in TUs) */
 	unsigned int assoc_sa_query_max_timeout;
 	/* dot11AssociationSAQueryRetryTimeout (in TUs) */
@@ -311,6 +316,7 @@ struct hostapd_bss_config {
 
 	char *radius_server_clients;
 	int radius_server_auth_port;
+	int radius_server_acct_port;
 	int radius_server_ipv6;
 
 	char *test_socket; /* UNIX domain socket path for driver_test */
@@ -451,9 +457,11 @@ struct hostapd_bss_config {
 	u8 qos_map_set[16 + 2 * 21];
 	unsigned int qos_map_set_len;
 
+	int osen;
 #ifdef CONFIG_HS20
 	int hs20;
 	int disable_dgaf;
+	u16 anqp_domain_id;
 	unsigned int hs20_oper_friendly_name_count;
 	struct hostapd_lang_string *hs20_oper_friendly_name;
 	u8 *hs20_wan_metrics;
@@ -461,6 +469,32 @@ struct hostapd_bss_config {
 	size_t hs20_connection_capability_len;
 	u8 *hs20_operating_class;
 	u8 hs20_operating_class_len;
+	struct hs20_icon {
+		u16 width;
+		u16 height;
+		char language[3];
+		char type[256];
+		char name[256];
+		char file[256];
+	} *hs20_icons;
+	size_t hs20_icons_count;
+	u8 osu_ssid[HOSTAPD_MAX_SSID_LEN];
+	size_t osu_ssid_len;
+	struct hs20_osu_provider {
+		unsigned int friendly_name_count;
+		struct hostapd_lang_string *friendly_name;
+		char *server_uri;
+		int *method_list;
+		char **icons;
+		size_t icons_count;
+		char *osu_nai;
+		unsigned int service_desc_count;
+		struct hostapd_lang_string *service_desc;
+	} *hs20_osu_providers, *last_osu;
+	size_t hs20_osu_providers_count;
+	unsigned int hs20_deauth_req_timeout;
+	char *subscr_remediation_url;
+	u8 subscr_remediation_method;
 #endif /* CONFIG_HS20 */
 
 	u8 wps_rf_bands; /* RF bands for WPS (WPS_RF_*) */
@@ -488,15 +522,12 @@ struct hostapd_config {
 	struct hostapd_bss_config **bss, *last_bss;
 	size_t num_bss;
 
-	// KARMA
-	int enable_karma;
-	// KARMA END
-
 	u16 beacon_int;
 	int rts_threshold;
 	int fragm_threshold;
 	u8 send_probe_response;
 	u8 channel;
+	int *chanlist;
 	enum hostapd_hw_mode hw_mode; /* HOSTAPD_MODE_IEEE80211A, .. */
 	enum {
 		LONG_PREAMBLE = 0,
@@ -521,6 +552,16 @@ struct hostapd_config {
 	int ieee80211d;
 
 	int ieee80211h; /* DFS */
+
+	/*
+	 * Local power constraint is an octet encoded as an unsigned integer in
+	 * units of decibels. Invalid value -1 indicates that Power Constraint
+	 * element will not be added.
+	 */
+	int local_pwr_constraint;
+
+	/* Control Spectrum Management bit */
+	int spectrum_mgmt_required;
 
 	struct hostapd_tx_queue_params tx_queue[NUM_TX_QUEUES];
 
@@ -564,13 +605,12 @@ int hostapd_mac_comp(const void *a, const void *b);
 int hostapd_mac_comp_empty(const void *a);
 struct hostapd_config * hostapd_config_defaults(void);
 void hostapd_config_defaults_bss(struct hostapd_bss_config *bss);
+void hostapd_config_free_eap_user(struct hostapd_eap_user *user);
 void hostapd_config_free_bss(struct hostapd_bss_config *conf);
 void hostapd_config_free(struct hostapd_config *conf);
 int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 			  const u8 *addr, int *vlan_id);
 int hostapd_rate_found(int *list, int rate);
-int hostapd_wep_key_cmp(struct hostapd_wep_keys *a,
-			struct hostapd_wep_keys *b);
 const u8 * hostapd_get_psk(const struct hostapd_bss_config *conf,
 			   const u8 *addr, const u8 *p2p_dev_addr,
 			   const u8 *prev_psk);
@@ -581,6 +621,7 @@ const char * hostapd_get_vlan_id_ifname(struct hostapd_vlan *vlan,
 struct hostapd_radius_attr *
 hostapd_config_get_radius_attr(struct hostapd_radius_attr *attr, u8 type);
 int hostapd_config_check(struct hostapd_config *conf, int full_config);
-void hostapd_set_security_params(struct hostapd_bss_config *bss);
+void hostapd_set_security_params(struct hostapd_bss_config *bss,
+				 int full_config);
 
 #endif /* HOSTAPD_CONFIG_H */

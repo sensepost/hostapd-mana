@@ -73,6 +73,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 #ifdef CONFIG_IEEE80211W
 	bss->assoc_sa_query_max_timeout = 1000;
 	bss->assoc_sa_query_retry_timeout = 201;
+	bss->group_mgmt_cipher = WPA_CIPHER_AES_128_CMAC;
 #endif /* CONFIG_IEEE80211W */
 #ifdef EAP_SERVER_FAST
 	 /* both anonymous and authenticated provisioning */
@@ -106,9 +107,9 @@ struct hostapd_config * hostapd_config_defaults(void)
 	const struct hostapd_wmm_ac_params ac_be =
 		{ aCWmin, aCWmax, 3, 0, 0 }; /* best effort traffic */
 	const struct hostapd_wmm_ac_params ac_vi = /* video traffic */
-		{ aCWmin - 1, aCWmin, 2, 3000 / 32, 0 };
+		{ aCWmin - 1, aCWmin, 2, 3008 / 32, 0 };
 	const struct hostapd_wmm_ac_params ac_vo = /* voice traffic */
-		{ aCWmin - 2, aCWmin - 1, 2, 1500 / 32, 0 };
+		{ aCWmin - 2, aCWmin - 1, 2, 1504 / 32, 0 };
 	const struct hostapd_tx_queue_params txq_bk =
 		{ 7, ecw2cw(aCWmin), ecw2cw(aCWmax), 0 };
 	const struct hostapd_tx_queue_params txq_be =
@@ -154,6 +155,8 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->rts_threshold = -1; /* use driver default: 2347 */
 	conf->fragm_threshold = -1; /* user driver default: 2346 */
 	conf->send_probe_response = 1;
+	/* Set to invalid value means do not add Power Constraint IE */
+	conf->local_pwr_constraint = -1;
 
 	conf->wmm_ac_params[0] = ac_be;
 	conf->wmm_ac_params[1] = ac_bk;
@@ -171,11 +174,11 @@ struct hostapd_config * hostapd_config_defaults(void)
 	conf->ap_table_expiration_time = 60;
 
 #ifdef CONFIG_TESTING_OPTIONS
-	conf->ignore_probe_probability = 0.0d;
-	conf->ignore_auth_probability = 0.0d;
-	conf->ignore_assoc_probability = 0.0d;
-	conf->ignore_reassoc_probability = 0.0d;
-	conf->corrupt_gtk_rekey_mic_probability = 0.0d;
+	conf->ignore_probe_probability = 0.0;
+	conf->ignore_auth_probability = 0.0;
+	conf->ignore_assoc_probability = 0.0;
+	conf->ignore_reassoc_probability = 0.0;
+	conf->corrupt_gtk_rekey_mic_probability = 0.0;
 #endif /* CONFIG_TESTING_OPTIONS */
 
 #ifdef CONFIG_ACS
@@ -336,20 +339,6 @@ int hostapd_setup_wpa_psk(struct hostapd_bss_config *conf)
 }
 
 
-int hostapd_wep_key_cmp(struct hostapd_wep_keys *a, struct hostapd_wep_keys *b)
-{
-	int i;
-
-	if (a->idx != b->idx || a->default_len != b->default_len)
-		return 1;
-	for (i = 0; i < NUM_WEP_KEYS; i++)
-		if (a->len[i] != b->len[i] ||
-		    os_memcmp(a->key[i], b->key[i], a->len[i]) != 0)
-			return 1;
-	return 0;
-}
-
-
 static void hostapd_config_free_radius(struct hostapd_radius_server *servers,
 				       int num_servers)
 {
@@ -386,8 +375,9 @@ static void hostapd_config_free_radius_attr(struct hostapd_radius_attr *attr)
 }
 
 
-static void hostapd_config_free_eap_user(struct hostapd_eap_user *user)
+void hostapd_config_free_eap_user(struct hostapd_eap_user *user)
 {
+	hostapd_config_free_radius_attr(user->accept_attr);
 	os_free(user->identity);
 	os_free(user->password);
 	os_free(user);
@@ -526,6 +516,25 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 	os_free(conf->hs20_wan_metrics);
 	os_free(conf->hs20_connection_capability);
 	os_free(conf->hs20_operating_class);
+	os_free(conf->hs20_icons);
+	if (conf->hs20_osu_providers) {
+		size_t i;
+		for (i = 0; i < conf->hs20_osu_providers_count; i++) {
+			struct hs20_osu_provider *p;
+			size_t j;
+			p = &conf->hs20_osu_providers[i];
+			os_free(p->friendly_name);
+			os_free(p->server_uri);
+			os_free(p->method_list);
+			for (j = 0; j < p->icons_count; j++)
+				os_free(p->icons[j]);
+			os_free(p->icons);
+			os_free(p->osu_nai);
+			os_free(p->service_desc);
+		}
+		os_free(conf->hs20_osu_providers);
+	}
+	os_free(conf->subscr_remediation_url);
 #endif /* CONFIG_HS20 */
 
 	wpabuf_free(conf->vendor_elements);
@@ -554,6 +563,7 @@ void hostapd_config_free(struct hostapd_config *conf)
 	os_free(conf->bss);
 	os_free(conf->supported_rates);
 	os_free(conf->basic_rates);
+	os_free(conf->chanlist);
 
 	os_free(conf);
 }
@@ -641,12 +651,11 @@ const u8 * hostapd_get_psk(const struct hostapd_bss_config *conf,
 	struct hostapd_wpa_psk *psk;
 	int next_ok = prev_psk == NULL;
 
-	if (p2p_dev_addr) {
+	if (p2p_dev_addr && !is_zero_ether_addr(p2p_dev_addr)) {
 		wpa_printf(MSG_DEBUG, "Searching a PSK for " MACSTR
 			   " p2p_dev_addr=" MACSTR " prev_psk=%p",
 			   MAC2STR(addr), MAC2STR(p2p_dev_addr), prev_psk);
-		if (!is_zero_ether_addr(p2p_dev_addr))
-			addr = NULL; /* Use P2P Device Address for matching */
+		addr = NULL; /* Use P2P Device Address for matching */
 	} else {
 		wpa_printf(MSG_DEBUG, "Searching a PSK for " MACSTR
 			   " prev_psk=%p",
@@ -772,7 +781,7 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	}
 #endif /* CONFIG_IEEE80211N */
 
-#ifdef CONFIG_WPS2
+#ifdef CONFIG_WPS
 	if (full_config && bss->wps_state && bss->ignore_broadcast_ssid) {
 		wpa_printf(MSG_INFO, "WPS: ignore_broadcast_ssid "
 			   "configuration forced WPS to be disabled");
@@ -793,7 +802,7 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 			   "WPA2/CCMP forced WPS to be disabled");
 		bss->wps_state = 0;
 	}
-#endif /* CONFIG_WPS2 */
+#endif /* CONFIG_WPS */
 
 #ifdef CONFIG_HS20
 	if (full_config && bss->hs20 &&
@@ -829,6 +838,18 @@ int hostapd_config_check(struct hostapd_config *conf, int full_config)
 		return -1;
 	}
 
+	if (full_config && conf->local_pwr_constraint != -1 &&
+	    !conf->ieee80211d) {
+		wpa_printf(MSG_ERROR, "Cannot add Power Constraint element without Country element");
+		return -1;
+	}
+
+	if (full_config && conf->spectrum_mgmt_required &&
+	    conf->local_pwr_constraint == -1) {
+		wpa_printf(MSG_ERROR, "Cannot set Spectrum Management bit without Country and Power Constraint elements");
+		return -1;
+	}
+
 	for (i = 0; i < conf->num_bss; i++) {
 		if (hostapd_config_check_bss(conf->bss[i], conf, full_config))
 			return -1;
@@ -838,7 +859,8 @@ int hostapd_config_check(struct hostapd_config *conf, int full_config)
 }
 
 
-void hostapd_set_security_params(struct hostapd_bss_config *bss)
+void hostapd_set_security_params(struct hostapd_bss_config *bss,
+				 int full_config)
 {
 	if (bss->individual_wep_key_len == 0) {
 		/* individual keys are not use; can use key idx0 for
@@ -851,8 +873,10 @@ void hostapd_set_security_params(struct hostapd_bss_config *bss)
 	bss->wpa_group = wpa_select_ap_group_cipher(bss->wpa, bss->wpa_pairwise,
 						    bss->rsn_pairwise);
 
-	bss->radius->auth_server = bss->radius->auth_servers;
-	bss->radius->acct_server = bss->radius->acct_servers;
+	if (full_config) {
+		bss->radius->auth_server = bss->radius->auth_servers;
+		bss->radius->acct_server = bss->radius->acct_servers;
+	}
 
 	if (bss->wpa && bss->ieee802_1x) {
 		bss->ssid.security_policy = SECURITY_WPA;
@@ -876,6 +900,11 @@ void hostapd_set_security_params(struct hostapd_bss_config *bss)
 		bss->wpa_group = cipher;
 		bss->wpa_pairwise = cipher;
 		bss->rsn_pairwise = cipher;
+	} else if (bss->osen) {
+		bss->ssid.security_policy = SECURITY_OSEN;
+		bss->wpa_group = WPA_CIPHER_CCMP;
+		bss->wpa_pairwise = 0;
+		bss->rsn_pairwise = WPA_CIPHER_CCMP;
 	} else {
 		bss->ssid.security_policy = SECURITY_PLAINTEXT;
 		bss->wpa_group = WPA_CIPHER_NONE;

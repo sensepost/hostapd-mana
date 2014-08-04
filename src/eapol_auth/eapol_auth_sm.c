@@ -219,7 +219,8 @@ SM_STATE(AUTH_PAE, DISCONNECTED)
 	sm->eapolLogoff = FALSE;
 	if (!from_initialize) {
 		sm->eapol->cb.finished(sm->eapol->conf.ctx, sm->sta, 0,
-				       sm->flags & EAPOL_SM_PREAUTH);
+				       sm->flags & EAPOL_SM_PREAUTH,
+				       sm->remediation);
 	}
 }
 
@@ -276,7 +277,7 @@ SM_STATE(AUTH_PAE, HELD)
 				   eap_server_get_name(0, sm->eap_type_supp));
 	}
 	sm->eapol->cb.finished(sm->eapol->conf.ctx, sm->sta, 0,
-			       sm->flags & EAPOL_SM_PREAUTH);
+			       sm->flags & EAPOL_SM_PREAUTH, sm->remediation);
 }
 
 
@@ -302,7 +303,7 @@ SM_STATE(AUTH_PAE, AUTHENTICATED)
 			   eap_server_get_name(0, sm->eap_type_authsrv),
 			   extra);
 	sm->eapol->cb.finished(sm->eapol->conf.ctx, sm->sta, 1,
-			       sm->flags & EAPOL_SM_PREAUTH);
+			       sm->flags & EAPOL_SM_PREAUTH, sm->remediation);
 }
 
 
@@ -1001,8 +1002,13 @@ static int eapol_sm_get_eap_user(void *ctx, const u8 *identity,
 				 struct eap_user *user)
 {
 	struct eapol_state_machine *sm = ctx;
-	return sm->eapol->cb.get_eap_user(sm->eapol->conf.ctx, identity,
-					  identity_len, phase2, user);
+	int ret;
+
+	ret = sm->eapol->cb.get_eap_user(sm->eapol->conf.ctx, identity,
+					 identity_len, phase2, user);
+	if (user->remediation)
+		sm->remediation = 1;
+	return ret;
 }
 
 
@@ -1017,7 +1023,8 @@ static const char * eapol_sm_get_eap_req_id_text(void *ctx, size_t *len)
 static struct eapol_callbacks eapol_cb =
 {
 	eapol_sm_get_eap_user,
-	eapol_sm_get_eap_req_id_text
+	eapol_sm_get_eap_req_id_text,
+	NULL
 };
 
 

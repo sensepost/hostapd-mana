@@ -14,6 +14,7 @@
 
 #include "utils/common.h"
 #include "utils/eloop.h"
+#include "utils/uuid.h"
 #include "crypto/random.h"
 #include "crypto/tls.h"
 #include "common/version.h"
@@ -91,7 +92,8 @@ static void hostapd_logger_cb(void *ctx, const u8 *addr, unsigned int module,
 	if (hapd && hapd->conf && addr)
 		os_snprintf(format, maxlen, "%s: STA " MACSTR "%s%s: %s",
 			    hapd->conf->iface, MAC2STR(addr),
-			    module_str ? " " : "", module_str, txt);
+			    module_str ? " " : "", module_str ? module_str : "",
+			    txt);
 	else if (hapd && hapd->conf)
 		os_snprintf(format, maxlen, "%s:%s%s %s",
 			    hapd->conf->iface, module_str ? " " : "",
@@ -414,8 +416,7 @@ static void show_version(void)
 		"User space daemon for IEEE 802.11 AP management,\n"
 		"IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator\n"
 		"Copyright (c) 2002-2014, Jouni Malinen <j@w1.fi> "
-		"and contributors\n"
-		"Karma patches by Robin Wood - robin@digininja.org & singe dominic@sensepost.com\n");
+		"and contributors\n");
 }
 
 
@@ -502,6 +503,27 @@ static int hostapd_get_ctrl_iface_group(struct hapd_interfaces *interfaces,
 }
 
 
+#ifdef CONFIG_WPS
+static int gen_uuid(const char *txt_addr)
+{
+	u8 addr[ETH_ALEN];
+	u8 uuid[UUID_LEN];
+	char buf[100];
+
+	if (hwaddr_aton(txt_addr, addr) < 0)
+		return -1;
+
+	uuid_gen_mac_addr(addr, uuid);
+	if (uuid_bin2str(uuid, buf, sizeof(buf)) < 0)
+		return -1;
+
+	printf("%s\n", buf);
+
+	return 0;
+}
+#endif /* CONFIG_WPS */
+
+
 int main(int argc, char *argv[])
 {
 	struct hapd_interfaces interfaces;
@@ -532,7 +554,7 @@ int main(int argc, char *argv[])
 	interfaces.global_ctrl_sock = -1;
 
 	for (;;) {
-		c = getopt(argc, argv, "b:Bde:f:hKP:Ttvg:G:");
+		c = getopt(argc, argv, "b:Bde:f:hKP:Ttu:vg:G:");
 		if (c < 0)
 			break;
 		switch (c) {
@@ -589,6 +611,10 @@ int main(int argc, char *argv[])
 			bss_config = tmp_bss;
 			bss_config[num_bss_configs++] = optarg;
 			break;
+#ifdef CONFIG_WPS
+		case 'u':
+			return gen_uuid(optarg);
+#endif /* CONFIG_WPS */
 		default:
 			usage();
 			break;
@@ -702,8 +728,14 @@ int main(int argc, char *argv[])
  out:
 	hostapd_global_ctrl_iface_deinit(&interfaces);
 	/* Deinitialize all interfaces */
-	for (i = 0; i < interfaces.count; i++)
+	for (i = 0; i < interfaces.count; i++) {
+		if (!interfaces.iface[i])
+			continue;
+		interfaces.iface[i]->driver_ap_teardown =
+			!!(interfaces.iface[i]->drv_flags &
+			   WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
 		hostapd_interface_deinit_free(interfaces.iface[i]);
+	}
 	os_free(interfaces.iface);
 
 	hostapd_global_deinit(pid_file);

@@ -108,10 +108,15 @@ static int ieee802_11_parse_vendor_specific(const u8 *pos, size_t elen,
 			elems->hs20 = pos;
 			elems->hs20_len = elen;
 			break;
+		case HS20_OSEN_OUI_TYPE:
+			/* Hotspot 2.0 OSEN */
+			elems->osen = pos;
+			elems->osen_len = elen;
+			break;
 		default:
 			wpa_printf(MSG_MSGDUMP, "Unknown WFA "
 				   "information element ignored "
-				   "(type=%d len=%lu)\n",
+				   "(type=%d len=%lu)",
 				   pos[3], (unsigned long) elen);
 			return -1;
 		}
@@ -251,6 +256,11 @@ ParseRes ieee802_11_parse_elems(const u8 *start, size_t len,
 		case WLAN_EID_VHT_OPERATION:
 			elems->vht_operation = pos;
 			elems->vht_operation_len = elen;
+			break;
+		case WLAN_EID_VHT_OPERATING_MODE_NOTIFICATION:
+			if (elen != 1)
+				break;
+			elems->vht_opmode_notif = pos;
 			break;
 		case WLAN_EID_LINK_ID:
 			if (elen < 18)

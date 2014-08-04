@@ -9,6 +9,7 @@
 #include "utils/includes.h"
 
 #include "utils/common.h"
+#include "utils/eloop.h"
 #include "radius/radius.h"
 #include "drivers/driver.h"
 #include "common/ieee802_11_defs.h"
@@ -30,6 +31,7 @@
 #include "ap_config.h"
 #include "hw_features.h"
 #include "dfs.h"
+#include "beacon.h"
 
 
 int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
@@ -78,6 +80,12 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 		ie = elems.wpa_ie - 2;
 		ielen = elems.wpa_ie_len + 2;
 		wpa_printf(MSG_DEBUG, "STA included WPA IE in (Re)AssocReq");
+#ifdef CONFIG_HS20
+	} else if (elems.osen) {
+		ie = elems.osen - 2;
+		ielen = elems.osen_len + 2;
+		wpa_printf(MSG_DEBUG, "STA included OSEN IE in (Re)AssocReq");
+#endif /* CONFIG_HS20 */
 	} else {
 		ie = NULL;
 		ielen = 0;
@@ -114,6 +122,24 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 			p2p_dev_addr = p2p_get_go_dev_addr(sta->p2p_ie);
 	}
 #endif /* CONFIG_P2P */
+
+#ifdef CONFIG_IEEE80211N
+#ifdef NEED_AP_MLME
+	if (elems.ht_capabilities &&
+	    elems.ht_capabilities_len >=
+	    sizeof(struct ieee80211_ht_capabilities) &&
+	    (hapd->iface->conf->ht_capab &
+	     HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET)) {
+		struct ieee80211_ht_capabilities *ht_cap =
+			(struct ieee80211_ht_capabilities *)
+			elems.ht_capabilities;
+
+		if (le_to_host16(ht_cap->ht_capabilities_info) &
+		    HT_CAP_INFO_40MHZ_INTOLERANT)
+			ht40_intolerant_add(hapd->iface, sta);
+	}
+#endif /* NEED_AP_MLME */
+#endif /* CONFIG_IEEE80211N */
 
 #ifdef CONFIG_INTERWORKING
 	if (elems.ext_capab && elems.ext_capab_len > 4) {
@@ -281,6 +307,29 @@ int hostapd_notif_assoc(struct hostapd_data *hapd, const u8 *addr,
 			sta->flags |= WLAN_STA_MAYBE_WPS;
 		wpabuf_free(wps);
 #endif /* CONFIG_WPS */
+#ifdef CONFIG_HS20
+	} else if (hapd->conf->osen) {
+		if (elems.osen == NULL) {
+			hostapd_logger(
+				hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+				HOSTAPD_LEVEL_INFO,
+				"No HS 2.0 OSEN element in association request");
+			return WLAN_STATUS_INVALID_IE;
+		}
+
+		wpa_printf(MSG_DEBUG, "HS 2.0: OSEN association");
+		if (sta->wpa_sm == NULL)
+			sta->wpa_sm = wpa_auth_sta_init(hapd->wpa_auth,
+							sta->addr, NULL);
+		if (sta->wpa_sm == NULL) {
+			wpa_printf(MSG_WARNING, "Failed to initialize WPA "
+				   "state machine");
+			return WLAN_STATUS_UNSPECIFIED_FAILURE;
+		}
+		if (wpa_validate_osen(hapd->wpa_auth, sta->wpa_sm,
+				      elems.osen - 2, elems.osen_len + 2) < 0)
+			return WLAN_STATUS_INVALID_IE;
+#endif /* CONFIG_HS20 */
 	}
 #ifdef CONFIG_WPS
 skip_wpa_check:
@@ -621,7 +670,7 @@ static struct hostapd_data * get_hapd_bssid(struct hostapd_iface *iface,
 		return HAPD_BROADCAST;
 
 	for (i = 0; i < iface->num_bss; i++) {
-		if (os_memcmp(bssid, iface->bss[i]->own_addr, ETH_ALEN) == 0) 
+		if (os_memcmp(bssid, iface->bss[i]->own_addr, ETH_ALEN) == 0)
 			return iface->bss[i];
 	}
 
@@ -648,6 +697,20 @@ static int hostapd_mgmt_rx(struct hostapd_data *hapd, struct rx_mgmt *rx_mgmt)
 	const u8 *bssid;
 	struct hostapd_frame_info fi;
 	int ret;
+
+#ifdef CONFIG_TESTING_OPTIONS
+	if (hapd->ext_mgmt_frame_handling) {
+		size_t hex_len = 2 * rx_mgmt->frame_len + 1;
+		char *hex = os_malloc(hex_len);
+		if (hex) {
+			wpa_snprintf_hex(hex, hex_len, rx_mgmt->frame,
+					 rx_mgmt->frame_len);
+			wpa_msg(hapd->msg_ctx, MSG_INFO, "MGMT-RX %s", hex);
+			os_free(hex);
+		}
+		return 1;
+	}
+#endif /* CONFIG_TESTING_OPTIONS */
 
 	hdr = (const struct ieee80211_hdr *) rx_mgmt->frame;
 	bssid = get_hdr_bssid(hdr, rx_mgmt->frame_len);
@@ -678,6 +741,12 @@ static int hostapd_mgmt_rx(struct hostapd_data *hapd, struct rx_mgmt *rx_mgmt)
 		size_t i;
 		ret = 0;
 		for (i = 0; i < iface->num_bss; i++) {
+			/* if bss is set, driver will call this function for
+			 * each bss individually. */
+			if (rx_mgmt->drv_priv &&
+			    (iface->bss[i]->drv_priv != rx_mgmt->drv_priv))
+				continue;
+
 			if (ieee802_11_mgmt(iface->bss[i], rx_mgmt->frame,
 					    rx_mgmt->frame_len, &fi) > 0)
 				ret = 1;
@@ -932,6 +1001,8 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 		break;
 #endif /* NEED_AP_MLME */
 	case EVENT_RX_MGMT:
+		if (!data->rx_mgmt.frame)
+			break;
 #ifdef NEED_AP_MLME
 		if (hostapd_mgmt_rx(hapd, &data->rx_mgmt) > 0)
 			break;

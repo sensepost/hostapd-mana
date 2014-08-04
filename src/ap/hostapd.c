@@ -14,6 +14,7 @@
 #include "common/wpa_ctrl.h"
 #include "radius/radius_client.h"
 #include "radius/radius_das.h"
+#include "eap_server/tncs.h"
 #include "hostapd.h"
 #include "authsrv.h"
 #include "sta_info.h"
@@ -33,6 +34,7 @@
 #include "p2p_hostapd.h"
 #include "gas_serv.h"
 #include "dfs.h"
+#include "ieee802_11.h"
 
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
@@ -87,7 +89,7 @@ static void hostapd_reload_bss(struct hostapd_data *hapd)
 	else
 		hostapd_set_drv_ieee8021x(hapd, hapd->conf->iface, 0);
 
-	if (hapd->conf->wpa && hapd->wpa_auth == NULL) {
+	if ((hapd->conf->wpa || hapd->conf->osen) && hapd->wpa_auth == NULL) {
 		hostapd_setup_wpa(hapd);
 		if (hapd->wpa_auth)
 			wpa_init_keys(hapd->wpa_auth);
@@ -171,6 +173,17 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 	for (j = 0; j < iface->num_bss; j++) {
 		hapd = iface->bss[j];
 		hapd->iconf = newconf;
+		hapd->iconf->channel = oldconf->channel;
+		hapd->iconf->secondary_channel = oldconf->secondary_channel;
+		hapd->iconf->ieee80211n = oldconf->ieee80211n;
+		hapd->iconf->ieee80211ac = oldconf->ieee80211ac;
+		hapd->iconf->ht_capab = oldconf->ht_capab;
+		hapd->iconf->vht_capab = oldconf->vht_capab;
+		hapd->iconf->vht_oper_chwidth = oldconf->vht_oper_chwidth;
+		hapd->iconf->vht_oper_centr_freq_seg0_idx =
+			oldconf->vht_oper_centr_freq_seg0_idx;
+		hapd->iconf->vht_oper_centr_freq_seg1_idx =
+			oldconf->vht_oper_centr_freq_seg1_idx;
 		hapd->conf = newconf->bss[j];
 		hostapd_reload_bss(hapd);
 	}
@@ -264,10 +277,21 @@ static void hostapd_free_hapd_data(struct hostapd_data *hapd)
 
 	authsrv_deinit(hapd);
 
-	if (hapd->interface_added &&
-	    hostapd_if_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface)) {
-		wpa_printf(MSG_WARNING, "Failed to remove BSS interface %s",
-			   hapd->conf->iface);
+	if (hapd->interface_added) {
+		hapd->interface_added = 0;
+		if (hostapd_if_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface)) {
+			wpa_printf(MSG_WARNING,
+				   "Failed to remove BSS interface %s",
+				   hapd->conf->iface);
+			hapd->interface_added = 1;
+		} else {
+			/*
+			 * Since this was a dynamically added interface, the
+			 * driver wrapper may have removed its internal instance
+			 * and hapd->drv_priv is not valid anymore.
+			 */
+			hapd->drv_priv = NULL;
+		}
 	}
 
 	os_free(hapd->probereq_cb);
@@ -350,7 +374,7 @@ static void hostapd_cleanup_iface(struct hostapd_iface *iface)
 
 static void hostapd_clear_wep(struct hostapd_data *hapd)
 {
-	if (hapd->drv_priv) {
+	if (hapd->drv_priv && !hapd->iface->driver_ap_teardown) {
 		hostapd_set_privacy(hapd, 0);
 		hostapd_broadcast_wep_clear(hapd);
 	}
@@ -401,11 +425,15 @@ static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason)
 	if (hostapd_drv_none(hapd) || hapd->drv_priv == NULL)
 		return 0;
 
-	wpa_dbg(hapd->msg_ctx, MSG_DEBUG, "Flushing old station entries");
-	if (hostapd_flush(hapd)) {
-		wpa_msg(hapd->msg_ctx, MSG_WARNING, "Could not connect to "
-			"kernel driver");
-		ret = -1;
+	if (!hapd->iface->driver_ap_teardown) {
+		wpa_dbg(hapd->msg_ctx, MSG_DEBUG,
+			"Flushing old station entries");
+
+		if (hostapd_flush(hapd)) {
+			wpa_msg(hapd->msg_ctx, MSG_WARNING,
+				"Could not connect to kernel driver");
+			ret = -1;
+		}
 	}
 	wpa_dbg(hapd->msg_ctx, MSG_DEBUG, "Deauthenticate all stations");
 	os_memset(addr, 0xff, ETH_ALEN);
@@ -413,6 +441,14 @@ static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason)
 	hostapd_free_stas(hapd);
 
 	return ret;
+}
+
+
+static void hostapd_bss_deinit_no_free(struct hostapd_data *hapd)
+{
+	hostapd_free_stas(hapd);
+	hostapd_flush_old_stations(hapd, WLAN_REASON_DEAUTH_LEAVING);
+	hostapd_clear_wep(hapd);
 }
 
 
@@ -529,7 +565,34 @@ static int mac_in_conf(struct hostapd_config *conf, const void *a)
 static int hostapd_das_nas_mismatch(struct hostapd_data *hapd,
 				    struct radius_das_attrs *attr)
 {
-	/* TODO */
+	if (attr->nas_identifier &&
+	    (!hapd->conf->nas_identifier ||
+	     os_strlen(hapd->conf->nas_identifier) !=
+	     attr->nas_identifier_len ||
+	     os_memcmp(hapd->conf->nas_identifier, attr->nas_identifier,
+		       attr->nas_identifier_len) != 0)) {
+		wpa_printf(MSG_DEBUG, "RADIUS DAS: NAS-Identifier mismatch");
+		return 1;
+	}
+
+	if (attr->nas_ip_addr &&
+	    (hapd->conf->own_ip_addr.af != AF_INET ||
+	     os_memcmp(&hapd->conf->own_ip_addr.u.v4, attr->nas_ip_addr, 4) !=
+	     0)) {
+		wpa_printf(MSG_DEBUG, "RADIUS DAS: NAS-IP-Address mismatch");
+		return 1;
+	}
+
+#ifdef CONFIG_IPV6
+	if (attr->nas_ipv6_addr &&
+	    (hapd->conf->own_ip_addr.af != AF_INET6 ||
+	     os_memcmp(&hapd->conf->own_ip_addr.u.v6, attr->nas_ipv6_addr, 16)
+	     != 0)) {
+		wpa_printf(MSG_DEBUG, "RADIUS DAS: NAS-IPv6-Address mismatch");
+		return 1;
+	}
+#endif /* CONFIG_IPV6 */
+
 	return 0;
 }
 
@@ -596,6 +659,8 @@ hostapd_das_disconnect(void *ctx, struct radius_das_attrs *attr)
 	if (sta == NULL)
 		return RADIUS_DAS_SESSION_NOT_FOUND;
 
+	wpa_auth_pmksa_remove(hapd->wpa_auth, sta->addr);
+
 	hostapd_drv_sta_deauth(hapd, sta->addr,
 			       WLAN_REASON_PREV_AUTH_NOT_VALID);
 	ap_sta_deauthenticate(hapd, sta, WLAN_REASON_PREV_AUTH_NOT_VALID);
@@ -627,6 +692,13 @@ static int hostapd_setup_bss(struct hostapd_data *hapd, int first)
 
 	wpa_printf(MSG_DEBUG, "%s(hapd=%p (%s), first=%d)",
 		   __func__, hapd, hapd->conf->iface, first);
+
+#ifdef EAP_SERVER_TNC
+	if (hapd->conf->tnc && tncs_global_init() < 0) {
+		wpa_printf(MSG_ERROR, "Failed to initialize TNCS");
+		return -1;
+	}
+#endif /* EAP_SERVER_TNC */
 
 	if (hapd->started) {
 		wpa_printf(MSG_ERROR, "%s: Interface %s was already started",
@@ -727,7 +799,7 @@ static int hostapd_setup_bss(struct hostapd_data *hapd, int first)
 		return -1;
 	}
 
-	if (wpa_debug_level == MSG_MSGDUMP)
+	if (wpa_debug_level <= MSG_MSGDUMP)
 		conf->radius->msg_dumps = 1;
 #ifndef CONFIG_NO_RADIUS
 	hapd->radius = radius_client_init(hapd, conf->radius);
@@ -773,7 +845,7 @@ static int hostapd_setup_bss(struct hostapd_data *hapd, int first)
 		return -1;
 	}
 
-	if (hapd->conf->wpa && hostapd_setup_wpa(hapd))
+	if ((hapd->conf->wpa || hapd->conf->osen) && hostapd_setup_wpa(hapd))
 		return -1;
 
 	if (accounting_init(hapd)) {
@@ -980,6 +1052,15 @@ static int setup_interface(struct hostapd_iface *iface)
 	struct hostapd_data *hapd = iface->bss[0];
 	size_t i;
 
+	/*
+	 * It is possible that setup_interface() is called after the interface
+	 * was disabled etc., in which case driver_ap_teardown is possibly set
+	 * to 1. Clear it here so any other key/station deletion, which is not
+	 * part of a teardown flow, would also call the relevant driver
+	 * callbacks.
+	 */
+	iface->driver_ap_teardown = 0;
+
 	if (!iface->phy[0]) {
 		const char *phy = hostapd_drv_get_radio_name(hapd);
 		if (phy) {
@@ -1051,7 +1132,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 		if (ret < 0) {
 			wpa_printf(MSG_ERROR, "Could not select hw_mode and "
 				   "channel. (%d)", ret);
-			return -1;
+			goto fail;
 		}
 		if (ret == 1) {
 			wpa_printf(MSG_DEBUG, "Interface initialization will be completed in a callback (ACS)");
@@ -1059,7 +1140,7 @@ static int setup_interface2(struct hostapd_iface *iface)
 		}
 		ret = hostapd_check_ht_capab(iface);
 		if (ret < 0)
-			return -1;
+			goto fail;
 		if (ret == 1) {
 			wpa_printf(MSG_DEBUG, "Interface initialization will "
 				   "be completed in a callback");
@@ -1070,6 +1151,13 @@ static int setup_interface2(struct hostapd_iface *iface)
 			wpa_printf(MSG_DEBUG, "DFS support is enabled");
 	}
 	return hostapd_setup_interface_complete(iface, 0);
+
+fail:
+	hostapd_set_state(iface, HAPD_IFACE_DISABLED);
+	wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
+	if (iface->interfaces && iface->interfaces->terminate_on_error)
+		eloop_terminate();
+	return -1;
 }
 
 
@@ -1087,13 +1175,8 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 	size_t j;
 	u8 *prev_addr;
 
-	if (err) {
-		wpa_printf(MSG_ERROR, "Interface initialization failed");
-		hostapd_set_state(iface, HAPD_IFACE_DISABLED);
-		if (iface->interfaces && iface->interfaces->terminate_on_error)
-			eloop_terminate();
-		return -1;
-	}
+	if (err)
+		goto fail;
 
 	wpa_printf(MSG_DEBUG, "Completing interface initialization");
 	if (iface->conf->channel) {
@@ -1110,8 +1193,11 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 #ifdef NEED_AP_MLME
 		/* Check DFS */
 		res = hostapd_handle_dfs(iface);
-		if (res <= 0)
+		if (res <= 0) {
+			if (res < 0)
+				goto fail;
 			return res;
+		}
 #endif /* NEED_AP_MLME */
 
 		if (hostapd_set_freq(hapd, hapd->iconf->hw_mode, iface->freq,
@@ -1124,7 +1210,7 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 				     hapd->iconf->vht_oper_centr_freq_seg1_idx)) {
 			wpa_printf(MSG_ERROR, "Could not set channel for "
 				   "kernel driver");
-			return -1;
+			goto fail;
 		}
 	}
 
@@ -1135,7 +1221,7 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 			hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 				       HOSTAPD_LEVEL_WARNING,
 				       "Failed to prepare rates table.");
-			return -1;
+			goto fail;
 		}
 	}
 
@@ -1143,14 +1229,14 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 	    hostapd_set_rts(hapd, hapd->iconf->rts_threshold)) {
 		wpa_printf(MSG_ERROR, "Could not set RTS threshold for "
 			   "kernel driver");
-		return -1;
+		goto fail;
 	}
 
 	if (hapd->iconf->fragm_threshold > -1 &&
 	    hostapd_set_frag(hapd, hapd->iconf->fragm_threshold)) {
 		wpa_printf(MSG_ERROR, "Could not set fragmentation threshold "
 			   "for kernel driver");
-		return -1;
+		goto fail;
 	}
 
 	prev_addr = hapd->own_addr;
@@ -1159,8 +1245,14 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 		hapd = iface->bss[j];
 		if (j)
 			os_memcpy(hapd->own_addr, prev_addr, ETH_ALEN);
-		if (hostapd_setup_bss(hapd, j == 0))
-			return -1;
+		if (hostapd_setup_bss(hapd, j == 0)) {
+			do {
+				hapd = iface->bss[j];
+				hostapd_bss_deinit_no_free(hapd);
+				hostapd_free_hapd_data(hapd);
+			} while (j-- > 0);
+			goto fail;
+		}
 		if (hostapd_mac_comp_empty(hapd->conf->bssid) == 0)
 			prev_addr = hapd->own_addr;
 	}
@@ -1175,7 +1267,7 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 	if (hostapd_driver_commit(hapd) < 0) {
 		wpa_printf(MSG_ERROR, "%s: Failed to commit driver "
 			   "configuration", __func__);
-		return -1;
+		goto fail;
 	}
 
 	/*
@@ -1186,7 +1278,7 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 	 */
 	for (j = 0; j < iface->num_bss; j++) {
 		if (hostapd_init_wps_complete(iface->bss[j]))
-			return -1;
+			goto fail;
 	}
 
 	hostapd_set_state(iface, HAPD_IFACE_ENABLED);
@@ -1200,6 +1292,14 @@ int hostapd_setup_interface_complete(struct hostapd_iface *iface, int err)
 		iface->interfaces->terminate_on_error--;
 
 	return 0;
+
+fail:
+	wpa_printf(MSG_ERROR, "Interface initialization failed");
+	hostapd_set_state(iface, HAPD_IFACE_DISABLED);
+	wpa_msg(hapd->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
+	if (iface->interfaces && iface->interfaces->terminate_on_error)
+		eloop_terminate();
+	return -1;
 }
 
 
@@ -1271,9 +1371,7 @@ static void hostapd_bss_deinit(struct hostapd_data *hapd)
 {
 	wpa_printf(MSG_DEBUG, "%s: deinit bss %s", __func__,
 		   hapd->conf->iface);
-	hostapd_free_stas(hapd);
-	hostapd_flush_old_stations(hapd, WLAN_REASON_DEAUTH_LEAVING);
-	hostapd_clear_wep(hapd);
+	hostapd_bss_deinit_no_free(hapd);
 	hostapd_cleanup(hapd);
 }
 
@@ -1286,6 +1384,12 @@ void hostapd_interface_deinit(struct hostapd_iface *iface)
 	if (iface == NULL)
 		return;
 
+#ifdef CONFIG_IEEE80211N
+#ifdef NEED_AP_MLME
+	hostapd_stop_setup_timers(iface);
+	eloop_cancel_timeout(ap_ht2040_timeout, iface, NULL);
+#endif /* NEED_AP_MLME */
+#endif /* CONFIG_IEEE80211N */
 	eloop_cancel_timeout(channel_list_update_timeout, iface, NULL);
 	iface->wait_channel_update = 0;
 
@@ -1520,14 +1624,39 @@ void hostapd_interface_deinit_free(struct hostapd_iface *iface)
 	hostapd_interface_deinit(iface);
 	wpa_printf(MSG_DEBUG, "%s: driver=%p drv_priv=%p -> hapd_deinit",
 		   __func__, driver, drv_priv);
-	if (driver && driver->hapd_deinit && drv_priv)
+	if (driver && driver->hapd_deinit && drv_priv) {
 		driver->hapd_deinit(drv_priv);
+		iface->bss[0]->drv_priv = NULL;
+	}
 	hostapd_interface_free(iface);
+}
+
+
+static void hostapd_deinit_driver(const struct wpa_driver_ops *driver,
+				  void *drv_priv,
+				  struct hostapd_iface *hapd_iface)
+{
+	size_t j;
+
+	wpa_printf(MSG_DEBUG, "%s: driver=%p drv_priv=%p -> hapd_deinit",
+		   __func__, driver, drv_priv);
+	if (driver && driver->hapd_deinit && drv_priv) {
+		driver->hapd_deinit(drv_priv);
+		for (j = 0; j < hapd_iface->num_bss; j++) {
+			wpa_printf(MSG_DEBUG, "%s:bss[%d]->drv_priv=%p",
+				   __func__, (int) j,
+				   hapd_iface->bss[j]->drv_priv);
+			if (hapd_iface->bss[j]->drv_priv == drv_priv)
+				hapd_iface->bss[j]->drv_priv = NULL;
+		}
+	}
 }
 
 
 int hostapd_enable_iface(struct hostapd_iface *hapd_iface)
 {
+	size_t j;
+
 	if (hapd_iface->bss[0]->drv_priv != NULL) {
 		wpa_printf(MSG_ERROR, "Interface %s already enabled",
 			   hapd_iface->conf->bss[0]->iface);
@@ -1537,6 +1666,8 @@ int hostapd_enable_iface(struct hostapd_iface *hapd_iface)
 	wpa_printf(MSG_DEBUG, "Enable interface %s",
 		   hapd_iface->conf->bss[0]->iface);
 
+	for (j = 0; j < hapd_iface->num_bss; j++)
+		hostapd_set_security_params(hapd_iface->conf->bss[j], 1);
 	if (hostapd_config_check(hapd_iface->conf, 1) < 0) {
 		wpa_printf(MSG_INFO, "Invalid configuration - cannot enable");
 		return -1;
@@ -1548,17 +1679,9 @@ int hostapd_enable_iface(struct hostapd_iface *hapd_iface)
 		return -1;
 
 	if (hostapd_setup_interface(hapd_iface)) {
-		const struct wpa_driver_ops *driver;
-		void *drv_priv;
-
-		driver = hapd_iface->bss[0]->driver;
-		drv_priv = hapd_iface->bss[0]->drv_priv;
-		wpa_printf(MSG_DEBUG, "%s: driver=%p drv_priv=%p -> hapd_deinit",
-			   __func__, driver, drv_priv);
-		if (driver && driver->hapd_deinit && drv_priv) {
-			driver->hapd_deinit(drv_priv);
-			hapd_iface->bss[0]->drv_priv = NULL;
-		}
+		hostapd_deinit_driver(hapd_iface->bss[0]->driver,
+				      hapd_iface->bss[0]->drv_priv,
+				      hapd_iface);
 		return -1;
 	}
 
@@ -1573,7 +1696,7 @@ int hostapd_reload_iface(struct hostapd_iface *hapd_iface)
 	wpa_printf(MSG_DEBUG, "Reload interface %s",
 		   hapd_iface->conf->bss[0]->iface);
 	for (j = 0; j < hapd_iface->num_bss; j++)
-		hostapd_set_security_params(hapd_iface->conf->bss[j]);
+		hostapd_set_security_params(hapd_iface->conf->bss[j], 1);
 	if (hostapd_config_check(hapd_iface->conf, 1) < 0) {
 		wpa_printf(MSG_ERROR, "Updated configuration is invalid");
 		return -1;
@@ -1594,25 +1717,29 @@ int hostapd_disable_iface(struct hostapd_iface *hapd_iface)
 
 	if (hapd_iface == NULL)
 		return -1;
+
+	if (hapd_iface->bss[0]->drv_priv == NULL) {
+		wpa_printf(MSG_INFO, "Interface %s already disabled",
+			   hapd_iface->conf->bss[0]->iface);
+		return -1;
+	}
+
 	wpa_msg(hapd_iface->bss[0]->msg_ctx, MSG_INFO, AP_EVENT_DISABLED);
 	driver = hapd_iface->bss[0]->driver;
 	drv_priv = hapd_iface->bss[0]->drv_priv;
 
-	/* whatever hostapd_interface_deinit does */
+	hapd_iface->driver_ap_teardown =
+		!!(hapd_iface->drv_flags &
+		   WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
+
+	/* same as hostapd_interface_deinit without deinitializing ctrl-iface */
 	for (j = 0; j < hapd_iface->num_bss; j++) {
 		struct hostapd_data *hapd = hapd_iface->bss[j];
-		hostapd_free_stas(hapd);
-		hostapd_flush_old_stations(hapd, WLAN_REASON_DEAUTH_LEAVING);
-		hostapd_clear_wep(hapd);
+		hostapd_bss_deinit_no_free(hapd);
 		hostapd_free_hapd_data(hapd);
 	}
 
-	wpa_printf(MSG_DEBUG, "%s: driver=%p drv_priv=%p -> hapd_deinit",
-		   __func__, driver, drv_priv);
-	if (driver && driver->hapd_deinit && drv_priv) {
-		driver->hapd_deinit(drv_priv);
-		hapd_iface->bss[0]->drv_priv = NULL;
-	}
+	hostapd_deinit_driver(driver, drv_priv, hapd_iface);
 
 	/* From hostapd_cleanup_iface: These were initialized in
 	 * hostapd_setup_interface and hostapd_setup_interface_complete
@@ -1778,6 +1905,8 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
 			if (start_ctrl_iface_bss(hapd) < 0 ||
 			    (hapd_iface->state == HAPD_IFACE_ENABLED &&
 			     hostapd_setup_bss(hapd, -1))) {
+				hostapd_cleanup(hapd);
+				hapd_iface->bss[hapd_iface->num_bss - 1] = NULL;
 				hapd_iface->conf->num_bss--;
 				hapd_iface->num_bss--;
 				wpa_printf(MSG_DEBUG, "%s: free hapd %p %s",
@@ -1847,14 +1976,17 @@ fail:
 		if (hapd_iface->bss) {
 			for (i = 0; i < hapd_iface->num_bss; i++) {
 				hapd = hapd_iface->bss[i];
-				if (hapd && hapd_iface->interfaces &&
+				if (!hapd)
+					continue;
+				if (hapd_iface->interfaces &&
 				    hapd_iface->interfaces->ctrl_iface_deinit)
 					hapd_iface->interfaces->
 						ctrl_iface_deinit(hapd);
 				wpa_printf(MSG_DEBUG, "%s: free hapd %p (%s)",
 					   __func__, hapd_iface->bss[i],
-					hapd_iface->bss[i]->conf->iface);
-				os_free(hapd_iface->bss[i]);
+					   hapd->conf->iface);
+				os_free(hapd);
+				hapd_iface->bss[i] = NULL;
 			}
 			os_free(hapd_iface->bss);
 		}
@@ -1910,6 +2042,10 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 			return -1;
 		if (!os_strcmp(hapd_iface->conf->bss[0]->iface, buf)) {
 			wpa_printf(MSG_INFO, "Remove interface '%s'", buf);
+			hapd_iface->driver_ap_teardown =
+				!!(hapd_iface->drv_flags &
+				   WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
+
 			hostapd_interface_deinit_free(hapd_iface);
 			k = i;
 			while (k < (interfaces->count - 1)) {
@@ -1922,8 +2058,12 @@ int hostapd_remove_iface(struct hapd_interfaces *interfaces, char *buf)
 		}
 
 		for (j = 0; j < hapd_iface->conf->num_bss; j++) {
-			if (!os_strcmp(hapd_iface->conf->bss[j]->iface, buf))
+			if (!os_strcmp(hapd_iface->conf->bss[j]->iface, buf)) {
+				hapd_iface->driver_ap_teardown =
+					!(hapd_iface->drv_flags &
+					  WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
 				return hostapd_remove_bss(hapd_iface, j);
+			}
 		}
 	}
 	return -1;
@@ -1968,7 +2108,8 @@ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
 	/* Start accounting here, if IEEE 802.1X and WPA are not used.
 	 * IEEE 802.1X/WPA code will start accounting after the station has
 	 * been authorized. */
-	if (!hapd->conf->ieee802_1x && !hapd->conf->wpa) {
+	if (!hapd->conf->ieee802_1x && !hapd->conf->wpa && !hapd->conf->osen) {
+		ap_sta_set_authorized(hapd, sta, 1);
 		os_get_reltime(&sta->connected_time);
 		accounting_sta_start(hapd, sta);
 	}

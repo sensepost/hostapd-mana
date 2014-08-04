@@ -1348,7 +1348,8 @@ static int x509_parse_tbs_certificate(const u8 *buf, size_t len,
 		wpa_printf(MSG_DEBUG, "X509: issuerUniqueID");
 		/* TODO: parse UniqueIdentifier ::= BIT STRING */
 
-		if (hdr.payload + hdr.length == end)
+		pos = hdr.payload + hdr.length;
+		if (pos == end)
 			return 0;
 
 		if (asn1_get_next(pos, end - pos, &hdr) < 0 ||
@@ -1366,7 +1367,8 @@ static int x509_parse_tbs_certificate(const u8 *buf, size_t len,
 		wpa_printf(MSG_DEBUG, "X509: subjectUniqueID");
 		/* TODO: parse UniqueIdentifier ::= BIT STRING */
 
-		if (hdr.payload + hdr.length == end)
+		pos = hdr.payload + hdr.length;
+		if (pos == end)
 			return 0;
 
 		if (asn1_get_next(pos, end - pos, &hdr) < 0 ||
@@ -1777,6 +1779,15 @@ skip_digest_oid:
 	    os_memcmp(hdr.payload, hash, hdr.length) != 0) {
 		wpa_printf(MSG_INFO, "X509: Certificate Digest does not match "
 			   "with calculated tbsCertificate hash");
+		os_free(data);
+		return -1;
+	}
+
+	if (hdr.payload + hdr.length < data + data_len) {
+		wpa_hexdump(MSG_INFO,
+			    "X509: Extra data after certificate signature hash",
+			    hdr.payload + hdr.length,
+			    data + data_len - hdr.payload - hdr.length);
 		os_free(data);
 		return -1;
 	}

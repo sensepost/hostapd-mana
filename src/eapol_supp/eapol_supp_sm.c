@@ -1345,6 +1345,13 @@ int eapol_sm_rx_eapol(struct eapol_sm *sm, const u8 *src, const u8 *buf,
 			eapol_sm_step(sm);
 		}
 		break;
+#ifdef CONFIG_MACSEC
+	case IEEE802_1X_TYPE_EAPOL_MKA:
+		wpa_printf(MSG_EXCESSIVE,
+			   "EAPOL type %d will be handled by MKA",
+			   hdr->type);
+		break;
+#endif /* CONFIG_MACSEC */
 	default:
 		wpa_printf(MSG_DEBUG, "EAPOL: Received unknown EAPOL type %d",
 			   hdr->type);
@@ -1553,6 +1560,24 @@ key_fetched:
 	wpa_printf(MSG_DEBUG, "EAPOL: Successfully fetched key (len=%lu)",
 		   (unsigned long) len);
 	return 0;
+}
+
+
+/**
+ * eapol_sm_get_session_id - Get EAP Session-Id
+ * @sm: Pointer to EAPOL state machine allocated with eapol_sm_init()
+ * @len: Pointer to variable that will be set to number of bytes in the session
+ * Returns: Pointer to the EAP Session-Id or %NULL on failure
+ *
+ * The Session-Id is available only after a successful authentication.
+ */
+const u8 * eapol_sm_get_session_id(struct eapol_sm *sm, size_t *len)
+{
+	if (sm == NULL || !eap_key_available(sm->eap)) {
+		wpa_printf(MSG_DEBUG, "EAPOL: EAP Session-Id not available");
+		return NULL;
+	}
+	return eap_get_eapSessionId(sm->eap, len);
 }
 
 

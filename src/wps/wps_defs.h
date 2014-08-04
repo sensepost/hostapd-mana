@@ -18,11 +18,7 @@ extern int wps_corrupt_pkhash;
 
 #else /* CONFIG_WPS_TESTING */
 
-#ifdef CONFIG_WPS2
 #define WPS_VERSION 0x20
-#else /* CONFIG_WPS2 */
-#define WPS_VERSION 0x10
-#endif /* CONFIG_WPS2 */
 
 #endif /* CONFIG_WPS_TESTING */
 
@@ -146,7 +142,8 @@ enum {
 	WFA_ELEM_AUTHORIZEDMACS = 0x01,
 	WFA_ELEM_NETWORK_KEY_SHAREABLE = 0x02,
 	WFA_ELEM_REQUEST_TO_ENROLL = 0x03,
-	WFA_ELEM_SETTINGS_DELAY_TIME = 0x04
+	WFA_ELEM_SETTINGS_DELAY_TIME = 0x04,
+	WFA_ELEM_REGISTRAR_CONFIGURATION_METHODS = 0x05
 };
 
 /* Device Password ID */
@@ -182,7 +179,7 @@ enum wps_msg_type {
 /* Authentication Type Flags */
 #define WPS_AUTH_OPEN 0x0001
 #define WPS_AUTH_WPAPSK 0x0002
-#define WPS_AUTH_SHARED 0x0004
+#define WPS_AUTH_SHARED 0x0004 /* deprecated */
 #define WPS_AUTH_WPA 0x0008
 #define WPS_AUTH_WPA2 0x0010
 #define WPS_AUTH_WPA2PSK 0x0020
@@ -191,7 +188,7 @@ enum wps_msg_type {
 
 /* Encryption Type Flags */
 #define WPS_ENCR_NONE 0x0001
-#define WPS_ENCR_WEP 0x0002
+#define WPS_ENCR_WEP 0x0002 /* deprecated */
 #define WPS_ENCR_TKIP 0x0004
 #define WPS_ENCR_AES 0x0008
 #define WPS_ENCR_TYPES (WPS_ENCR_NONE | WPS_ENCR_WEP | WPS_ENCR_TKIP | \
@@ -245,12 +242,10 @@ enum wps_error_indication {
 #define WPS_CONFIG_NFC_INTERFACE 0x0040
 #define WPS_CONFIG_PUSHBUTTON 0x0080
 #define WPS_CONFIG_KEYPAD 0x0100
-#ifdef CONFIG_WPS2
 #define WPS_CONFIG_VIRT_PUSHBUTTON 0x0280
 #define WPS_CONFIG_PHY_PUSHBUTTON 0x0480
 #define WPS_CONFIG_VIRT_DISPLAY 0x2008
 #define WPS_CONFIG_PHY_DISPLAY 0x4008
-#endif /* CONFIG_WPS2 */
 
 /* Connection Type Flags */
 #define WPS_CONN_ESS 0x01

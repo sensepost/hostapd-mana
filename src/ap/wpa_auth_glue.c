@@ -49,6 +49,7 @@ static void hostapd_wpa_auth_conf(struct hostapd_bss_config *conf,
 	wconf->okc = conf->okc;
 #ifdef CONFIG_IEEE80211W
 	wconf->ieee80211w = conf->ieee80211w;
+	wconf->group_mgmt_cipher = conf->group_mgmt_cipher;
 #endif /* CONFIG_IEEE80211W */
 #ifdef CONFIG_IEEE80211R
 	wconf->ssid_len = conf->ssid.ssid_len;
@@ -73,6 +74,19 @@ static void hostapd_wpa_auth_conf(struct hostapd_bss_config *conf,
 #endif /* CONFIG_IEEE80211R */
 #ifdef CONFIG_HS20
 	wconf->disable_gtk = conf->disable_dgaf;
+	if (conf->osen) {
+		wconf->disable_gtk = 1;
+		wconf->wpa = WPA_PROTO_OSEN;
+		wconf->wpa_key_mgmt = WPA_KEY_MGMT_OSEN;
+		wconf->wpa_pairwise = 0;
+		wconf->wpa_group = WPA_CIPHER_CCMP;
+		wconf->rsn_pairwise = WPA_CIPHER_CCMP;
+		wconf->rsn_preauth = 0;
+		wconf->disable_pmksa_caching = 1;
+#ifdef CONFIG_IEEE80211W
+		wconf->ieee80211w = 1;
+#endif /* CONFIG_IEEE80211W */
+	}
 #endif /* CONFIG_HS20 */
 #ifdef CONFIG_TESTING_OPTIONS
 	wconf->corrupt_gtk_rekey_mic_probability =
