@@ -95,6 +95,7 @@ static const char *commands_help =
 "   karma_get_state        get the state of Karma\n"
 "   karma_add_black_mac    add a MAC to the black list\n"
 "   karma_add_white_mac    add a MAC to the white list\n"
+"   karma_reload_eap       reload users when challenge/response is cracked\n"
 // KARMA END
 "   quit                 exit hostapd_cli\n";
 
@@ -432,6 +433,10 @@ static int hostapd_cli_cmd_karma_enable(struct wpa_ctrl *ctrl, int argc, char *a
 static int hostapd_cli_cmd_karma_get_state(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "KARMA_STATE");
+}
+static int hostapd_cli_cmd_karma_reload_eap(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "KARMA_EAP");
 }
 // END KARMA
 
@@ -1104,6 +1109,7 @@ static struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "karma_get_state", hostapd_cli_cmd_karma_get_state},
 	{ "karma_disable", hostapd_cli_cmd_karma_disable},
 	{ "karma_enable", hostapd_cli_cmd_karma_enable},
+	{ "karma_reload_eap", hostapd_cli_cmd_karma_reload_eap},
 // END KARMA
 	{ "set_qos_map_set", hostapd_cli_cmd_set_qos_map_set },
 	{ "send_qos_map_conf", hostapd_cli_cmd_send_qos_map_conf },

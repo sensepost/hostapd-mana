@@ -2898,7 +2898,7 @@ int tls_connection_client_hello_ext(void *ssl_ctx, struct tls_connection *conn,
 				       data_len) != 1)
 		return -1;
 #else /* CONFIG_OPENSSL_TICKET_OVERRIDE */
-	if (SSL_set_hello_extension(conn->ssl, ext_type, (void *) data,
+	if (SSL_set_session_ticket_ext(conn->ssl, ext_type, (void *) data,
 				    data_len) != 1)
 		return -1;
 #endif /* CONFIG_OPENSSL_TICKET_OVERRIDE */
@@ -3518,7 +3518,7 @@ int tls_connection_set_session_ticket_cb(void *tls_ctx,
 		SSL_set_tlsext_debug_callback(conn->ssl, tls_hello_ext_cb);
 		SSL_set_tlsext_debug_arg(conn->ssl, conn);
 #else /* SSL_OP_NO_TICKET */
-		if (SSL_set_hello_extension_cb(conn->ssl, tls_hello_ext_cb,
+		if (SSL_set_session_ticket_ext_cb(conn->ssl, tls_hello_ext_cb,
 					       conn) != 1)
 			return -1;
 #endif /* SSL_OP_NO_TICKET */
@@ -3533,7 +3533,7 @@ int tls_connection_set_session_ticket_cb(void *tls_ctx,
 		SSL_set_tlsext_debug_callback(conn->ssl, NULL);
 		SSL_set_tlsext_debug_arg(conn->ssl, conn);
 #else /* SSL_OP_NO_TICKET */
-		if (SSL_set_hello_extension_cb(conn->ssl, NULL, NULL) != 1)
+		if (SSL_set_session_ticket_ext_cb(conn->ssl, NULL, NULL) != 1)
 			return -1;
 #endif /* SSL_OP_NO_TICKET */
 #endif /* CONFIG_OPENSSL_TICKET_OVERRIDE */

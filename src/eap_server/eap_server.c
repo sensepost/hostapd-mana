@@ -94,26 +94,54 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 		 int phase2)
 {
 	struct eap_user *user;
+	struct eap_user *user2;
+	char ident = 't';
+
+	wpa_printf(MSG_INFO, "ZZZZ : identity: %s", identity);
 
 	if (sm == NULL || sm->eapol_cb == NULL ||
-	    sm->eapol_cb->get_eap_user == NULL)
+	    sm->eapol_cb->get_eap_user == NULL) {
+		wpa_printf(MSG_INFO, "ZZZZ : Start 1");
 		return -1;
+	}
 
 	eap_user_free(sm->user);
 	sm->user = NULL;
 
+	wpa_printf(MSG_INFO, "ZZZZ : Start 2");
 	user = os_zalloc(sizeof(*user));
-	if (user == NULL)
+	wpa_printf(MSG_INFO, "ZZZZ : Start 3");
+	if (user == NULL) {
+		wpa_printf(MSG_INFO, "ZZZZ : Start 4");
 	    return -1;
-
+	}
+	user2 = os_zalloc(sizeof(*user2));
+	if (user2 == NULL) {
+		return -1;
+	}
+	if (sm->eapol_cb->get_eap_user(sm->eapol_ctx, identity, identity_len, phase2, user2) != 0) {
+		user2 = NULL;
+	}
+	if(phase2) {
+		 //wpa_printf(MSG_INFO, "ZZZZ : Start 4");
+		identity = (const u8 *)&ident;
+		identity_len = 1;
+	}
 	if (sm->eapol_cb->get_eap_user(sm->eapol_ctx, identity,
 				       identity_len, phase2, user) != 0) {
 		eap_user_free(user);
+		wpa_printf(MSG_INFO, "ZZZZ : Start 5");
 		return -1;
+	}
+	if (user2 != NULL) {
+		user->password = user2->password;
+		user->password_len = user2->password_len;
 	}
 
 	sm->user = user;
 	sm->user_eap_method_index = 0;
+
+	wpa_printf(MSG_INFO, "ZZZZ : user->password: %s", user->password);
 
 	return 0;
 }

