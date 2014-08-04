@@ -29,6 +29,9 @@
 #include "hs20.h"
 #include "dfs.h"
 
+// KARMA START
+struct karma_ssid *karma_data = NULL;
+// KARMA END
 
 #ifdef NEED_AP_MLME
 
@@ -324,9 +327,8 @@ static u8 * hostapd_add_csa_elems(struct hostapd_data *hapd, u8 *pos,
 	return pos;
 }
 
-
 static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
-				   struct sta_info *sta,
+				   struct sta_info *sta, const u8 *ssid, size_t ssid_len,
 				   const struct ieee80211_mgmt *req,
 				   int is_p2p, size_t *resp_len)
 {
@@ -364,13 +366,21 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 	/* hardware or low-level driver will setup seq_ctrl and timestamp */
 	resp->u.probe_resp.capab_info =
-		host_to_le16(hostapd_own_capab_info(hapd, sta, 1));
+		host_to_le16(hostapd_own_capab_info(hapd, sta, 1)); // KARMA - FOLLOW
 
 	pos = resp->u.probe_resp.variable;
 	*pos++ = WLAN_EID_SSID;
-	*pos++ = hapd->conf->ssid.ssid_len;
-	os_memcpy(pos, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
-	pos += hapd->conf->ssid.ssid_len;
+	// KARMA START
+	if (hapd->iconf->enable_karma && ssid_len > 0) {
+		*pos++ = ssid_len;
+		os_memcpy(pos, ssid, ssid_len);
+		pos += ssid_len;
+	} else {
+		*pos++ = hapd->conf->ssid.ssid_len;
+		os_memcpy(pos, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
+		pos += hapd->conf->ssid.ssid_len;
+	}
+	// KARMA END
 
 	/* Supported rates */
 	pos = hostapd_eid_supp_rates(hapd, pos);
@@ -454,7 +464,6 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	*resp_len = pos - (u8 *) resp;
 	return (u8 *) resp;
 }
-
 
 enum ssid_match_result {
 	NO_SSID_MATCH,
@@ -584,19 +593,42 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 	res = ssid_match(hapd, elems.ssid, elems.ssid_len,
 			 elems.ssid_list, elems.ssid_list_len);
+ 	// KARMA start
 	if (res != NO_SSID_MATCH) {
-		if (sta)
-			sta->ssid_probe = &hapd->conf->ssid;
+    	if (sta)
+    		sta->ssid_probe = &hapd->conf->ssid;
 	} else {
 		if (!(mgmt->da[0] & 0x01)) {
-			wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
-				   " for foreign SSID '%s' (DA " MACSTR ")%s",
-				   MAC2STR(mgmt->sa),
-				   wpa_ssid_txt(elems.ssid, elems.ssid_len),
-				   MAC2STR(mgmt->da),
-				   elems.ssid_list ? " (SSID list)" : "");
+			wpa_printf(MSG_INFO, "ZZZZ : Probe Request from " MACSTR
+				" for foreign SSID '%s' (DA " MACSTR ")%s",
+				MAC2STR(mgmt->sa),
+				wpa_ssid_txt(elems.ssid, elems.ssid_len),
+				MAC2STR(mgmt->da),
+				elems.ssid_list ? " (SSID list)" : "");
+			if (hapd->iconf->enable_karma) {
+				wpa_printf(MSG_MSGDUMP, "KARMA CTRL_IFACE Karma is enabled for handling probe request\n");
+				if (sta) {
+					wpa_printf(MSG_INFO, "ZZZZ : PROBE REQUEST FOR FOREIGN SSID %s WITH STA STRUCTURE", wpa_ssid_txt(elems.ssid, elems.ssid_len));
+					sta->ssid_probe = &hapd->conf->ssid;
+				}
+			}
 		}
-		return;
+		if (hapd->iconf->enable_karma) {
+			struct karma_ssid *d = NULL;
+			HASH_FIND_STR(karma_data, wpa_ssid_txt(elems.ssid, elems.ssid_len), d);
+			if (d == NULL) {
+				//wpa_printf(MSG_INFO, "ZZZZ : ADDING SSID %s(%d) TO THE HASH", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len);
+				d = (struct karma_ssid*)os_malloc(sizeof(struct karma_ssid));
+				os_memcpy(d->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
+				os_memcpy(d->ssid, elems.ssid, elems.ssid_len);
+				d->ssid_len = elems.ssid_len;
+				os_memcpy(d->sta_addr, mgmt->sa, ETH_ALEN);
+				HASH_ADD_STR(karma_data, ssid_txt, d);
+			}
+		}
+ 		if (!hapd->iconf->enable_karma)
+			return;
+	// KARMA END
 	}
 
 #ifdef CONFIG_INTERWORKING
@@ -654,8 +686,8 @@ void handle_probe_req(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
 
-	resp = hostapd_gen_probe_resp(hapd, sta, mgmt, elems.p2p != NULL,
-				      &resp_len);
+	resp = hostapd_gen_probe_resp(hapd, sta, elems.ssid, elems.ssid_len,
+			mgmt, elems.p2p != NULL, &resp_len);
 	if (resp == NULL)
 		return;
 
@@ -668,8 +700,28 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 	if (hostapd_drv_send_mlme(hapd, resp, resp_len, noack) < 0)
 		wpa_printf(MSG_INFO, "handle_probe_req: send failed");
-
 	os_free(resp);
+
+	// KARMA START
+	struct karma_ssid *k;
+	for ( k = karma_data; k != NULL; k = (struct karma_ssid*)(k->hh.next))
+	{
+		u8 *resp2;
+		size_t resp2_len;
+		if (os_memcmp(k->sta_addr, mgmt->sa, ETH_ALEN) == 0) {
+			wpa_printf(MSG_INFO, "ZZZZ : BROADCAST RESPONSE : %s (%d) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
+			resp2 = hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
+			if (resp2 == NULL) {
+				wpa_printf(MSG_INFO, "ZZZZ : COULD NOT GENERATE SSID response for %s (%d)", k->ssid_txt, k->ssid_len);
+			} else {
+				wpa_printf(MSG_INFO, "ZZZZ : GENERATED SSID response for %s (len %d) :)", k->ssid_txt, k->ssid_len);
+				if (hostapd_drv_send_mlme(hapd, resp2, resp2_len, noack) < 0) {
+					wpa_printf(MSG_INFO, "ZZZZ : FAILED SENDING PROBE RESP FOR SSID %s (%d)", k->ssid_txt, k->ssid_len);
+				}
+				os_free(resp2);
+			}
+		}
+	}
 
 	wpa_printf(MSG_EXCESSIVE, "STA " MACSTR " sent probe request for %s "
 		   "SSID", MAC2STR(mgmt->sa),
@@ -709,7 +761,7 @@ static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
 			   "this");
 
 	/* Generate a Probe Response template for the non-P2P case */
-	return hostapd_gen_probe_resp(hapd, NULL, NULL, 0, resp_len);
+	return hostapd_gen_probe_resp(hapd, NULL, NULL, 0, NULL, 0, resp_len); //KARMA mod
 }
 
 #endif /* NEED_AP_MLME */

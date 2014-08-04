@@ -416,7 +416,8 @@ static void show_version(void)
 		"User space daemon for IEEE 802.11 AP management,\n"
 		"IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator\n"
 		"Copyright (c) 2002-2014, Jouni Malinen <j@w1.fi> "
-		"and contributors\n");
+		"and contributors\n"
+		"Karma patches by Robin Wood - robin@digininja.org & singe dominic@sensepost.com\n");
 }
 
 
