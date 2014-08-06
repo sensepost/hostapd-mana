@@ -21,6 +21,10 @@
 #include "ap/ap_config.h"
 #include "config_file.h"
 
+// ZZZZ Include Logging Variable
+#include "common/wpa_common.h"
+// ZZZZ Include Logging Variable
+
 
 #ifndef CONFIG_NO_RADIUS
 #ifdef EAP_SERVER
@@ -3155,12 +3159,6 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 				   line, pos);
 			return 1;
 		}
- 		// ZZZZ -> STR INPUT AND OUTPUT NODES
- 		//} else if (os_strcmp(buf, "ennode") == 0) {
- 			//wpa_printf(MSG_INFO, "ZZZZ : ENNODE");
- 		//} else if (os_strcmp(buf, "exnode") == 0) {
- 			//wpa_printf(MSG_INFO, "ZZZZ : EXNODE");
- 		// ZZZZ -> END INPUT AND OUTPUT NODES
 	} else if (os_strcmp(buf, "local_pwr_constraint") == 0) {
 		int val = atoi(pos);
 		if (val < 0 || val > 255) {
@@ -3171,6 +3169,13 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->local_pwr_constraint = val;
 	} else if (os_strcmp(buf, "spectrum_mgmt_required") == 0) {
 		conf->spectrum_mgmt_required = atoi(pos);
+	} else if (os_strcmp(buf, "ennode") == 0) {
+		wpa_printf(MSG_INFO, "ZZZZ : Hash Output Node : %s", pos);
+		//wpa_printf(MSG_INFO, "ZZZZ : CONFIG FILE THING : %s", pos);
+		//conf->ennode = pos;
+		//wpa_printf(MSG_INFO, "ZZZZ : CONFIG FILE THING : %s", conf->ennode);
+		//bss->ennode = pos;
+		//wpa_printf(MSG_INFO, "ZZZZ : CONFIG FILE THING : %s", bss->ennode);
 	} else {
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",
