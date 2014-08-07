@@ -1888,6 +1888,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (conf->enable_karma) {
 			wpa_printf(MSG_DEBUG, "KARMA: Enabled");
 		}
+	} else if (os_strcmp(buf, "karma_loud") == 0) {
+		int val = atoi(pos);
+		conf->karma_loud = (val != 0);
+		if (conf->karma_loud) {
+			wpa_printf(MSG_DEBUG, "KARMA: Loud mode enabled");
+		}
 	// KARMA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
@@ -3228,6 +3234,7 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 
 	// KARMA START
 	conf->enable_karma = 0; //default off
+	conf->karma_loud = 0; //default off
 	
 	// KARMA END
 

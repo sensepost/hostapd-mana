@@ -524,6 +524,7 @@ struct hostapd_config {
 
 	// KARMA
 	int enable_karma;
+	int karma_loud;
 	// KARMA END
 
 	u16 beacon_int;

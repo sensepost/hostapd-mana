@@ -163,6 +163,13 @@ static int hostapd_ctrl_iface_karma_get_state (struct hostapd_data *hapd)
 	wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE STATUS QUERY");
 	return hapd->iconf->enable_karma;
 }
+
+static int hostapd_ctrl_iface_karma_get_mode (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE LOUD MODE STATUS QUERY");
+	return hapd->iconf->karma_loud;
+}
+
 // Used in the hostapd_ctrl_iface_karma_add_mac function to sort the MAC ACL list
 static int hostapd_acl_comp(const void *a, const void *b)
 {
@@ -233,8 +240,7 @@ static int hostapd_ctrl_iface_karma_change_ssid (struct hostapd_data *hapd,
 	return 0;
 }
 
-static int hostapd_ctrl_iface_karma_enable_disable (struct hostapd_data *hapd,
-						int status)
+static int hostapd_ctrl_iface_karma_enable_disable (struct hostapd_data *hapd, int status)
 {
 	if (status) {
 		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE ENABLED");
@@ -242,6 +248,18 @@ static int hostapd_ctrl_iface_karma_enable_disable (struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE DISABLED");
 	}
 	hapd->iconf->enable_karma = status;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_karma_loud_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE LOUD MODE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "KARMA CTRL_IFACE LOUD MODE DISABLED");
+	}
+	hapd->iconf->karma_loud = status;
 
 	return 0;
 }
