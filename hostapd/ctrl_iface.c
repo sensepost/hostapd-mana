@@ -1675,10 +1675,18 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	// KARMA
 	} else if (os_strcmp(buf, "KARMA_STATE") == 0) {
 		if (hostapd_ctrl_iface_karma_get_state(hapd)) {
-			os_memcpy(reply, "ENABLED\n", 8);
+			os_memcpy(reply, "KARMA ENABLED\n", 8);
 			reply_len = 8;
 		} else {
-			os_memcpy(reply, "DISABLED\n", 9);
+			os_memcpy(reply, "KARMA DISABLED\n", 9);
+			reply_len = 9;
+		}
+	} else if (os_strcmp(buf, "KARMA_MODE") == 0) {
+		if (hostapd_ctrl_iface_karma_get_mode(hapd)) {
+			os_memcpy(reply, "LOUD MODE ENABLED\n", 8);
+			reply_len = 8;
+		} else {
+			os_memcpy(reply, "LOUD MODE DISABLED\n", 9);
 			reply_len = 9;
 		}
 	} else if (os_strncmp(buf, "KARMA_ADD_WHITE_MAC ", 20) == 0) {
