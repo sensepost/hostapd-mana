@@ -713,23 +713,28 @@ void handle_probe_req(struct hostapd_data *hapd,
 	{
 		u8 *resp2;
 		size_t resp2_len;
+		int flag = 0;
 		if (hapd->iconf->karma_loud) {
 			wpa_printf(MSG_INFO, "ZZZZ : BROADCAST RESPONSE : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
 			resp2 = hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
+			flag = 1;
 		} else { //non-loud karma mode
 			if (os_memcmp(k->sta_addr, mgmt->sa, ETH_ALEN) == 0) {
 				wpa_printf(MSG_INFO, "ZZZZ : BROADCAST RESPONSE : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
 				resp2 = hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
+				flag = 1;
 			}
 		}
-		if (resp2 == NULL) {
-			wpa_printf(MSG_INFO, "ZZZZ : COULD NOT GENERATE SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
-		} else {
-			wpa_printf(MSG_INFO, "ZZZZ : GENERATED SSID response for %s (len %zu) :)", k->ssid_txt, k->ssid_len);
-			if (hostapd_drv_send_mlme(hapd, resp2, resp2_len, noack) < 0) {
-				wpa_printf(MSG_INFO, "ZZZZ : FAILED SENDING PROBE RESP FOR SSID %s (%zu)", k->ssid_txt, k->ssid_len);
+		if (flag == 1) {
+			if (resp2 == NULL) {
+				wpa_printf(MSG_INFO, "ZZZZ : COULD NOT GENERATE SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
+			} else {
+				wpa_printf(MSG_INFO, "ZZZZ : GENERATED SSID response for %s (len %zu) :)", k->ssid_txt, k->ssid_len);
+				if (hostapd_drv_send_mlme(hapd, resp2, resp2_len, noack) < 0) {
+					wpa_printf(MSG_INFO, "ZZZZ : FAILED SENDING PROBE RESP FOR SSID %s (%zu)", k->ssid_txt, k->ssid_len);
+				}
+				os_free(resp2);
 			}
-			os_free(resp2);
 		}
 	}
 

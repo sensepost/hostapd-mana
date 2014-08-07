@@ -1952,15 +1952,13 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 
 		// KARMA
 		// Print that it has associated and give the MAC and AP
-		// Doesn't currently work though as can't find ESSID
 		if (hapd->iconf->enable_karma) {
-			// This gives the ESSID of the AP and not the one from the probe.
-			//struct hostapd_ssid *ssid = sta->ssid;
+			struct hostapd_ssid *ssid = sta->ssid_probe_karma;
 
-			// printf("KARMA: Successful association of " MACSTR " to ESSID '%s'\n",
-			//	   MAC2STR(mgmt->da), ssid->ssid);
-			printf("KARMA: Successful association of " MACSTR "\n",
-				   MAC2STR(mgmt->da));
+			 printf("KARMA: Successful association of " MACSTR " to ESSID '%s'\n",
+				   MAC2STR(mgmt->da), ssid->ssid);
+			//printf("KARMA: Successful association of " MACSTR "\n",
+				   //MAC2STR(mgmt->da));
 		}
 
 		// KARMA END
