@@ -599,7 +599,7 @@ void handle_probe_req(struct hostapd_data *hapd,
     		sta->ssid_probe = &hapd->conf->ssid;
 	} else {
 		if (!(mgmt->da[0] & 0x01)) {
-			wpa_printf(MSG_INFO, "ZZZZ : Probe Request from " MACSTR
+			wpa_printf(MSG_INFO, " MANA - Probe Request from " MACSTR
 				" for foreign SSID '%s' (DA " MACSTR ")%s",
 				MAC2STR(mgmt->sa),
 				wpa_ssid_txt(elems.ssid, elems.ssid_len),
@@ -608,7 +608,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 			if (hapd->iconf->enable_karma) {
 				wpa_printf(MSG_MSGDUMP, "KARMA CTRL_IFACE Karma is enabled for handling probe request\n");
 				if (sta) {
-					wpa_printf(MSG_INFO, "ZZZZ : PROBE REQUEST FOR FOREIGN SSID %s WITH STA STRUCTURE", wpa_ssid_txt(elems.ssid, elems.ssid_len));
+					wpa_printf(MSG_INFO, " MANA - PROBE REQUEST FOR FOREIGN SSID %s WITH STA STRUCTURE", wpa_ssid_txt(elems.ssid, elems.ssid_len));
 					// Make hostapd think they probed for us, necessary for security policy
 					sta->ssid_probe = &hapd->conf->ssid;
 					// Store what was actually probed for
@@ -622,7 +622,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 			struct karma_ssid *d = NULL;
 			HASH_FIND_STR(karma_data, wpa_ssid_txt(elems.ssid, elems.ssid_len), d);
 			if (d == NULL) {
-				//wpa_printf(MSG_INFO, "ZZZZ : ADDING SSID %s(%d) TO THE HASH", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len);
+				//wpa_printf(MSG_INFO, " MANA - ADDING SSID %s(%d) TO THE HASH", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len);
 				d = (struct karma_ssid*)os_malloc(sizeof(struct karma_ssid));
 				os_memcpy(d->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
 				os_memcpy(d->ssid, elems.ssid, elems.ssid_len);
@@ -715,23 +715,23 @@ void handle_probe_req(struct hostapd_data *hapd,
 		size_t resp2_len;
 		int flag = 0;
 		if (hapd->iconf->karma_loud) {
-			wpa_printf(MSG_INFO, "ZZZZ : BROADCAST RESPONSE : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
+			wpa_printf(MSG_INFO, " MANA - BROADCAST RESPONSE : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
 			resp2 = hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
 			flag = 1;
 		} else { //non-loud karma mode
 			if (os_memcmp(k->sta_addr, mgmt->sa, ETH_ALEN) == 0) {
-				wpa_printf(MSG_INFO, "ZZZZ : BROADCAST RESPONSE : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
+				wpa_printf(MSG_INFO, " MANA - BROADCAST RESPONSE : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
 				resp2 = hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
 				flag = 1;
 			}
 		}
 		if (flag == 1) {
 			if (resp2 == NULL) {
-				wpa_printf(MSG_INFO, "ZZZZ : COULD NOT GENERATE SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
+				wpa_printf(MSG_INFO, " MANA - COULD NOT GENERATE SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
 			} else {
-				wpa_printf(MSG_INFO, "ZZZZ : GENERATED SSID response for %s (len %zu) :)", k->ssid_txt, k->ssid_len);
+				wpa_printf(MSG_INFO, " MANA - GENERATED SSID response for %s (len %zu) :)", k->ssid_txt, k->ssid_len);
 				if (hostapd_drv_send_mlme(hapd, resp2, resp2_len, noack) < 0) {
-					wpa_printf(MSG_INFO, "ZZZZ : FAILED SENDING PROBE RESP FOR SSID %s (%zu)", k->ssid_txt, k->ssid_len);
+					wpa_printf(MSG_INFO, " MANA - FAILED SENDING PROBE RESP FOR SSID %s (%zu)", k->ssid_txt, k->ssid_len);
 				}
 				os_free(resp2);
 			}
@@ -1054,7 +1054,19 @@ int ieee802_11_set_beacon(struct hostapd_data *hapd)
 		params.freq = &freq;
 
 	res = hostapd_drv_set_ap(hapd, &params);
-	hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
+	//  MANA - Start Beacon Stuffs here
+	//hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
+	//struct wpa_driver_ap_params params2 = params;
+	//os_memset(&params2.ssid, 0, params2.ssid_len);
+	//params2.hide_ssid = HIDDEN_SSID_ZERO_CONTENTS;
+	//hostapd_build_ap_extra_ies(hapd, &beacon, &proberesp, &assocresp);
+	//params2.beacon_ies = beacon;
+	//params2.proberesp_ies = proberesp;
+   //params2.assocresp_ies = assocresp;
+	//wpa_printf(MSG_INFO, "ZZZZ : Sending Hidden AP: %s", params2.ssid);
+	//res = hostapd_drv_set_ap(hapd, &params2);
+	//hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
+	//  MANA - End Beacon Stuffs here
 	if (res)
 		wpa_printf(MSG_ERROR, "Failed to set beacon parameters");
 	else

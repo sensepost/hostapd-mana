@@ -493,8 +493,6 @@ static int hostapd_config_read_eap_user(const char *fname,
 			user->phase2 = 1;
 		}
 
-		//wpa_printf(MSG_INFO, "ZZZZ : user->identity : %s\tuser->password : %s", user->identity, user->password);
-
 	done:
 		if (tail == NULL) {
 			tail = conf->eap_user = user;

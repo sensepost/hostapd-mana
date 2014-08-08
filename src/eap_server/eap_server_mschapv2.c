@@ -334,14 +334,15 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	challenge_hash(peer_challenge, data->auth_challenge, name, name_len, challenge_hash1);
 
 	wpa_hexdump(MSG_DEBUG, "EAP-MSCHAPV2: Challenge Hash", challenge_hash1, 8);
-	printf("\n");
-	printf("\tusername: %s\n", name);
-	printf("\tchallenge: ");
+	wpa_printf(MSG_INFO, "MANNA (EAP-FAST) : Username:%s", name);
+	wpa_printf(MSG_INFO, "MANNA (EAP-FAST) : Challenge");
+	printf("MANNA (EAP-FAST) : ");
 	for (x=0;x<7;x++)
                 printf("%02x:",challenge_hash1[x]);
         printf("%02x\n",challenge_hash1[7]);
 
-        printf("\tresponse: ");
+        wpa_printf(MSG_INFO, "MANNA (EAP-FAST) : Response");
+        printf("MANNA (EAP-FAST) : ");
         for (x=0;x<23;x++)
                 printf("%02x:",nt_response[x]);
         printf("%02x\n",nt_response[23]);
@@ -432,7 +433,6 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		/* Authenticator response is not really needed yet, but
 		 * calculate it here so that peer_challenge and username need
 		 * not be saved. */
-		// ZZZZ : TEST ME HERE 2
 		if (sm->user->password_hash) {
 			pw_hash = sm->user->password;
 		} else {
@@ -444,7 +444,6 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 			}
 			pw_hash = pw_hash_buf;
 		}
-		// ZZZZ : END TEST ME HERE2.
 		generate_authenticator_response_pwhash(
 			pw_hash, peer_challenge, data->auth_challenge,
 			username, username_len, nt_response,
@@ -455,14 +454,6 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		data->master_key_valid = 1;
 		wpa_hexdump_key(MSG_INFO, "EAP-MSCHAPV2: Derived Master Key",
 				data->master_key, MSCHAPV2_KEY_LEN);
-		//wpa_printf(MSG_INFO, "ZZZZ : Correct");
-	//} else {
-	//	wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: Expected NT-Response",
-	//		    expected, 24);
-	//	wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Invalid NT-Response");
-	//	data->state = FAILURE_REQ;
-	//	wpa_printf(MSG_INFO, "ZZZZ : Incorrect");
-	//}
 }
 
 
@@ -526,27 +517,19 @@ static void eap_mschapv2_process(struct eap_sm *sm, void *priv,
 	struct eap_mschapv2_data *data = priv;
 
 	if (sm->user == NULL || sm->user->password == NULL) {
-		//wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Password not configured ZZZZ");
-		//data->state = FAILURE;
-		//return;
 	}
 
 	switch (data->state) {
 	case CHALLENGE:
-		//wpa_printf(MSG_INFO, "ZZZZ -> CHALLENGE");
 		eap_mschapv2_process_response(sm, data, respData);
-		//wpa_printf(MSG_INFO, "ZZZZ -> POST CHALLENGE");
 		break;
 	case SUCCESS_REQ:
-		//wpa_printf(MSG_INFO, "ZZZZ -> SUCCESS_REQ");
 		eap_mschapv2_process_success_resp(sm, data, respData);
 		break;
 	case FAILURE_REQ:
-		//wpa_printf(MSG_INFO, "ZZZZ -> FAILURE_REQ");
 		eap_mschapv2_process_failure_resp(sm, data, respData);
 		break;
 	default:
-		//wpa_printf(MSG_INFO, "ZZZZ -> UNKNOWN");
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Unknown state %d in "
 			   "process", data->state);
 		break;

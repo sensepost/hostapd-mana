@@ -266,20 +266,6 @@ static int hostapd_ctrl_iface_karma_loud_enable_disable (struct hostapd_data *ha
 
 static int hostapd_ctrl_iface_karma_eap (struct hostapd_data *hapd)
 {
-	//wpa_printf(MSG_INFO, "ZZZZ : %s", hapd->conf->eap_user->identity['t\0']);
-	//hapd.hostapd_reload_bss();
-	//hostapd_reload_bss(hapd);
-	//const u8 *ident = 't';
-	//wpa_printf(MSG_INFO, "ZZZZ : HERE 1");
-	//hostapd_get_eap_user(hapd, ident, 1, 1);
-	//wpa_printf(MSG_INFO, "ZZZZ : HERE 2");
-	//wpa_printf(MSG_INFO, "ZZZZ : %s", hostapd_get_eap_user(hapd, ident, 1, 0));
-	//wpa_printf(MSG_INFO, "ZZZZ : %s", user->password);
-	//wpa_hexdump_ascii(MSG_INFO, "ZZZZ : ", hapd->conf->eap_user->password, hapd->conf->eap_user);
-	// ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ
-	//wpa_printf(MSG_INFO, "ZZZZ : %s", hapd);
-	//int n = sizeof(hapd->conf->eap_user->password);
-	//wpa_printf(MSG_INFO, "ZZZZ : USERPASSWORDSIZE: %d", n);
 	return 0;
 }
 // KARMA END
