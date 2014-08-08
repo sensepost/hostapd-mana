@@ -21,9 +21,7 @@
 #include "ap/ap_config.h"
 #include "config_file.h"
 
-// ZZZZ Include Logging Variable
-#include "common/wpa_common.h"
-// ZZZZ Include Logging Variable
+#include <stdlib.h>
 
 
 #ifndef CONFIG_NO_RADIUS
@@ -3176,12 +3174,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "spectrum_mgmt_required") == 0) {
 		conf->spectrum_mgmt_required = atoi(pos);
 	} else if (os_strcmp(buf, "ennode") == 0) {
-		wpa_printf(MSG_INFO, "ZZZZ : Hash Output Node : %s", pos);
-		//wpa_printf(MSG_INFO, "ZZZZ : CONFIG FILE THING : %s", pos);
-		//conf->ennode = pos;
-		//wpa_printf(MSG_INFO, "ZZZZ : CONFIG FILE THING : %s", conf->ennode);
-		//bss->ennode = pos;
-		//wpa_printf(MSG_INFO, "ZZZZ : CONFIG FILE THING : %s", bss->ennode);
+		setenv("KARMANODE", pos, 1);
 	} else {
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",
