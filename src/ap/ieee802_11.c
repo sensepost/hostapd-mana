@@ -790,17 +790,23 @@ static u16 check_ssid(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	if (ssid_ie == NULL)
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
-
-	if (ssid_ie_len != hapd->conf->ssid.ssid_len ||
-	    os_memcmp(ssid_ie, hapd->conf->ssid.ssid, ssid_ie_len) != 0) {
-		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_INFO,
-			       "Station tried to associate with unknown SSID "
-			       "'%s'", wpa_ssid_txt(ssid_ie, ssid_ie_len));
-		return WLAN_STATUS_UNSPECIFIED_FAILURE;
-	}
+	// KARMA
+	if (hapd->iconf->enable_karma) {
+		wpa_printf(MSG_MSGDUMP, "KARMA: Checking SSID for start of association, pass through %s", wpa_ssid_txt(ssid_ie, ssid_ie_len));
+		return WLAN_STATUS_SUCCESS;
+	} else {
+		if (ssid_ie_len != hapd->conf->ssid.ssid_len ||
+			os_memcmp(ssid_ie, hapd->conf->ssid.ssid, ssid_ie_len) != 0) {
+			hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+					   HOSTAPD_LEVEL_INFO,
+					   "Station tried to associate with unknown SSID "
+					   "'%s'", wpa_ssid_txt(ssid_ie, ssid_ie_len));
+			return WLAN_STATUS_UNSPECIFIED_FAILURE;
+		}
 
 	return WLAN_STATUS_SUCCESS;
+	}
+	// KARMA END
 }
 
 
@@ -1944,6 +1950,19 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		 * step.
 		 */
 		ap_sta_set_authorized(hapd, sta, 1);
+
+		// KARMA
+		// Print that it has associated and give the MAC and AP
+		if (hapd->iconf->enable_karma) {
+			struct hostapd_ssid *ssid = sta->ssid_probe_karma;
+
+			 printf("KARMA: Successful association of " MACSTR " to ESSID '%s'\n",
+				   MAC2STR(mgmt->da), ssid->ssid);
+			//printf("KARMA: Successful association of " MACSTR "\n",
+				   //MAC2STR(mgmt->da));
+		}
+
+		// KARMA END
 	}
 
 	if (reassoc)

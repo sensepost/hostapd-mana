@@ -676,7 +676,7 @@ static struct hostapd_data * get_hapd_bssid(struct hostapd_iface *iface,
 		return HAPD_BROADCAST;
 
 	for (i = 0; i < iface->num_bss; i++) {
-		if (os_memcmp(bssid, iface->bss[i]->own_addr, ETH_ALEN) == 0)
+		if (os_memcmp(bssid, iface->bss[i]->own_addr, ETH_ALEN) == 0) 
 			return iface->bss[i];
 	}
 

@@ -21,6 +21,8 @@
 #include "ap/ap_config.h"
 #include "config_file.h"
 
+#include <stdlib.h>
+
 
 #ifndef CONFIG_NO_RADIUS
 #ifdef EAP_SERVER
@@ -115,7 +117,6 @@ static int hostapd_acl_comp(const void *a, const void *b)
 	const struct mac_acl_entry *bb = b;
 	return os_memcmp(aa->addr, bb->addr, sizeof(macaddr));
 }
-
 
 static int hostapd_config_read_maclist(const char *fname,
 				       struct mac_acl_entry **acl, int *num)
@@ -1876,6 +1877,20 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->logger_syslog = atoi(pos);
 	} else if (os_strcmp(buf, "logger_stdout") == 0) {
 		bss->logger_stdout = atoi(pos);
+	// KARMA START
+	} else if (os_strcmp(buf, "enable_karma") == 0) {
+		int val = atoi(pos);
+		conf->enable_karma = (val != 0);
+		if (conf->enable_karma) {
+			wpa_printf(MSG_DEBUG, "KARMA: Enabled");
+		}
+	} else if (os_strcmp(buf, "karma_loud") == 0) {
+		int val = atoi(pos);
+		conf->karma_loud = (val != 0);
+		if (conf->karma_loud) {
+			wpa_printf(MSG_DEBUG, "KARMA: Loud mode enabled");
+		}
+	// KARMA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
 			   line);
@@ -3156,6 +3171,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->local_pwr_constraint = val;
 	} else if (os_strcmp(buf, "spectrum_mgmt_required") == 0) {
 		conf->spectrum_mgmt_required = atoi(pos);
+	} else if (os_strcmp(buf, "ennode") == 0) {
+		setenv("KARMANODE", pos, 1);
 	} else {
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",
@@ -3204,6 +3221,12 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	}
 
 	conf->last_bss = conf->bss[0];
+
+	// KARMA START
+	conf->enable_karma = 0; //default off
+	conf->karma_loud = 0; //default off
+	
+	// KARMA END
 
 	while (fgets(buf, sizeof(buf), f)) {
 		struct hostapd_bss_config *bss;
