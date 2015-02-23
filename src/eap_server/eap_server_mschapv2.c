@@ -334,15 +334,15 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	challenge_hash(peer_challenge, data->auth_challenge, name, name_len, challenge_hash1);
 
 	wpa_hexdump(MSG_DEBUG, "EAP-MSCHAPV2: Challenge Hash", challenge_hash1, 8);
-	wpa_printf(MSG_INFO, "MANNA (EAP-FAST) : Username:%s", name);
-	wpa_printf(MSG_INFO, "MANNA (EAP-FAST) : Challenge");
-	printf("MANNA (EAP-FAST) : ");
+	wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Username:%s", name);
+	wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Challenge");
+	printf("MANA (EAP-FAST) : ");
 	for (x=0;x<7;x++)
                 printf("%02x:",challenge_hash1[x]);
         printf("%02x\n",challenge_hash1[7]);
 
-        wpa_printf(MSG_INFO, "MANNA (EAP-FAST) : Response");
-        printf("MANNA (EAP-FAST) : ");
+        wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Response");
+        printf("MANA (EAP-FAST) : ");
         for (x=0;x<23;x++)
                 printf("%02x:",nt_response[x]);
         printf("%02x\n",nt_response[23]);
