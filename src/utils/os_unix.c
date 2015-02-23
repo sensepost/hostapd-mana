@@ -9,10 +9,11 @@
 #include "includes.h"
 
 #include <time.h>
+#include <sys/wait.h>
 
 #ifdef ANDROID
 #include <sys/capability.h>
-#include <linux/prctl.h>
+#include <sys/prctl.h>
 #include <private/android_filesystem_config.h>
 #endif /* ANDROID */
 
@@ -450,6 +451,20 @@ size_t os_strlcpy(char *dest, const char *src, size_t siz)
 }
 
 
+int os_memcmp_const(const void *a, const void *b, size_t len)
+{
+	const u8 *aa = a;
+	const u8 *bb = b;
+	size_t i;
+	u8 res;
+
+	for (res = 0, i = 0; i < len; i++)
+		res |= aa[i] ^ bb[i];
+
+	return res;
+}
+
+
 #ifdef WPA_TRACE
 
 void * os_malloc(size_t size)
@@ -540,3 +555,57 @@ char * os_strdup(const char *s)
 }
 
 #endif /* WPA_TRACE */
+
+
+int os_exec(const char *program, const char *arg, int wait_completion)
+{
+	pid_t pid;
+	int pid_status;
+
+	pid = fork();
+	if (pid < 0) {
+		perror("fork");
+		return -1;
+	}
+
+	if (pid == 0) {
+		/* run the external command in the child process */
+		const int MAX_ARG = 30;
+		char *_program, *_arg, *pos;
+		char *argv[MAX_ARG + 1];
+		int i;
+
+		_program = os_strdup(program);
+		_arg = os_strdup(arg);
+
+		argv[0] = _program;
+
+		i = 1;
+		pos = _arg;
+		while (i < MAX_ARG && pos && *pos) {
+			while (*pos == ' ')
+				pos++;
+			if (*pos == '\0')
+				break;
+			argv[i++] = pos;
+			pos = os_strchr(pos, ' ');
+			if (pos)
+				*pos++ = '\0';
+		}
+		argv[i] = NULL;
+
+		execv(program, argv);
+		perror("execv");
+		os_free(_program);
+		os_free(_arg);
+		exit(0);
+		return -1;
+	}
+
+	if (wait_completion) {
+		/* wait for the child process to complete in the parent */
+		waitpid(pid, &pid_status, 0);
+	}
+
+	return 0;
+}

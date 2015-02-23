@@ -227,6 +227,8 @@ void format_date(struct wpabuf *buf)
 
 	t = time(NULL);
 	date = gmtime(&t);
+	if (date == NULL)
+		return;
 	wpabuf_printf(buf, "%s, %02d %s %d %02d:%02d:%02d GMT",
 		      &weekday_str[date->tm_wday * 4], date->tm_mday,
 		      &month_str[date->tm_mon * 4], date->tm_year + 1900,
@@ -594,7 +596,10 @@ static struct wpabuf * build_fake_wsc_ack(void)
 	wpabuf_put_be16(msg, ATTR_REGISTRAR_NONCE);
 	wpabuf_put_be16(msg, WPS_NONCE_LEN);
 	wpabuf_put(msg, WPS_NONCE_LEN);
-	wps_build_wfa_ext(msg, 0, NULL, 0);
+	if (wps_build_wfa_ext(msg, 0, NULL, 0)) {
+		wpabuf_free(msg);
+		return NULL;
+	}
 	return msg;
 }
 

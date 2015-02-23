@@ -138,7 +138,7 @@ static void eap_eke_deinit(struct eap_sm *sm, void *priv)
 	os_free(data->serverid);
 	os_free(data->peerid);
 	wpabuf_free(data->msgs);
-	os_free(data);
+	bin_clear_free(data, sizeof(*data));
 }
 
 
@@ -451,7 +451,7 @@ static struct wpabuf * eap_eke_process_commit(struct eap_sm *sm,
 	/* DHComponent_P = Encr(key, y_p) */
 	rpos = wpabuf_put(resp, data->sess.dhcomp_len);
 	if (eap_eke_dhcomp(&data->sess, key, pub, rpos) < 0) {
-		wpa_printf(MSG_INFO, "EAP-EKE: Failed to build DHComponent_S");
+		wpa_printf(MSG_INFO, "EAP-EKE: Failed to build DHComponent_P");
 		os_memset(key, 0, sizeof(key));
 		return eap_eke_build_fail(data, ret, reqData,
 					  EAP_EKE_FAIL_PRIVATE_INTERNAL_ERROR);
@@ -523,7 +523,7 @@ static struct wpabuf * eap_eke_process_confirm(struct eap_eke_data *data,
 	end = payload + payload_len;
 
 	if (pos + data->sess.pnonce_ps_len + data->sess.prf_len > end) {
-		wpa_printf(MSG_DEBUG, "EAP-EKE: Too short EAP-EKE-Commit");
+		wpa_printf(MSG_DEBUG, "EAP-EKE: Too short EAP-EKE-Confirm");
 		return eap_eke_build_fail(data, ret, reqData,
 					  EAP_EKE_FAIL_PROTO_ERROR);
 	}
@@ -543,7 +543,7 @@ static struct wpabuf * eap_eke_process_confirm(struct eap_eke_data *data,
 	wpa_hexdump_key(MSG_DEBUG, "EAP-EKE: Received Nonce_P | Nonce_S",
 			nonces, 2 * data->sess.nonce_len);
 	if (os_memcmp(data->nonce_p, nonces, data->sess.nonce_len) != 0) {
-		wpa_printf(MSG_INFO, "EAP-EKE: Received Nonce_P does not match trnsmitted Nonce_P");
+		wpa_printf(MSG_INFO, "EAP-EKE: Received Nonce_P does not match transmitted Nonce_P");
 		return eap_eke_build_fail(data, ret, reqData,
 					  EAP_EKE_FAIL_AUTHENTICATION_FAIL);
 	}
@@ -566,8 +566,8 @@ static struct wpabuf * eap_eke_process_confirm(struct eap_eke_data *data,
 					  EAP_EKE_FAIL_PRIVATE_INTERNAL_ERROR);
 	}
 	wpa_hexdump(MSG_DEBUG, "EAP-EKE: Auth_S", auth_s, data->sess.prf_len);
-	if (os_memcmp(auth_s, pos + data->sess.pnonce_ps_len,
-		      data->sess.prf_len) != 0) {
+	if (os_memcmp_const(auth_s, pos + data->sess.pnonce_ps_len,
+			    data->sess.prf_len) != 0) {
 		wpa_printf(MSG_INFO, "EAP-EKE: Auth_S does not match");
 		return eap_eke_build_fail(data, ret, reqData,
 					  EAP_EKE_FAIL_AUTHENTICATION_FAIL);

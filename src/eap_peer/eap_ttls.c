@@ -133,6 +133,15 @@ static void eap_ttls_phase2_eap_deinit(struct eap_sm *sm,
 }
 
 
+static void eap_ttls_free_key(struct eap_ttls_data *data)
+{
+	if (data->key_data) {
+		bin_clear_free(data->key_data, EAP_TLS_KEY_LEN);
+		data->key_data = NULL;
+	}
+}
+
+
 static void eap_ttls_deinit(struct eap_sm *sm, void *priv)
 {
 	struct eap_ttls_data *data = priv;
@@ -141,7 +150,7 @@ static void eap_ttls_deinit(struct eap_sm *sm, void *priv)
 	eap_ttls_phase2_eap_deinit(sm, data);
 	os_free(data->phase2_eap_types);
 	eap_peer_tls_ssl_deinit(sm, &data->ssl);
-	os_free(data->key_data);
+	eap_ttls_free_key(data);
 	os_free(data->session_id);
 	wpabuf_free(data->pending_phase2_req);
 	os_free(data);
@@ -213,7 +222,7 @@ static int eap_ttls_avp_encapsulate(struct wpabuf **resp, u32 avp_code,
 static int eap_ttls_v0_derive_key(struct eap_sm *sm,
 				  struct eap_ttls_data *data)
 {
-	os_free(data->key_data);
+	eap_ttls_free_key(data);
 	data->key_data = eap_peer_tls_derive_key(sm, &data->ssl,
 						 "ttls keying material",
 						 EAP_TLS_KEY_LEN);
@@ -491,16 +500,6 @@ static int eap_ttls_phase2_request_mschapv2(struct eap_sm *sm,
 
 	wpabuf_put(msg, pos - buf);
 	*resp = msg;
-
-	if (sm->workaround) {
-		/* At least FreeRADIUS seems to be terminating
-		 * EAP-TTLS/MSHCAPV2 without the expected MS-CHAP-v2 Success
-		 * packet. */
-		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAPV2: EAP workaround - "
-			   "allow success without tunneled response");
-		ret->methodState = METHOD_MAY_CONT;
-		ret->decision = DECISION_COND_SUCC;
-	}
 
 	return 0;
 #else /* EAP_MSCHAPv2 */
@@ -1540,8 +1539,7 @@ static void eap_ttls_deinit_for_reauth(struct eap_sm *sm, void *priv)
 static void * eap_ttls_init_for_reauth(struct eap_sm *sm, void *priv)
 {
 	struct eap_ttls_data *data = priv;
-	os_free(data->key_data);
-	data->key_data = NULL;
+	eap_ttls_free_key(data);
 	os_free(data->session_id);
 	data->session_id = NULL;
 	if (eap_peer_tls_reauth_init(sm, &data->ssl)) {

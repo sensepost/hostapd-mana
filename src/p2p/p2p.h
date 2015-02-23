@@ -230,6 +230,14 @@ struct p2p_peer_info {
 	 * wfd_subelems - Wi-Fi Display subelements from WFD IE(s)
 	 */
 	struct wpabuf *wfd_subelems;
+
+	/**
+	 * vendor_elems - Unrecognized vendor elements
+	 *
+	 * This buffer includes any other vendor element than P2P, WPS, and WFD
+	 * IE(s) from the frame that was used to discover the peer.
+	 */
+	struct wpabuf *vendor_elems;
 };
 
 enum p2p_prov_disc_status {
@@ -265,6 +273,12 @@ struct p2p_config {
 	 * channel - Own listen channel
 	 */
 	u8 channel;
+
+	/**
+	 * channel_forced - the listen channel was forced by configuration
+	 *                  or by control interface and cannot be overridden
+	 */
+	u8 channel_forced;
 
 	/**
 	 * Regulatory class for own operational channel
@@ -387,6 +401,14 @@ struct p2p_config {
 	 * max_listen - Maximum listen duration in ms
 	 */
 	unsigned int max_listen;
+
+	/**
+	 * passphrase_len - Passphrase length (8..63)
+	 *
+	 * This parameter controls the length of the random passphrase that is
+	 * generated at the GO.
+	 */
+	unsigned int passphrase_len;
 
 	/**
 	 * cb_ctx - Context to use with callback functions
@@ -1669,7 +1691,24 @@ void p2p_set_client_discoverability(struct p2p_data *p2p, int enabled);
  */
 void p2p_set_managed_oper(struct p2p_data *p2p, int enabled);
 
-int p2p_set_listen_channel(struct p2p_data *p2p, u8 reg_class, u8 channel);
+/**
+ * p2p_config_get_random_social - Return a random social channel
+ * @p2p: P2P config
+ * @op_class: Selected operating class
+ * @op_channel: Selected social channel
+ * Returns: 0 on success, -1 on failure
+ *
+ * This function is used before p2p_init is called. A random social channel
+ * from supports bands 2.4 GHz (channels 1,6,11) and 60 GHz (channel 2) is
+ * returned on success.
+ */
+int p2p_config_get_random_social(struct p2p_config *p2p, u8 *op_class,
+				 u8 *op_channel);
+
+int p2p_set_listen_channel(struct p2p_data *p2p, u8 reg_class, u8 channel,
+			   u8 forced);
+
+u8 p2p_get_listen_channel(struct p2p_data *p2p);
 
 int p2p_set_ssid_postfix(struct p2p_data *p2p, const u8 *postfix, size_t len);
 
@@ -1771,7 +1810,7 @@ unsigned int p2p_get_group_num_members(struct p2p_group *group);
  * @group: P2P group context from p2p_group_init()
  * @next: iteration pointer, must be a pointer to a void * that is set to %NULL
  *	on the first call and not modified later
- * Returns: A P2P Interface Address for each call and %NULL for no more members
+ * Returns: A P2P Device Address for each call and %NULL for no more members
  */
 const u8 * p2p_iterate_group_members(struct p2p_group *group, void **next);
 
@@ -1791,6 +1830,26 @@ const u8 * p2p_group_get_dev_addr(struct p2p_group *group, const u8 *addr);
  * Returns: 1 if client is connected or 0 if not
  */
 int p2p_group_is_client_connected(struct p2p_group *group, const u8 *dev_addr);
+
+/**
+ * p2p_group_get_config - Get the group configuration
+ * @group: P2P group context from p2p_group_init()
+ * Returns: The group configuration pointer
+ */
+const struct p2p_group_config * p2p_group_get_config(struct p2p_group *group);
+
+/**
+ * p2p_loop_on_all_groups - Run the given callback on all groups
+ * @p2p: P2P module context from p2p_init()
+ * @group_callback: The callback function pointer
+ * @user_data: Some user data pointer which can be %NULL
+ *
+ * The group_callback function can stop the iteration by returning 0.
+ */
+void p2p_loop_on_all_groups(struct p2p_data *p2p,
+			    int (*group_callback)(struct p2p_group *group,
+						  void *user_data),
+			    void *user_data);
 
 /**
  * p2p_get_peer_found - Get P2P peer info structure of a found peer
@@ -1950,5 +2009,14 @@ int p2p_process_nfc_connection_handover(struct p2p_data *p2p,
 void p2p_set_authorized_oob_dev_pw_id(struct p2p_data *p2p, u16 dev_pw_id,
 				      int go_intent,
 				      const u8 *own_interface_addr);
+
+int p2p_set_passphrase_len(struct p2p_data *p2p, unsigned int len);
+
+void p2p_loop_on_known_peers(struct p2p_data *p2p,
+			     void (*peer_callback)(struct p2p_peer_info *peer,
+						   void *user_data),
+			     void *user_data);
+
+void p2p_set_vendor_elems(struct p2p_data *p2p, struct wpabuf **vendor_elem);
 
 #endif /* P2P_H */

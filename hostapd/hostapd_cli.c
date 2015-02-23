@@ -14,7 +14,7 @@
 #include "utils/eloop.h"
 #include "utils/edit.h"
 #include "common/version.h"
-#include "ap/ap_config.h"
+
 
 static const char *hostapd_cli_version =
 "hostapd_cli v" VERSION_STR "\n"
@@ -86,17 +86,6 @@ static const char *commands_help =
 "   interface [ifname]   show interfaces/select interface\n"
 "   level <debug level>  change debug level\n"
 "   license              show full hostapd_cli license\n"
-// KARMA START
-"   ping                   send a ping, get a pong\n"
-"   karma_change_ssid      change the default SSID for when Karma is off\n"
-"   karma_get_ssid         get the default SSID for when Karma is off\n"
-"   karma_enable           enable Karma\n"
-"   karma_disable          disable Karma\n"
-"   karma_get_state        get the state of Karma\n"
-"   karma_add_black_mac    add a MAC to the black list\n"
-"   karma_add_white_mac    add a MAC to the white list\n"
-"   karma_reload_eap       reload users when challenge/response is cracked\n"
-// KARMA END
 "   quit                 exit hostapd_cli\n";
 
 static struct wpa_ctrl *ctrl_conn;
@@ -249,28 +238,19 @@ static int hostapd_cli_cmd_mib(struct wpa_ctrl *ctrl, int argc, char *argv[])
 static int hostapd_cli_exec(const char *program, const char *arg1,
 			    const char *arg2)
 {
-	char *cmd;
+	char *arg;
 	size_t len;
 	int res;
-	int ret = 0;
 
-	len = os_strlen(program) + os_strlen(arg1) + os_strlen(arg2) + 3;
-	cmd = os_malloc(len);
-	if (cmd == NULL)
+	len = os_strlen(arg1) + os_strlen(arg2) + 2;
+	arg = os_malloc(len);
+	if (arg == NULL)
 		return -1;
-	res = os_snprintf(cmd, len, "%s %s %s", program, arg1, arg2);
-	if (res < 0 || (size_t) res >= len) {
-		os_free(cmd);
-		return -1;
-	}
-	cmd[len - 1] = '\0';
-#ifndef _WIN32_WCE
-	if (system(cmd) < 0)
-		ret = -1;
-#endif /* _WIN32_WCE */
-	os_free(cmd);
+	os_snprintf(arg, len, "%s %s", arg1, arg2);
+	res = os_exec(program, arg, 1);
+	os_free(arg);
 
-	return ret;
+	return res;
 }
 
 
@@ -355,90 +335,6 @@ static int hostapd_cli_cmd_disassociate(struct wpa_ctrl *ctrl, int argc,
 		os_snprintf(buf, sizeof(buf), "DISASSOCIATE %s", argv[0]);
 	return wpa_ctrl_command(ctrl, buf);
 }
-
-// KARMA START
-static int hostapd_cli_cmd_karma_change_ssid(struct wpa_ctrl *ctrl, int argc,
-					char *argv[])
-{
-	// Max length of SSID is 32 chars + the command and the null byte
-	char buf[50];
-	if (argc < 1) {
-		printf("Invalid 'change Karma SSID' command - exactly one "
-		       "argument, SSID, is required.\n");
-		return -1;
-	}
-	if (strlen(argv[0]) > HOSTAPD_MAX_SSID_LEN) {
-		printf("The max length of an SSID is %i\n", HOSTAPD_MAX_SSID_LEN);
-		return -1;
-	}
-	os_snprintf(buf, sizeof(buf), "KARMA_CHANGE_SSID %s", argv[0]);
-	return wpa_ctrl_command(ctrl, buf);
-}
-
-static int hostapd_cli_cmd_karma_get_ssid(struct wpa_ctrl *ctrl, int argc,
-					char *argv[])
-{
-	return wpa_ctrl_command(ctrl, "KARMA_GET_SSID");
-}
-
-static int hostapd_cli_cmd_karma_add_white_mac(struct wpa_ctrl *ctrl, int argc,
-					char *argv[])
-{
-	// Max length of MAC is 17 chars + the command and the null byte
-	char buf[50];
-	if (argc < 1) {
-		printf("Invalid 'add white MAC' command - exactly one "
-		       "argument, MAC, is required.\n");
-		return -1;
-	}
-	// Can't find a define for the length of a MAC address as a string
-	// ETH_ALEN is the number of individual bytes
-	if (strlen(argv[0]) != 17) {
-		printf("The MAC should be in the format 00:11:22:33:44:55\n");
-		return -1;
-	}
-	os_snprintf(buf, sizeof(buf), "KARMA_ADD_WHITE_MAC %s", argv[0]);
-	return wpa_ctrl_command(ctrl, buf);
-}
-
-static int hostapd_cli_cmd_karma_add_black_mac(struct wpa_ctrl *ctrl, int argc,
-					char *argv[])
-{
-	// Max length of MAC is 17 chars + the command and the null byte
-	char buf[50];
-	if (argc < 1) {
-		printf("Invalid 'add black MAC' command - exactly one "
-		       "argument, MAC, is required.\n");
-		return -1;
-	}
-	// Can't find a define for the length of a MAC address as a string
-	// ETH_ALEN is the number of individual bytes
-	if (strlen(argv[0]) != 17) {
-		printf("The MAC should be in the format 00:11:22:33:44:55\n");
-		return -1;
-	}
-	os_snprintf(buf, sizeof(buf), "KARMA_ADD_BLACK_MAC %s", argv[0]);
-	return wpa_ctrl_command(ctrl, buf);
-}
-
-// These should be one function with a parameter
-static int hostapd_cli_cmd_karma_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
-{
-	return wpa_ctrl_command(ctrl, "KARMA_DISABLE");
-}
-static int hostapd_cli_cmd_karma_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
-{
-	return wpa_ctrl_command(ctrl, "KARMA_ENABLE");
-}
-static int hostapd_cli_cmd_karma_get_state(struct wpa_ctrl *ctrl, int argc, char *argv[])
-{
-	return wpa_ctrl_command(ctrl, "KARMA_STATE");
-}
-static int hostapd_cli_cmd_karma_reload_eap(struct wpa_ctrl *ctrl, int argc, char *argv[])
-{
-	return wpa_ctrl_command(ctrl, "KARMA_EAP");
-}
-// END KARMA
 
 
 #ifdef CONFIG_IEEE80211W
@@ -939,6 +835,8 @@ static int hostapd_cli_cmd_interface(struct wpa_ctrl *ctrl, int argc,
 	hostapd_cli_close_connection();
 	os_free(ctrl_ifname);
 	ctrl_ifname = os_strdup(argv[0]);
+	if (ctrl_ifname == NULL)
+		return -1;
 
 	if (hostapd_cli_open_connection(ctrl_ifname)) {
 		printf("Connected to interface '%s.\n", ctrl_ifname);
@@ -1099,18 +997,6 @@ static struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "quit", hostapd_cli_cmd_quit },
 	{ "set", hostapd_cli_cmd_set },
 	{ "get", hostapd_cli_cmd_get },
-// KARMA START
-// Because I always type ? first
-	{ "?", hostapd_cli_cmd_help },
-	{ "karma_add_black_mac", hostapd_cli_cmd_karma_add_black_mac},
-	{ "karma_add_white_mac", hostapd_cli_cmd_karma_add_white_mac},
-	{ "karma_change_ssid", hostapd_cli_cmd_karma_change_ssid},
-	{ "karma_get_ssid", hostapd_cli_cmd_karma_get_ssid},
-	{ "karma_get_state", hostapd_cli_cmd_karma_get_state},
-	{ "karma_disable", hostapd_cli_cmd_karma_disable},
-	{ "karma_enable", hostapd_cli_cmd_karma_enable},
-	{ "karma_reload_eap", hostapd_cli_cmd_karma_reload_eap},
-// END KARMA
 	{ "set_qos_map_set", hostapd_cli_cmd_set_qos_map_set },
 	{ "send_qos_map_conf", hostapd_cli_cmd_send_qos_map_conf },
 	{ "chan_switch", hostapd_cli_cmd_chan_switch },

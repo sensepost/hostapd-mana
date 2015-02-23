@@ -266,6 +266,7 @@ int p2p_start_sd(struct p2p_data *p2p, struct p2p_device *dev)
 	int ret = 0;
 	struct p2p_sd_query *query;
 	int freq;
+	unsigned int wait_time;
 
 	freq = dev->listen_freq > 0 ? dev->listen_freq : dev->oper_freq;
 	if (freq <= 0) {
@@ -290,22 +291,15 @@ int p2p_start_sd(struct p2p_data *p2p, struct p2p_device *dev)
 	p2p->sd_query = query;
 	p2p->pending_action_state = P2P_PENDING_SD;
 
+	wait_time = 5000;
+	if (p2p->cfg->max_listen && wait_time > p2p->cfg->max_listen)
+		wait_time = p2p->cfg->max_listen;
 	if (p2p_send_action(p2p, freq, dev->info.p2p_device_addr,
 			    p2p->cfg->dev_addr, dev->info.p2p_device_addr,
-			    wpabuf_head(req), wpabuf_len(req), 5000) < 0) {
+			    wpabuf_head(req), wpabuf_len(req), wait_time) < 0) {
 		p2p_dbg(p2p, "Failed to send Action frame");
 		ret = -1;
 	}
-
-	/* Update the pending broadcast SD query count for this device */
-	dev->sd_pending_bcast_queries--;
-
-	/*
-	 * If there are no pending broadcast queries for this device, mark it as
-	 * done (-1).
-	 */
-	if (dev->sd_pending_bcast_queries == 0)
-		dev->sd_pending_bcast_queries = -1;
 
 	wpabuf_free(req);
 

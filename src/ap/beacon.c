@@ -29,9 +29,6 @@
 #include "hs20.h"
 #include "dfs.h"
 
-// KARMA START
-struct karma_ssid *karma_data = NULL;
-// KARMA END
 
 #ifdef NEED_AP_MLME
 
@@ -114,6 +111,10 @@ static u8 * hostapd_eid_pwr_constraint(struct hostapd_data *hapd, u8 *eid)
 
 	if (hapd->iface->current_mode == NULL ||
 	    hapd->iface->current_mode->mode != HOSTAPD_MODE_IEEE80211A)
+		return eid;
+
+	/* Let host drivers add this IE if DFS support is offloaded */
+	if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)
 		return eid;
 
 	/*
@@ -223,7 +224,7 @@ static u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
 			continue; /* can use same entry */
 		}
 
-		if (start) {
+		if (start && prev) {
 			pos = hostapd_eid_country_add(pos, end, chan_spacing,
 						      start, prev);
 			start = NULL;
@@ -268,18 +269,18 @@ static u8 * hostapd_eid_csa(struct hostapd_data *hapd, u8 *eid)
 {
 	u8 chan;
 
-	if (!hapd->iface->cs_freq_params.freq)
+	if (!hapd->cs_freq_params.freq)
 		return eid;
 
-	if (ieee80211_freq_to_chan(hapd->iface->cs_freq_params.freq, &chan) ==
+	if (ieee80211_freq_to_chan(hapd->cs_freq_params.freq, &chan) ==
 	    NUM_HOSTAPD_MODES)
 		return eid;
 
 	*eid++ = WLAN_EID_CHANNEL_SWITCH;
 	*eid++ = 3;
-	*eid++ = hapd->iface->cs_block_tx;
+	*eid++ = hapd->cs_block_tx;
 	*eid++ = chan;
-	*eid++ = hapd->iface->cs_count;
+	*eid++ = hapd->cs_count;
 
 	return eid;
 }
@@ -289,12 +290,12 @@ static u8 * hostapd_eid_secondary_channel(struct hostapd_data *hapd, u8 *eid)
 {
 	u8 sec_ch;
 
-	if (!hapd->iface->cs_freq_params.sec_channel_offset)
+	if (!hapd->cs_freq_params.sec_channel_offset)
 		return eid;
 
-	if (hapd->iface->cs_freq_params.sec_channel_offset == -1)
+	if (hapd->cs_freq_params.sec_channel_offset == -1)
 		sec_ch = HT_INFO_HT_PARAM_SECONDARY_CHNL_BELOW;
-	else if (hapd->iface->cs_freq_params.sec_channel_offset == 1)
+	else if (hapd->cs_freq_params.sec_channel_offset == 1)
 		sec_ch = HT_INFO_HT_PARAM_SECONDARY_CHNL_ABOVE;
 	else
 		return eid;
@@ -327,8 +328,9 @@ static u8 * hostapd_add_csa_elems(struct hostapd_data *hapd, u8 *pos,
 	return pos;
 }
 
+
 static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
-				   struct sta_info *sta, const u8 *ssid, size_t ssid_len,
+				   struct sta_info *sta,
 				   const struct ieee80211_mgmt *req,
 				   int is_p2p, size_t *resp_len)
 {
@@ -366,21 +368,13 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 	/* hardware or low-level driver will setup seq_ctrl and timestamp */
 	resp->u.probe_resp.capab_info =
-		host_to_le16(hostapd_own_capab_info(hapd, sta, 1)); // KARMA - FOLLOW
+		host_to_le16(hostapd_own_capab_info(hapd, sta, 1));
 
 	pos = resp->u.probe_resp.variable;
 	*pos++ = WLAN_EID_SSID;
-	// KARMA START
-	if (hapd->iconf->enable_karma && ssid_len > 0) {
-		*pos++ = ssid_len;
-		os_memcpy(pos, ssid, ssid_len);
-		pos += ssid_len;
-	} else {
-		*pos++ = hapd->conf->ssid.ssid_len;
-		os_memcpy(pos, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
-		pos += hapd->conf->ssid.ssid_len;
-	}
-	// KARMA END
+	*pos++ = hapd->conf->ssid.ssid_len;
+	os_memcpy(pos, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
+	pos += hapd->conf->ssid.ssid_len;
 
 	/* Supported rates */
 	pos = hostapd_eid_supp_rates(hapd, pos);
@@ -419,7 +413,7 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	pos = hostapd_eid_roaming_consortium(hapd, pos);
 
 	pos = hostapd_add_csa_elems(hapd, pos, (u8 *)resp,
-				    &hapd->iface->cs_c_off_proberesp);
+				    &hapd->cs_c_off_proberesp);
 #ifdef CONFIG_IEEE80211AC
 	pos = hostapd_eid_vht_capabilities(hapd, pos);
 	pos = hostapd_eid_vht_operation(hapd, pos);
@@ -464,6 +458,7 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	*resp_len = pos - (u8 *) resp;
 	return (u8 *) resp;
 }
+
 
 enum ssid_match_result {
 	NO_SSID_MATCH,
@@ -593,47 +588,19 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 	res = ssid_match(hapd, elems.ssid, elems.ssid_len,
 			 elems.ssid_list, elems.ssid_list_len);
- 	// KARMA start
 	if (res != NO_SSID_MATCH) {
-    	if (sta)
-    		sta->ssid_probe = &hapd->conf->ssid;
+		if (sta)
+			sta->ssid_probe = &hapd->conf->ssid;
 	} else {
 		if (!(mgmt->da[0] & 0x01)) {
-			wpa_printf(MSG_INFO, " MANA - Probe Request from " MACSTR
-				" for foreign SSID '%s' (DA " MACSTR ")%s",
-				MAC2STR(mgmt->sa),
-				wpa_ssid_txt(elems.ssid, elems.ssid_len),
-				MAC2STR(mgmt->da),
-				elems.ssid_list ? " (SSID list)" : "");
-			if (hapd->iconf->enable_karma) {
-				wpa_printf(MSG_MSGDUMP, "KARMA CTRL_IFACE Karma is enabled for handling probe request\n");
-				if (sta) {
-					wpa_printf(MSG_INFO, " MANA - PROBE REQUEST FOR FOREIGN SSID %s WITH STA STRUCTURE", wpa_ssid_txt(elems.ssid, elems.ssid_len));
-					// Make hostapd think they probed for us, necessary for security policy
-					sta->ssid_probe = &hapd->conf->ssid;
-					// Store what was actually probed for
-					sta->ssid_probe_karma = &hapd->conf->ssid;
-					os_memcpy(sta->ssid_probe_karma->ssid, elems.ssid, elems.ssid_len);
-					sta->ssid_probe_karma->ssid_len = elems.ssid_len;
-				}
-			}
+			wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
+				   " for foreign SSID '%s' (DA " MACSTR ")%s",
+				   MAC2STR(mgmt->sa),
+				   wpa_ssid_txt(elems.ssid, elems.ssid_len),
+				   MAC2STR(mgmt->da),
+				   elems.ssid_list ? " (SSID list)" : "");
 		}
-		if (hapd->iconf->enable_karma) {
-			struct karma_ssid *d = NULL;
-			HASH_FIND_STR(karma_data, wpa_ssid_txt(elems.ssid, elems.ssid_len), d);
-			if (d == NULL) {
-				//wpa_printf(MSG_INFO, " MANA - ADDING SSID %s(%d) TO THE HASH", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len);
-				d = (struct karma_ssid*)os_malloc(sizeof(struct karma_ssid));
-				os_memcpy(d->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
-				os_memcpy(d->ssid, elems.ssid, elems.ssid_len);
-				d->ssid_len = elems.ssid_len;
-				os_memcpy(d->sta_addr, mgmt->sa, ETH_ALEN);
-				HASH_ADD_STR(karma_data, ssid_txt, d);
-			}
-		}
- 		if (!hapd->iconf->enable_karma)
-			return;
-	// KARMA END
+		return;
 	}
 
 #ifdef CONFIG_INTERWORKING
@@ -691,8 +658,8 @@ void handle_probe_req(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
 
-	resp = hostapd_gen_probe_resp(hapd, sta, elems.ssid, elems.ssid_len,
-			mgmt, elems.p2p != NULL, &resp_len);
+	resp = hostapd_gen_probe_resp(hapd, sta, mgmt, elems.p2p != NULL,
+				      &resp_len);
 	if (resp == NULL)
 		return;
 
@@ -705,38 +672,8 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 	if (hostapd_drv_send_mlme(hapd, resp, resp_len, noack) < 0)
 		wpa_printf(MSG_INFO, "handle_probe_req: send failed");
-	os_free(resp);
 
-	// KARMA START
-	struct karma_ssid *k;
-	for ( k = karma_data; k != NULL; k = (struct karma_ssid*)(k->hh.next))
-	{
-		u8 *resp2;
-		size_t resp2_len;
-		int flag = 0;
-		if (hapd->iconf->karma_loud) {
-			wpa_printf(MSG_INFO, " MANA - BROADCAST RESPONSE : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
-			resp2 = hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
-			flag = 1;
-		} else { //non-loud karma mode
-			if (os_memcmp(k->sta_addr, mgmt->sa, ETH_ALEN) == 0) {
-				wpa_printf(MSG_INFO, " MANA - BROADCAST RESPONSE : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
-				resp2 = hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
-				flag = 1;
-			}
-		}
-		if (flag == 1) {
-			if (resp2 == NULL) {
-				wpa_printf(MSG_INFO, " MANA - COULD NOT GENERATE SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
-			} else {
-				wpa_printf(MSG_INFO, " MANA - GENERATED SSID response for %s (len %zu) :)", k->ssid_txt, k->ssid_len);
-				if (hostapd_drv_send_mlme(hapd, resp2, resp2_len, noack) < 0) {
-					wpa_printf(MSG_INFO, " MANA - FAILED SENDING PROBE RESP FOR SSID %s (%zu)", k->ssid_txt, k->ssid_len);
-				}
-				os_free(resp2);
-			}
-		}
-	}
+	os_free(resp);
 
 	wpa_printf(MSG_EXCESSIVE, "STA " MACSTR " sent probe request for %s "
 		   "SSID", MAC2STR(mgmt->sa),
@@ -776,7 +713,7 @@ static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
 			   "this");
 
 	/* Generate a Probe Response template for the non-P2P case */
-	return hostapd_gen_probe_resp(hapd, NULL, NULL, 0, NULL, 0, resp_len); //KARMA mod
+	return hostapd_gen_probe_resp(hapd, NULL, NULL, 0, resp_len);
 }
 
 #endif /* NEED_AP_MLME */
@@ -891,7 +828,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tailpos = hostapd_eid_adv_proto(hapd, tailpos);
 	tailpos = hostapd_eid_roaming_consortium(hapd, tailpos);
 	tailpos = hostapd_add_csa_elems(hapd, tailpos, tail,
-					&hapd->iface->cs_c_off_beacon);
+					&hapd->cs_c_off_beacon);
 #ifdef CONFIG_IEEE80211AC
 	tailpos = hostapd_eid_vht_capabilities(hapd, tailpos);
 	tailpos = hostapd_eid_vht_operation(hapd, tailpos);
@@ -1024,7 +961,7 @@ int ieee802_11_set_beacon(struct hostapd_data *hapd)
 	struct wpabuf *beacon, *proberesp, *assocresp;
 	int res, ret = -1;
 
-	if (hapd->iface->csa_in_progress) {
+	if (hapd->csa_in_progress) {
 		wpa_printf(MSG_ERROR, "Cannot set beacons during CSA period");
 		return -1;
 	}
@@ -1054,19 +991,7 @@ int ieee802_11_set_beacon(struct hostapd_data *hapd)
 		params.freq = &freq;
 
 	res = hostapd_drv_set_ap(hapd, &params);
-	//  MANA - Start Beacon Stuffs here
-	//hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
-	//struct wpa_driver_ap_params params2 = params;
-	//os_memset(&params2.ssid, 0, params2.ssid_len);
-	//params2.hide_ssid = HIDDEN_SSID_ZERO_CONTENTS;
-	//hostapd_build_ap_extra_ies(hapd, &beacon, &proberesp, &assocresp);
-	//params2.beacon_ies = beacon;
-	//params2.proberesp_ies = proberesp;
-   //params2.assocresp_ies = assocresp;
-	//wpa_printf(MSG_INFO, "ZZZZ : Sending Hidden AP: %s", params2.ssid);
-	//res = hostapd_drv_set_ap(hapd, &params2);
-	//hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
-	//  MANA - End Beacon Stuffs here
+	hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
 	if (res)
 		wpa_printf(MSG_ERROR, "Failed to set beacon parameters");
 	else

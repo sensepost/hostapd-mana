@@ -362,7 +362,7 @@ void printf_encode(char *txt, size_t maxlen, const u8 *data, size_t len)
 			*txt++ = '\\';
 			*txt++ = '\\';
 			break;
-		case '\e':
+		case '\033':
 			*txt++ = '\\';
 			*txt++ = 'e';
 			break;
@@ -427,7 +427,7 @@ size_t printf_decode(u8 *buf, size_t maxlen, const char *str)
 				pos++;
 				break;
 			case 'e':
-				buf[len++] = '\e';
+				buf[len++] = '\033';
 				pos++;
 				break;
 			case 'x':
@@ -826,4 +826,43 @@ void int_array_add_unique(int **res, int a)
 	n[reslen + 1] = 0;
 
 	*res = n;
+}
+
+
+void str_clear_free(char *str)
+{
+	if (str) {
+		size_t len = os_strlen(str);
+		os_memset(str, 0, len);
+		os_free(str);
+	}
+}
+
+
+void bin_clear_free(void *bin, size_t len)
+{
+	if (bin) {
+		os_memset(bin, 0, len);
+		os_free(bin);
+	}
+}
+
+
+int random_mac_addr(u8 *addr)
+{
+	if (os_get_random(addr, ETH_ALEN) < 0)
+		return -1;
+	addr[0] &= 0xfe; /* unicast */
+	addr[0] |= 0x02; /* locally administered */
+	return 0;
+}
+
+
+int random_mac_addr_keep_oui(u8 *addr)
+{
+	if (os_get_random(addr + 3, 3) < 0)
+		return -1;
+	addr[0] &= 0xfe; /* unicast */
+	addr[0] |= 0x02; /* locally administered */
+	return 0;
 }

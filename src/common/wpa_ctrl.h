@@ -239,6 +239,25 @@ extern "C" {
 #define WPA_BSS_MASK_DELIM		BIT(17)
 
 
+/* VENDOR_ELEM_* frame id values */
+enum wpa_vendor_elem_frame {
+	VENDOR_ELEM_PROBE_REQ_P2P = 0,
+	VENDOR_ELEM_PROBE_RESP_P2P = 1,
+	VENDOR_ELEM_PROBE_RESP_P2P_GO = 2,
+	VENDOR_ELEM_BEACON_P2P_GO = 3,
+	VENDOR_ELEM_P2P_PD_REQ = 4,
+	VENDOR_ELEM_P2P_PD_RESP = 5,
+	VENDOR_ELEM_P2P_GO_NEG_REQ = 6,
+	VENDOR_ELEM_P2P_GO_NEG_RESP = 7,
+	VENDOR_ELEM_P2P_GO_NEG_CONF = 8,
+	VENDOR_ELEM_P2P_INV_REQ = 9,
+	VENDOR_ELEM_P2P_INV_RESP = 10,
+	VENDOR_ELEM_P2P_ASSOC_REQ = 11,
+	VENDOR_ELEM_P2P_ASSOC_RESP = 12,
+	NUM_VENDOR_ELEM_FRAMES
+};
+
+
 /* wpa_supplicant/hostapd control interface access */
 
 /**
@@ -326,9 +345,10 @@ int wpa_ctrl_detach(struct wpa_ctrl *ctrl);
  * @reply_len: Length of the reply buffer
  * Returns: 0 on success, -1 on failure
  *
- * This function will receive a pending control interface message. This
- * function will block if no messages are available. The received response will
- * be written to reply and reply_len is set to the actual length of the reply.
+ * This function will receive a pending control interface message. The received
+ * response will be written to reply and reply_len is set to the actual length
+ * of the reply.
+
  * wpa_ctrl_recv() is only used for event messages, i.e., wpa_ctrl_attach()
  * must have been used to register the control interface as an event monitor.
  */

@@ -55,14 +55,14 @@ struct wpa_sm_ctx {
 	int (*send_tdls_mgmt)(void *ctx, const u8 *dst,
 			      u8 action_code, u8 dialog_token,
 			      u16 status_code, u32 peer_capab,
-			      const u8 *buf, size_t len);
+			      int initiator, const u8 *buf, size_t len);
 	int (*tdls_oper)(void *ctx, int oper, const u8 *peer);
 	int (*tdls_peer_addset)(void *ctx, const u8 *addr, int add, u16 aid,
 				u16 capability, const u8 *supp_rates,
 				size_t supp_rates_len,
 				const struct ieee80211_ht_capabilities *ht_capab,
 				const struct ieee80211_vht_capabilities *vht_capab,
-				u8 qosinfo, const u8 *ext_capab,
+				u8 qosinfo, int wmm, const u8 *ext_capab,
 				size_t ext_capab_len, const u8 *supp_channels,
 				size_t supp_channels_len,
 				const u8 *supp_oper_classes,
@@ -385,7 +385,7 @@ int wpa_tdls_init(struct wpa_sm *sm);
 void wpa_tdls_teardown_peers(struct wpa_sm *sm);
 void wpa_tdls_deinit(struct wpa_sm *sm);
 void wpa_tdls_enable(struct wpa_sm *sm, int enabled);
-void wpa_tdls_disable_link(struct wpa_sm *sm, const u8 *addr);
+void wpa_tdls_disable_unreachable_link(struct wpa_sm *sm, const u8 *addr);
 const char * wpa_tdls_get_link_status(struct wpa_sm *sm, const u8 *addr);
 int wpa_tdls_is_external_setup(struct wpa_sm *sm);
 

@@ -94,46 +94,26 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 		 int phase2)
 {
 	struct eap_user *user;
-	struct eap_user *user2;
-	char ident = 't';
-
-	wpa_printf(MSG_INFO, "MANA (EAP) : identity: %s", identity);
 
 	if (sm == NULL || sm->eapol_cb == NULL ||
-	    sm->eapol_cb->get_eap_user == NULL) {
+	    sm->eapol_cb->get_eap_user == NULL)
 		return -1;
-	}
 
 	eap_user_free(sm->user);
 	sm->user = NULL;
+
 	user = os_zalloc(sizeof(*user));
-	if (user == NULL) {
+	if (user == NULL)
 	    return -1;
-	}
-	user2 = os_zalloc(sizeof(*user2));
-	if (user2 == NULL) {
-		return -1;
-	}
-	if (sm->eapol_cb->get_eap_user(sm->eapol_ctx, identity, identity_len, phase2, user2) != 0) {
-		user2 = NULL;
-	}
-	if(phase2) {
-		identity = (const u8 *)&ident;
-		identity_len = 1;
-	}
+
 	if (sm->eapol_cb->get_eap_user(sm->eapol_ctx, identity,
 				       identity_len, phase2, user) != 0) {
 		eap_user_free(user);
 		return -1;
 	}
-	if (user2 != NULL) {
-		user->password = user2->password;
-		user->password_len = user2->password_len;
-	}
 
 	sm->user = user;
 	sm->user_eap_method_index = 0;
-
 
 	return 0;
 }
@@ -188,7 +168,7 @@ SM_STATE(EAP, INITIALIZE)
 	sm->eap_if.eapSuccess = FALSE;
 	sm->eap_if.eapFail = FALSE;
 	sm->eap_if.eapTimeout = FALSE;
-	os_free(sm->eap_if.eapKeyData);
+	bin_clear_free(sm->eap_if.eapKeyData, sm->eap_if.eapKeyDataLen);
 	sm->eap_if.eapKeyData = NULL;
 	sm->eap_if.eapKeyDataLen = 0;
 	sm->eap_if.eapKeyAvailable = FALSE;
@@ -366,7 +346,7 @@ SM_STATE(EAP, METHOD_RESPONSE)
 	sm->m->process(sm, sm->eap_method_priv, sm->eap_if.eapRespData);
 	if (sm->m->isDone(sm, sm->eap_method_priv)) {
 		eap_sm_Policy_update(sm, NULL, 0);
-		os_free(sm->eap_if.eapKeyData);
+		bin_clear_free(sm->eap_if.eapKeyData, sm->eap_if.eapKeyDataLen);
 		if (sm->m->getKey) {
 			sm->eap_if.eapKeyData = sm->m->getKey(
 				sm, sm->eap_method_priv,
@@ -652,7 +632,7 @@ SM_STATE(EAP, SUCCESS2)
 	if (sm->eap_if.aaaEapKeyAvailable) {
 		EAP_COPY(&sm->eap_if.eapKeyData, sm->eap_if.aaaEapKeyData);
 	} else {
-		os_free(sm->eap_if.eapKeyData);
+		bin_clear_free(sm->eap_if.eapKeyData, sm->eap_if.eapKeyDataLen);
 		sm->eap_if.eapKeyData = NULL;
 		sm->eap_if.eapKeyDataLen = 0;
 	}
@@ -1280,7 +1260,7 @@ static void eap_user_free(struct eap_user *user)
 {
 	if (user == NULL)
 		return;
-	os_free(user->password);
+	bin_clear_free(user->password, user->password_len);
 	user->password = NULL;
 	os_free(user);
 }
@@ -1372,7 +1352,7 @@ void eap_server_sm_deinit(struct eap_sm *sm)
 	if (sm->m && sm->eap_method_priv)
 		sm->m->reset(sm, sm->eap_method_priv);
 	wpabuf_free(sm->eap_if.eapReqData);
-	os_free(sm->eap_if.eapKeyData);
+	bin_clear_free(sm->eap_if.eapKeyData, sm->eap_if.eapKeyDataLen);
 	wpabuf_free(sm->lastReqData);
 	wpabuf_free(sm->eap_if.eapRespData);
 	os_free(sm->identity);
@@ -1381,7 +1361,7 @@ void eap_server_sm_deinit(struct eap_sm *sm)
 	os_free(sm->eap_fast_a_id_info);
 	wpabuf_free(sm->eap_if.aaaEapReqData);
 	wpabuf_free(sm->eap_if.aaaEapRespData);
-	os_free(sm->eap_if.aaaEapKeyData);
+	bin_clear_free(sm->eap_if.aaaEapKeyData, sm->eap_if.aaaEapKeyDataLen);
 	eap_user_free(sm->user);
 	wpabuf_free(sm->assoc_wps_ie);
 	wpabuf_free(sm->assoc_p2p_ie);

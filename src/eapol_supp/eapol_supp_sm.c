@@ -255,12 +255,14 @@ SM_STATE(SUPP_PAE, CONNECTING)
 		 * delay authentication. Use a short timeout to send the first
 		 * EAPOL-Start if Authenticator does not start authentication.
 		 */
-#ifdef CONFIG_WPS
-		/* Reduce latency on starting WPS negotiation. */
-		sm->startWhen = 1;
-#else /* CONFIG_WPS */
-		sm->startWhen = 3;
-#endif /* CONFIG_WPS */
+		if (sm->conf.wps) {
+			/* Reduce latency on starting WPS negotiation. */
+			wpa_printf(MSG_DEBUG,
+				   "EAPOL: Using shorter startWhen for WPS");
+			sm->startWhen = 1;
+		} else {
+			sm->startWhen = 2;
+		}
 	}
 	eapol_enable_timer_tick(sm);
 	sm->eapolEap = FALSE;
@@ -719,8 +721,8 @@ static void eapol_sm_processKey(struct eapol_sm *sm)
 	hmac_md5(keydata.sign_key, sign_key_len,
 		 sm->last_rx_key, sizeof(*hdr) + be_to_host16(hdr->length),
 		 key->key_signature);
-	if (os_memcmp(orig_key_sign, key->key_signature,
-		      IEEE8021X_KEY_SIGN_LEN) != 0) {
+	if (os_memcmp_const(orig_key_sign, key->key_signature,
+			    IEEE8021X_KEY_SIGN_LEN) != 0) {
 		wpa_printf(MSG_DEBUG, "EAPOL: Invalid key signature in "
 			   "EAPOL-Key packet");
 		os_memcpy(key->key_signature, orig_key_sign,
@@ -1242,7 +1244,7 @@ int eapol_sm_rx_eapol(struct eapol_sm *sm, const u8 *src, const u8 *buf,
 		return 0;
 	}
 #ifdef CONFIG_WPS
-	if (sm->conf.workaround &&
+	if (sm->conf.wps && sm->conf.workaround &&
 	    plen < len - sizeof(*hdr) &&
 	    hdr->type == IEEE802_1X_TYPE_EAP_PACKET &&
 	    len - sizeof(*hdr) > sizeof(struct eap_hdr)) {
@@ -1491,6 +1493,7 @@ void eapol_sm_notify_config(struct eapol_sm *sm,
 	sm->conf.required_keys = conf->required_keys;
 	sm->conf.fast_reauth = conf->fast_reauth;
 	sm->conf.workaround = conf->workaround;
+	sm->conf.wps = conf->wps;
 #ifdef CONFIG_EAP_PROXY
 	if (sm->use_eap_proxy) {
 		/* Using EAP Proxy, so skip EAP state machine update */
@@ -1523,7 +1526,7 @@ int eapol_sm_get_key(struct eapol_sm *sm, u8 *key, size_t len)
 	size_t eap_len;
 
 #ifdef CONFIG_EAP_PROXY
-	if (sm->use_eap_proxy) {
+	if (sm && sm->use_eap_proxy) {
 		/* Get key from EAP proxy */
 		if (sm == NULL || !eap_proxy_key_available(sm->eap_proxy)) {
 			wpa_printf(MSG_DEBUG, "EAPOL: EAP key not available");

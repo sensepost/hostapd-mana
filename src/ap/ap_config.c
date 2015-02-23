@@ -379,7 +379,7 @@ void hostapd_config_free_eap_user(struct hostapd_eap_user *user)
 {
 	hostapd_config_free_radius_attr(user->accept_attr);
 	os_free(user->identity);
-	os_free(user->password);
+	bin_clear_free(user->password, user->password_len);
 	os_free(user);
 }
 
@@ -388,7 +388,7 @@ static void hostapd_config_free_wep(struct hostapd_wep_keys *keys)
 {
 	int i;
 	for (i = 0; i < NUM_WEP_KEYS; i++) {
-		os_free(keys->key[i]);
+		bin_clear_free(keys->key[i], keys->len[i]);
 		keys->key[i] = NULL;
 	}
 }
@@ -406,10 +406,10 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 	while (psk) {
 		prev = psk;
 		psk = psk->next;
-		os_free(prev);
+		bin_clear_free(prev, sizeof(*prev));
 	}
 
-	os_free(conf->ssid.wpa_passphrase);
+	str_clear_free(conf->ssid.wpa_passphrase);
 	os_free(conf->ssid.wpa_psk_file);
 	hostapd_config_free_wep(&conf->ssid.wep);
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
@@ -759,7 +759,7 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
 	    conf->hw_mode == HOSTAPD_MODE_IEEE80211B) {
 		bss->disable_11n = 1;
 		wpa_printf(MSG_ERROR, "HT (IEEE 802.11n) in 11b mode is not "
-			   "allowed, disabling HT capabilites");
+			   "allowed, disabling HT capabilities");
 	}
 
 	if (full_config && conf->ieee80211n &&

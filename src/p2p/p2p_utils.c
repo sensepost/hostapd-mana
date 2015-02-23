@@ -149,6 +149,15 @@ int p2p_freq_to_channel(unsigned int freq, u8 *op_class, u8 *channel)
 		return 0;
 	}
 
+	if (freq >= 58320 && freq <= 64800) {
+		if ((freq - 58320) % 2160)
+			return -1;
+
+		*op_class = 180; /* 60 GHz, channels 1..4 */
+		*channel = (freq - 56160) / 2160;
+		return 0;
+	}
+
 	return -1;
 }
 
@@ -388,17 +397,19 @@ unsigned int p2p_get_pref_freq(struct p2p_data *p2p,
 			       const struct p2p_channels *channels)
 {
 	unsigned int i;
-	int freq;
+	int freq = 0;
+	const struct p2p_channels *tmpc = channels ?
+		channels : &p2p->cfg->channels;
+
+	if (tmpc == NULL)
+		return 0;
 
 	for (i = 0; p2p->cfg->pref_chan && i < p2p->cfg->num_pref_chan; i++) {
 		freq = p2p_channel_to_freq(p2p->cfg->pref_chan[i].op_class,
 					   p2p->cfg->pref_chan[i].chan);
-		if (freq <= 0)
-			continue;
-		if (!channels || p2p_channels_includes_freq(channels, freq))
+		if (p2p_channels_includes_freq(tmpc, freq))
 			return freq;
 	}
-
 	return 0;
 }
 
@@ -439,7 +450,8 @@ void p2p_channels_dump(struct p2p_data *p2p, const char *title,
 static u8 p2p_channel_pick_random(const u8 *channels, unsigned int num_channels)
 {
 	unsigned int r;
-	os_get_random((u8 *) &r, sizeof(r));
+	if (os_get_random((u8 *) &r, sizeof(r)) < 0)
+		r = 0;
 	r %= num_channels;
 	return channels[r];
 }
@@ -479,7 +491,7 @@ int p2p_channel_select(struct p2p_channels *chans, const int *classes,
 int p2p_channel_random_social(struct p2p_channels *chans, u8 *op_class,
 			      u8 *op_channel)
 {
-	u8 chan[3];
+	u8 chan[4];
 	unsigned int num_channels = 0;
 
 	/* Try to find available social channels from 2.4 GHz */
@@ -490,11 +502,18 @@ int p2p_channel_random_social(struct p2p_channels *chans, u8 *op_class,
 	if (p2p_channels_includes(chans, 81, 11))
 		chan[num_channels++] = 11;
 
+	/* Try to find available social channels from 60 GHz */
+	if (p2p_channels_includes(chans, 180, 2))
+		chan[num_channels++] = 2;
+
 	if (num_channels == 0)
 		return -1;
 
-	*op_class = 81;
 	*op_channel = p2p_channel_pick_random(chan, num_channels);
+	if (*op_channel == 2)
+		*op_class = 180;
+	else
+		*op_class = 81;
 
 	return 0;
 }

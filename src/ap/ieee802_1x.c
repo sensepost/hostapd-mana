@@ -306,6 +306,67 @@ static void ieee802_1x_learn_identity(struct hostapd_data *hapd,
 }
 
 
+static int add_common_radius_sta_attr_rsn(struct hostapd_data *hapd,
+					  struct hostapd_radius_attr *req_attr,
+					  struct sta_info *sta,
+					  struct radius_msg *msg)
+{
+	u32 suite;
+	int ver, val;
+
+	ver = wpa_auth_sta_wpa_version(sta->wpa_sm);
+	val = wpa_auth_get_pairwise(sta->wpa_sm);
+	suite = wpa_cipher_to_suite(ver, val);
+	if (val != -1 &&
+	    !hostapd_config_get_radius_attr(req_attr,
+					    RADIUS_ATTR_WLAN_PAIRWISE_CIPHER) &&
+	    !radius_msg_add_attr_int32(msg, RADIUS_ATTR_WLAN_PAIRWISE_CIPHER,
+				       suite)) {
+		wpa_printf(MSG_ERROR, "Could not add WLAN-Pairwise-Cipher");
+		return -1;
+	}
+
+	suite = wpa_cipher_to_suite((hapd->conf->wpa & 0x2) ?
+				    WPA_PROTO_RSN : WPA_PROTO_WPA,
+				    hapd->conf->wpa_group);
+	if (!hostapd_config_get_radius_attr(req_attr,
+					    RADIUS_ATTR_WLAN_GROUP_CIPHER) &&
+	    !radius_msg_add_attr_int32(msg, RADIUS_ATTR_WLAN_GROUP_CIPHER,
+				       suite)) {
+		wpa_printf(MSG_ERROR, "Could not add WLAN-Group-Cipher");
+		return -1;
+	}
+
+	val = wpa_auth_sta_key_mgmt(sta->wpa_sm);
+	suite = wpa_akm_to_suite(val);
+	if (val != -1 &&
+	    !hostapd_config_get_radius_attr(req_attr,
+					    RADIUS_ATTR_WLAN_AKM_SUITE) &&
+	    !radius_msg_add_attr_int32(msg, RADIUS_ATTR_WLAN_AKM_SUITE,
+				       suite)) {
+		wpa_printf(MSG_ERROR, "Could not add WLAN-AKM-Suite");
+		return -1;
+	}
+
+#ifdef CONFIG_IEEE80211W
+	if (hapd->conf->ieee80211w != NO_MGMT_FRAME_PROTECTION) {
+		suite = wpa_cipher_to_suite(WPA_PROTO_RSN,
+					    hapd->conf->group_mgmt_cipher);
+		if (!hostapd_config_get_radius_attr(
+			    req_attr, RADIUS_ATTR_WLAN_GROUP_MGMT_CIPHER) &&
+		    !radius_msg_add_attr_int32(
+			    msg, RADIUS_ATTR_WLAN_GROUP_MGMT_CIPHER, suite)) {
+			wpa_printf(MSG_ERROR,
+				   "Could not add WLAN-Group-Mgmt-Cipher");
+			return -1;
+		}
+	}
+#endif /* CONFIG_IEEE80211W */
+
+	return 0;
+}
+
+
 static int add_common_radius_sta_attr(struct hostapd_data *hapd,
 				      struct hostapd_radius_attr *req_attr,
 				      struct sta_info *sta,
@@ -356,6 +417,25 @@ static int add_common_radius_sta_attr(struct hostapd_data *hapd,
 			return -1;
 		}
 	}
+
+#ifdef CONFIG_IEEE80211R
+	if (hapd->conf->wpa && wpa_key_mgmt_ft(hapd->conf->wpa_key_mgmt) &&
+	    sta->wpa_sm &&
+	    (wpa_key_mgmt_ft(wpa_auth_sta_key_mgmt(sta->wpa_sm)) ||
+	     sta->auth_alg == WLAN_AUTH_FT) &&
+	    !hostapd_config_get_radius_attr(req_attr,
+					    RADIUS_ATTR_MOBILITY_DOMAIN_ID) &&
+	    !radius_msg_add_attr_int32(msg, RADIUS_ATTR_MOBILITY_DOMAIN_ID,
+				       WPA_GET_BE16(
+					       hapd->conf->mobility_domain))) {
+		wpa_printf(MSG_ERROR, "Could not add Mobility-Domain-Id");
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211R */
+
+	if (hapd->conf->wpa && sta->wpa_sm &&
+	    add_common_radius_sta_attr_rsn(hapd, req_attr, sta, msg) < 0)
+		return -1;
 
 	return 0;
 }
@@ -419,6 +499,22 @@ int add_common_radius_attr(struct hostapd_data *hapd,
 		wpa_printf(MSG_ERROR, "Could not add NAS-Port-Type");
 		return -1;
 	}
+
+#ifdef CONFIG_INTERWORKING
+	if (hapd->conf->interworking &&
+	    !is_zero_ether_addr(hapd->conf->hessid)) {
+		os_snprintf(buf, sizeof(buf), RADIUS_802_1X_ADDR_FORMAT,
+			    MAC2STR(hapd->conf->hessid));
+		buf[sizeof(buf) - 1] = '\0';
+		if (!hostapd_config_get_radius_attr(req_attr,
+						    RADIUS_ATTR_WLAN_HESSID) &&
+		    !radius_msg_add_attr(msg, RADIUS_ATTR_WLAN_HESSID,
+					 (u8 *) buf, os_strlen(buf))) {
+			wpa_printf(MSG_ERROR, "Could not add WLAN-HESSID");
+			return -1;
+		}
+	}
+#endif /* CONFIG_INTERWORKING */
 
 	if (sta && add_common_radius_sta_attr(hapd, req_attr, sta, msg) < 0)
 		return -1;
@@ -1526,6 +1622,9 @@ ieee802_1x_receive_auth(struct radius_msg *msg, struct radius_msg *req,
 		if (ap_sta_bind_vlan(hapd, sta, old_vlanid) < 0)
 			break;
 
+		sta->session_timeout_set = !!session_timeout_set;
+		sta->session_timeout = session_timeout;
+
 		/* RFC 3580, Ch. 3.17 */
 		if (session_timeout_set && termination_action ==
 		    RADIUS_TERMINATION_ACTION_RADIUS_REQUEST) {
@@ -2300,6 +2399,7 @@ static void ieee802_1x_finished(struct hostapd_data *hapd,
 	size_t len;
 	/* TODO: get PMKLifetime from WPA parameters */
 	static const int dot11RSNAConfigPMKLifetime = 43200;
+	unsigned int session_timeout;
 
 #ifdef CONFIG_HS20
 	if (remediation && !sta->remediation) {
@@ -2334,9 +2434,13 @@ static void ieee802_1x_finished(struct hostapd_data *hapd,
 #endif /* CONFIG_HS20 */
 
 	key = ieee802_1x_get_key(sta->eapol_sm, &len);
+	if (sta->session_timeout_set)
+		session_timeout = sta->session_timeout;
+	else
+		session_timeout = dot11RSNAConfigPMKLifetime;
 	if (success && key && len >= PMK_LEN && !sta->remediation &&
 	    !sta->hs20_deauth_requested &&
-	    wpa_auth_pmksa_add(sta->wpa_sm, key, dot11RSNAConfigPMKLifetime,
+	    wpa_auth_pmksa_add(sta->wpa_sm, key, session_timeout,
 			       sta->eapol_sm) == 0) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_WPA,
 			       HOSTAPD_LEVEL_DEBUG,

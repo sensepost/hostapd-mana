@@ -36,6 +36,10 @@ ifdef CONFIG_LIBNL32
   DRV_LIBS += -lnl-3
   DRV_LIBS += -lnl-genl-3
   DRV_CFLAGS += -DCONFIG_LIBNL20 -I/usr/include/libnl3
+ifdef CONFIG_LIBNL3_ROUTE
+  DRV_LIBS += -lnl-route-3
+  DRV_CFLAGS += -DCONFIG_LIBNL3_ROUTE
+endif
 else
   ifdef CONFIG_LIBNL_TINY
     DRV_LIBS += -lnl-tiny
@@ -105,6 +109,9 @@ DRV_AP_OBJS += ../src/drivers/driver_atheros.o
 CONFIG_L2_PACKET=linux
 NEED_NETLINK=y
 NEED_LINUX_IOCTL=y
+ifdef ATH_GCM_SUPPORT
+CFLAGS += -DATH_GCM_SUPPORT
+endif
 endif
 
 ##### PURE CLIENT DRIVERS

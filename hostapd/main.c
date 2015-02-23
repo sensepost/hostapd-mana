@@ -97,14 +97,15 @@ static void hostapd_logger_cb(void *ctx, const u8 *addr, unsigned int module,
 	else if (hapd && hapd->conf)
 		os_snprintf(format, maxlen, "%s:%s%s %s",
 			    hapd->conf->iface, module_str ? " " : "",
-			    module_str, txt);
+			    module_str ? module_str : "", txt);
 	else if (addr)
 		os_snprintf(format, maxlen, "STA " MACSTR "%s%s: %s",
 			    MAC2STR(addr), module_str ? " " : "",
-			    module_str, txt);
+			    module_str ? module_str : "", txt);
 	else
 		os_snprintf(format, maxlen, "%s%s%s",
-			    module_str, module_str ? ": " : "", txt);
+			    module_str ? module_str : "",
+			    module_str ? ": " : "", txt);
 
 	if ((conf_stdout & module) && level >= conf_stdout_level) {
 		wpa_debug_print_timestamp();
@@ -416,8 +417,7 @@ static void show_version(void)
 		"User space daemon for IEEE 802.11 AP management,\n"
 		"IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator\n"
 		"Copyright (c) 2002-2014, Jouni Malinen <j@w1.fi> "
-		"and contributors\n"
-		"Karma patches by Robin Wood - robin@digininja.org & singe dominic@sensepost.com\n");
+		"and contributors\n");
 }
 
 

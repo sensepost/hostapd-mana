@@ -1099,7 +1099,6 @@ static int ocsp_resp_cb(SSL *s, void *arg)
 				certs = NULL;
 			}
 			if (ctx->peer_issuer_issuer) {
-				X509 *cert;
 				cert = X509_dup(ctx->peer_issuer_issuer);
 				if (cert && !sk_X509_push(certs, cert)) {
 					tls_show_errors(
@@ -1178,9 +1177,10 @@ static int ocsp_resp_cb(SSL *s, void *arg)
 
 	if (status == V_OCSP_CERTSTATUS_GOOD)
 		return 1;
-	if (status == V_OCSP_CERTSTATUS_REVOKED)
+	if (status == V_OCSP_CERTSTATUS_REVOKED) {
 		ctx->last_err = "Server certificate has been revoked";
 		return 0;
+	}
 	if (ctx->ocsp == MANDATORY_OCSP) {
 		wpa_printf(MSG_DEBUG, "OpenSSL: OCSP status unknown, but OCSP required");
 		ctx->last_err = "OCSP status unknown";
@@ -1368,8 +1368,8 @@ int soap_reinit_client(struct http_ctx *ctx)
 			       client_cert, client_key);
 	os_free(address);
 	os_free(ca_fname);
-	os_free(username);
-	os_free(password);
+	str_clear_free(username);
+	str_clear_free(password);
 	os_free(client_cert);
 	os_free(client_key);
 	return ret;
@@ -1487,8 +1487,8 @@ void http_deinit_ctx(struct http_ctx *ctx)
 
 	os_free(ctx->svc_address);
 	os_free(ctx->svc_ca_fname);
-	os_free(ctx->svc_username);
-	os_free(ctx->svc_password);
+	str_clear_free(ctx->svc_username);
+	str_clear_free(ctx->svc_password);
 	os_free(ctx->svc_client_cert);
 	os_free(ctx->svc_client_key);
 

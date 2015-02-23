@@ -60,6 +60,7 @@ struct sta_info {
 	unsigned int qos_map_enabled:1;
 	unsigned int remediation:1;
 	unsigned int hs20_deauth_requested:1;
+	unsigned int session_timeout_set:1;
 
 	u16 auth_alg;
 
@@ -93,7 +94,6 @@ struct sta_info {
 
 	struct hostapd_ssid *ssid; /* SSID selection based on (Re)AssocReq */
 	struct hostapd_ssid *ssid_probe; /* SSID selection based on ProbeReq */
-	struct hostapd_ssid *ssid_probe_karma; /* SSID selection based on ProbeReq */
 
 	int vlan_id;
 	 /* PSKs from RADIUS authentication server */
@@ -136,6 +136,8 @@ struct sta_info {
 #ifdef CONFIG_SAE
 	struct sae_data *sae;
 #endif /* CONFIG_SAE */
+
+	u32 session_timeout; /* valid only if session_timeout_set == 1 */
 };
 
 

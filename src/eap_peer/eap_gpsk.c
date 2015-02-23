@@ -134,8 +134,11 @@ static void eap_gpsk_deinit(struct eap_sm *sm, void *priv)
 	struct eap_gpsk_data *data = priv;
 	os_free(data->id_server);
 	os_free(data->id_peer);
-	os_free(data->psk);
-	os_free(data);
+	if (data->psk) {
+		os_memset(data->psk, 0, data->psk_len);
+		os_free(data->psk);
+	}
+	bin_clear_free(data, sizeof(*data));
 }
 
 
@@ -236,6 +239,8 @@ static const u8 * eap_gpsk_process_csuite_list(struct eap_sm *sm,
 					       size_t *list_len,
 					       const u8 *pos, const u8 *end)
 {
+	size_t len;
+
 	if (pos == NULL)
 		return NULL;
 
@@ -243,22 +248,24 @@ static const u8 * eap_gpsk_process_csuite_list(struct eap_sm *sm,
 		wpa_printf(MSG_DEBUG, "EAP-GPSK: Too short GPSK-1 packet");
 		return NULL;
 	}
-	*list_len = WPA_GET_BE16(pos);
+	len = WPA_GET_BE16(pos);
 	pos += 2;
-	if (end - pos < (int) *list_len) {
+	if (len > (size_t) (end - pos)) {
 		wpa_printf(MSG_DEBUG, "EAP-GPSK: CSuite_List overflow");
 		return NULL;
 	}
-	if (*list_len == 0 || (*list_len % sizeof(struct eap_gpsk_csuite))) {
+	if (len == 0 || (len % sizeof(struct eap_gpsk_csuite))) {
 		wpa_printf(MSG_DEBUG, "EAP-GPSK: Invalid CSuite_List len %lu",
-			   (unsigned long) *list_len);
+			   (unsigned long) len);
 		return NULL;
 	}
-	*list = pos;
-	pos += *list_len;
 
-	if (eap_gpsk_select_csuite(sm, data, *list, *list_len) < 0)
+	if (eap_gpsk_select_csuite(sm, data, pos, len) < 0)
 		return NULL;
+
+	*list = pos;
+	*list_len = len;
+	pos += len;
 
 	return pos;
 }
@@ -561,7 +568,7 @@ static const u8 * eap_gpsk_validate_gpsk_3_mic(struct eap_gpsk_data *data,
 		wpa_printf(MSG_DEBUG, "EAP-GPSK: Failed to compute MIC");
 		return NULL;
 	}
-	if (os_memcmp(mic, pos, miclen) != 0) {
+	if (os_memcmp_const(mic, pos, miclen) != 0) {
 		wpa_printf(MSG_INFO, "EAP-GPSK: Incorrect MIC in GPSK-3");
 		wpa_hexdump(MSG_DEBUG, "EAP-GPSK: Received MIC", pos, miclen);
 		wpa_hexdump(MSG_DEBUG, "EAP-GPSK: Computed MIC", mic, miclen);

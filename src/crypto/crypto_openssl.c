@@ -40,7 +40,7 @@
 
 static BIGNUM * get_group5_prime(void)
 {
-#if OPENSSL_VERSION_NUMBER < 0x00908000
+#if OPENSSL_VERSION_NUMBER < 0x00908000 || defined(OPENSSL_IS_BORINGSSL)
 	static const unsigned char RFC3526_PRIME_1536[] = {
 		0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xC9,0x0F,0xDA,0xA2,
 		0x21,0x68,0xC2,0x34,0xC4,0xC6,0x62,0x8B,0x80,0xDC,0x1C,0xD1,
@@ -130,7 +130,7 @@ void des_encrypt(const u8 *clear, const u8 *key, u8 *cypher)
 	}
 	pkey[i] = next | 1;
 
-	DES_set_key(&pkey, &ks);
+	DES_set_key((DES_cblock *) &pkey, &ks);
 	DES_ecb_encrypt((DES_cblock *) clear, (DES_cblock *) cypher, &ks,
 			DES_ENCRYPT);
 }
@@ -199,8 +199,10 @@ static const EVP_CIPHER * aes_get_evp_cipher(size_t keylen)
 	switch (keylen) {
 	case 16:
 		return EVP_aes_128_ecb();
+#ifndef OPENSSL_IS_BORINGSSL
 	case 24:
 		return EVP_aes_192_ecb();
+#endif /* OPENSSL_IS_BORINGSSL */
 	case 32:
 		return EVP_aes_256_ecb();
 	}
@@ -340,10 +342,10 @@ int crypto_mod_exp(const u8 *base, size_t base_len,
 	ret = 0;
 
 error:
-	BN_free(bn_base);
-	BN_free(bn_exp);
-	BN_free(bn_modulus);
-	BN_free(bn_result);
+	BN_clear_free(bn_base);
+	BN_clear_free(bn_exp);
+	BN_clear_free(bn_modulus);
+	BN_clear_free(bn_result);
 	BN_CTX_free(ctx);
 	return ret;
 }
@@ -378,9 +380,11 @@ struct crypto_cipher * crypto_cipher_init(enum crypto_cipher_alg alg,
 		case 16:
 			cipher = EVP_aes_128_cbc();
 			break;
+#ifndef OPENSSL_IS_BORINGSSL
 		case 24:
 			cipher = EVP_aes_192_cbc();
 			break;
+#endif /* OPENSSL_IS_BORINGSSL */
 		case 32:
 			cipher = EVP_aes_256_cbc();
 			break;
@@ -571,12 +575,12 @@ struct wpabuf * dh5_derive_shared(void *ctx, const struct wpabuf *peer_public,
 	if (keylen < 0)
 		goto err;
 	wpabuf_put(res, keylen);
-	BN_free(pub_key);
+	BN_clear_free(pub_key);
 
 	return res;
 
 err:
-	BN_free(pub_key);
+	BN_clear_free(pub_key);
 	wpabuf_free(res);
 	return NULL;
 }
@@ -1066,7 +1070,8 @@ void crypto_ec_deinit(struct crypto_ec *e)
 {
 	if (e == NULL)
 		return;
-	BN_free(e->order);
+	BN_clear_free(e->order);
+	BN_clear_free(e->prime);
 	EC_GROUP_free(e->group);
 	BN_CTX_free(e->bnctx);
 	os_free(e);
@@ -1138,8 +1143,8 @@ int crypto_ec_point_to_bin(struct crypto_ec *e,
 		ret = 0;
 	}
 
-	BN_free(x_bn);
-	BN_free(y_bn);
+	BN_clear_free(x_bn);
+	BN_clear_free(y_bn);
 	return ret;
 }
 
@@ -1155,20 +1160,20 @@ struct crypto_ec_point * crypto_ec_point_from_bin(struct crypto_ec *e,
 	y = BN_bin2bn(val + len, len, NULL);
 	elem = EC_POINT_new(e->group);
 	if (x == NULL || y == NULL || elem == NULL) {
-		BN_free(x);
-		BN_free(y);
-		EC_POINT_free(elem);
+		BN_clear_free(x);
+		BN_clear_free(y);
+		EC_POINT_clear_free(elem);
 		return NULL;
 	}
 
 	if (!EC_POINT_set_affine_coordinates_GFp(e->group, elem, x, y,
 						 e->bnctx)) {
-		EC_POINT_free(elem);
+		EC_POINT_clear_free(elem);
 		elem = NULL;
 	}
 
-	BN_free(x);
-	BN_free(y);
+	BN_clear_free(x);
+	BN_clear_free(y);
 
 	return (struct crypto_ec_point *) elem;
 }

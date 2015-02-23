@@ -653,11 +653,11 @@ static int wpa_supplicant_process_smk_error(
 static void wpa_supplicant_process_stk_1_of_4(struct wpa_sm *sm,
 					      struct wpa_peerkey *peerkey,
 					      const struct wpa_eapol_key *key,
-					      u16 ver)
+					      u16 ver, const u8 *key_data,
+					      size_t key_data_len)
 {
 	struct wpa_eapol_ie_parse ie;
-	const u8 *kde;
-	size_t len, kde_buf_len;
+	size_t kde_buf_len;
 	struct wpa_ptk *stk;
 	u8 buf[8], *kde_buf, *pos;
 	be32 lifetime;
@@ -668,14 +668,13 @@ static void wpa_supplicant_process_stk_1_of_4(struct wpa_sm *sm,
 	os_memset(&ie, 0, sizeof(ie));
 
 	/* RSN: msg 1/4 should contain SMKID for the selected SMK */
-	kde = (const u8 *) (key + 1);
-	len = WPA_GET_BE16(key->key_data_length);
-	wpa_hexdump(MSG_DEBUG, "RSN: msg 1/4 key data", kde, len);
-	if (wpa_supplicant_parse_ies(kde, len, &ie) < 0 || ie.pmkid == NULL) {
+	wpa_hexdump(MSG_DEBUG, "RSN: msg 1/4 key data", key_data, key_data_len);
+	if (wpa_supplicant_parse_ies(key_data, key_data_len, &ie) < 0 ||
+	    ie.pmkid == NULL) {
 		wpa_printf(MSG_DEBUG, "RSN: No SMKID in STK 1/4");
 		return;
 	}
-	if (os_memcmp(ie.pmkid, peerkey->smkid, PMKID_LEN) != 0) {
+	if (os_memcmp_const(ie.pmkid, peerkey->smkid, PMKID_LEN) != 0) {
 		wpa_hexdump(MSG_DEBUG, "RSN: Unknown SMKID in STK 1/4",
 			    ie.pmkid, PMKID_LEN);
 		return;
@@ -760,11 +759,10 @@ static void wpa_supplicant_update_smk_lifetime(struct wpa_sm *sm,
 static void wpa_supplicant_process_stk_2_of_4(struct wpa_sm *sm,
 					      struct wpa_peerkey *peerkey,
 					      const struct wpa_eapol_key *key,
-					      u16 ver)
+					      u16 ver, const u8 *key_data,
+					      size_t key_data_len)
 {
 	struct wpa_eapol_ie_parse kde;
-	const u8 *keydata;
-	size_t len;
 
 	wpa_printf(MSG_DEBUG, "RSN: RX message 2 of STK 4-Way Handshake from "
 		   MACSTR " (ver=%d)", MAC2STR(peerkey->addr), ver);
@@ -773,16 +771,14 @@ static void wpa_supplicant_process_stk_2_of_4(struct wpa_sm *sm,
 
 	/* RSN: msg 2/4 should contain SMKID for the selected SMK and RSN IE
 	 * from the peer. It may also include Lifetime KDE. */
-	keydata = (const u8 *) (key + 1);
-	len = WPA_GET_BE16(key->key_data_length);
-	wpa_hexdump(MSG_DEBUG, "RSN: msg 2/4 key data", keydata, len);
-	if (wpa_supplicant_parse_ies(keydata, len, &kde) < 0 ||
+	wpa_hexdump(MSG_DEBUG, "RSN: msg 2/4 key data", key_data, key_data_len);
+	if (wpa_supplicant_parse_ies(key_data, key_data_len, &kde) < 0 ||
 	    kde.pmkid == NULL || kde.rsn_ie == NULL) {
 		wpa_printf(MSG_DEBUG, "RSN: No SMKID or RSN IE in STK 2/4");
 		return;
 	}
 
-	if (os_memcmp(kde.pmkid, peerkey->smkid, PMKID_LEN) != 0) {
+	if (os_memcmp_const(kde.pmkid, peerkey->smkid, PMKID_LEN) != 0) {
 		wpa_hexdump(MSG_DEBUG, "RSN: Unknown SMKID in STK 2/4",
 			    kde.pmkid, PMKID_LEN);
 		return;
@@ -809,11 +805,11 @@ static void wpa_supplicant_process_stk_2_of_4(struct wpa_sm *sm,
 static void wpa_supplicant_process_stk_3_of_4(struct wpa_sm *sm,
 					      struct wpa_peerkey *peerkey,
 					      const struct wpa_eapol_key *key,
-					      u16 ver)
+					      u16 ver, const u8 *key_data,
+					      size_t key_data_len)
 {
 	struct wpa_eapol_ie_parse kde;
-	const u8 *keydata;
-	size_t len, key_len;
+	size_t key_len;
 	const u8 *_key;
 	u8 key_buf[32], rsc[6];
 
@@ -824,10 +820,8 @@ static void wpa_supplicant_process_stk_3_of_4(struct wpa_sm *sm,
 
 	/* RSN: msg 3/4 should contain Initiator RSN IE. It may also include
 	 * Lifetime KDE. */
-	keydata = (const u8 *) (key + 1);
-	len = WPA_GET_BE16(key->key_data_length);
-	wpa_hexdump(MSG_DEBUG, "RSN: msg 3/4 key data", keydata, len);
-	if (wpa_supplicant_parse_ies(keydata, len, &kde) < 0) {
+	wpa_hexdump(MSG_DEBUG, "RSN: msg 3/4 key data", key_data, key_data_len);
+	if (wpa_supplicant_parse_ies(key_data, key_data_len, &kde) < 0) {
 		wpa_printf(MSG_DEBUG, "RSN: Failed to parse key data in "
 			   "STK 3/4");
 		return;
@@ -935,7 +929,7 @@ int peerkey_verify_eapol_key_mic(struct wpa_sm *sm,
 		os_memset(key->key_mic, 0, 16);
 		wpa_eapol_key_mic(peerkey->tstk.kck, ver, buf, len,
 				  key->key_mic);
-		if (os_memcmp(mic, key->key_mic, 16) != 0) {
+		if (os_memcmp_const(mic, key->key_mic, 16) != 0) {
 			wpa_printf(MSG_WARNING, "RSN: Invalid EAPOL-Key MIC "
 				   "when using TSTK - ignoring TSTK");
 		} else {
@@ -951,7 +945,7 @@ int peerkey_verify_eapol_key_mic(struct wpa_sm *sm,
 		os_memset(key->key_mic, 0, 16);
 		wpa_eapol_key_mic(peerkey->stk.kck, ver, buf, len,
 				  key->key_mic);
-		if (os_memcmp(mic, key->key_mic, 16) != 0) {
+		if (os_memcmp_const(mic, key->key_mic, 16) != 0) {
 			wpa_printf(MSG_WARNING, "RSN: Invalid EAPOL-Key MIC "
 				   "- dropping packet");
 			return -1;
@@ -1117,21 +1111,25 @@ void peerkey_deinit(struct wpa_sm *sm)
 
 
 void peerkey_rx_eapol_4way(struct wpa_sm *sm, struct wpa_peerkey *peerkey,
-			   struct wpa_eapol_key *key, u16 key_info, u16 ver)
+			   struct wpa_eapol_key *key, u16 key_info, u16 ver,
+			   const u8 *key_data, size_t key_data_len)
 {
 	if ((key_info & (WPA_KEY_INFO_MIC | WPA_KEY_INFO_ACK)) ==
 	    (WPA_KEY_INFO_MIC | WPA_KEY_INFO_ACK)) {
 		/* 3/4 STK 4-Way Handshake */
-		wpa_supplicant_process_stk_3_of_4(sm, peerkey, key, ver);
+		wpa_supplicant_process_stk_3_of_4(sm, peerkey, key, ver,
+						  key_data, key_data_len);
 	} else if (key_info & WPA_KEY_INFO_ACK) {
 		/* 1/4 STK 4-Way Handshake */
-		wpa_supplicant_process_stk_1_of_4(sm, peerkey, key, ver);
+		wpa_supplicant_process_stk_1_of_4(sm, peerkey, key, ver,
+						  key_data, key_data_len);
 	} else if (key_info & WPA_KEY_INFO_SECURE) {
 		/* 4/4 STK 4-Way Handshake */
 		wpa_supplicant_process_stk_4_of_4(sm, peerkey, key, ver);
 	} else {
 		/* 2/4 STK 4-Way Handshake */
-		wpa_supplicant_process_stk_2_of_4(sm, peerkey, key, ver);
+		wpa_supplicant_process_stk_2_of_4(sm, peerkey, key, ver,
+						  key_data, key_data_len);
 	}
 }
 
