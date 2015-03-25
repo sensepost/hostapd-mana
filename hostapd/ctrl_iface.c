@@ -1673,19 +1673,19 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	// KARMA
 	} else if (os_strcmp(buf, "KARMA_STATE") == 0) {
 		if (hostapd_ctrl_iface_karma_get_state(hapd)) {
-			os_memcpy(reply, "KARMA ENABLED\n", 8);
-			reply_len = 8;
+			os_memcpy(reply, "KARMA ENABLED\n", 14);
+			reply_len = 14;
 		} else {
-			os_memcpy(reply, "KARMA DISABLED\n", 9);
-			reply_len = 9;
+			os_memcpy(reply, "KARMA DISABLED\n", 15);
+			reply_len = 15;
 		}
 	} else if (os_strcmp(buf, "KARMA_MODE") == 0) {
 		if (hostapd_ctrl_iface_karma_get_mode(hapd)) {
-			os_memcpy(reply, "LOUD MODE ENABLED\n", 8);
-			reply_len = 8;
+			os_memcpy(reply, "LOUD MODE ENABLED\n", 18);
+			reply_len = 18;
 		} else {
-			os_memcpy(reply, "LOUD MODE DISABLED\n", 9);
-			reply_len = 9;
+			os_memcpy(reply, "LOUD MODE DISABLED\n", 19);
+			reply_len = 19;
 		}
 	} else if (os_strncmp(buf, "KARMA_ADD_WHITE_MAC ", 20) == 0) {
 		if (hostapd_ctrl_iface_karma_add_mac (hapd, buf + 20, 0)) {
@@ -1727,6 +1727,12 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 		hostapd_ctrl_iface_karma_eap(hapd);
 		os_memcpy(reply, "EAP USERS RELOADED\n", 19);
 		reply_len = 19;
+	} else if (os_strcmp(buf, "LOUD_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_karma_enable_disable(hapd, 1))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "LOUD_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_karma_enable_disable(hapd, 0))
+			reply_len = -1;
 	// END KARMA
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
