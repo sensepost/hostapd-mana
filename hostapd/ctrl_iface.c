@@ -1728,10 +1728,10 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 		os_memcpy(reply, "EAP USERS RELOADED\n", 19);
 		reply_len = 19;
 	} else if (os_strcmp(buf, "LOUD_ENABLE") == 0) {
-		if (hostapd_ctrl_iface_loud_enable_disable(hapd, 1))
+		if (hostapd_ctrl_iface_karma_loud_enable_disable(hapd, 1))
 			reply_len = -1;
 	} else if (os_strcmp(buf, "LOUD_DISABLE") == 0) {
-		if (hostapd_ctrl_iface_loud_enable_disable(hapd, 0))
+		if (hostapd_ctrl_iface_karma_loud_enable_disable(hapd, 0))
 			reply_len = -1;
 	// END KARMA
 	} else {
