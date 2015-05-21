@@ -602,9 +602,10 @@ void handle_probe_req(struct hostapd_data *hapd,
 	// todo handle ssid_list see ssid_match for code
 	// todo change emit code below (global flag?)
 	if (res == EXACT_SSID_MATCH) { //Probed for configured address
-    	if (sta)
+    	if (sta) {
 			wpa_printf(MSG_MSGDUMP,"MANA - Directed probe request for actual/legitimate SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
     		sta->ssid_probe = &hapd->conf->ssid;
+		}
 	} else if (res == NO_SSID_MATCH) { //Probed for unseen SSID
 		if (hapd->iconf->enable_karma && sta) {
 			wpa_printf(MSG_MSGDUMP,"MANA - Directed probe request for foreign SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
@@ -613,6 +614,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 			// Store what was actually probed for
 			sta->ssid_probe_karma = &hapd->conf->ssid;
 			os_memcpy(sta->ssid_probe_karma->ssid, elems.ssid, elems.ssid_len);
+			sta->ssid_probe_karma[elems.ssid_len] = '\0';
 			sta->ssid_probe_karma->ssid_len = elems.ssid_len;
 
 			// Check if the SSID probed for is in the hash for this STA

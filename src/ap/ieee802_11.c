@@ -1949,15 +1949,12 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		 */
 		ap_sta_set_authorized(hapd, sta, 1);
 
-		// KARMA
 		// Print that it has associated and give the MAC and AP
 		if (hapd->iconf->enable_karma) {
 			struct hostapd_ssid *ssid = sta->ssid_probe_karma;
 
-			 printf("KARMA: Successful association of " MACSTR " to ESSID '%s'\n",
+			 wpa_printf(MSG_INFO,"MANA - Successful association of " MACSTR " to ESSID '%s'\n",
 				   MAC2STR(mgmt->da), ssid->ssid);
-			//printf("KARMA: Successful association of " MACSTR "\n",
-				   //MAC2STR(mgmt->da));
 		}
 
 		// KARMA END
