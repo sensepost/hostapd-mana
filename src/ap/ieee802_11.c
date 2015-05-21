@@ -790,9 +790,8 @@ static u16 check_ssid(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	if (ssid_ie == NULL)
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
-	// KARMA
 	if (hapd->iconf->enable_karma) {
-		wpa_printf(MSG_MSGDUMP, "KARMA: Checking SSID for start of association, pass through %s", wpa_ssid_txt(ssid_ie, ssid_ie_len));
+		wpa_printf(MSG_MSGDUMP, "MANA - Checking SSID for start of association, pass through %s", wpa_ssid_txt(ssid_ie, ssid_ie_len));
 		return WLAN_STATUS_SUCCESS;
 	} else {
 		if (ssid_ie_len != hapd->conf->ssid.ssid_len ||
@@ -806,7 +805,6 @@ static u16 check_ssid(struct hostapd_data *hapd, struct sta_info *sta,
 
 	return WLAN_STATUS_SUCCESS;
 	}
-	// KARMA END
 }
 
 
