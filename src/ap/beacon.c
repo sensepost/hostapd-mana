@@ -648,11 +648,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 	} else { //Probed for wildcard i.e. WILDCARD_SSID_MATCH
 		if (hapd->iconf->enable_karma) {
 			wpa_printf(MSG_MSGDUMP,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
-			// Check if the SSID probed for is in the hash for this STA
-			struct karma_ssid *d = NULL;
-			HASH_FIND_STR(karma_data, wpa_ssid_txt(elems.ssid, elems.ssid_len), d);
-			if (d != NULL) //found
-				iterate = 1; //iterate through hash emitting multiple probe responses
+			iterate = 1; //iterate through hash emitting multiple probe responses
 		}
     	if (sta)
     		sta->ssid_probe = &hapd->conf->ssid;
