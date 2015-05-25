@@ -578,7 +578,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 #endif /* CONFIG_P2P */
 
 	if (hapd->conf->ignore_broadcast_ssid && elems.ssid_len == 0 &&
-	    elems.ssid_list_len == 0) {
+	    elems.ssid_list_len == 0 && !hapd->iconf->enable_karma) {
 		wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR " for "
 			   "broadcast SSID ignored", MAC2STR(mgmt->sa));
 		return;
