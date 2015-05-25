@@ -603,12 +603,12 @@ void handle_probe_req(struct hostapd_data *hapd,
 	// todo change emit code below (global flag?)
 	if (res == EXACT_SSID_MATCH) { //Probed for configured address
 		if (hapd->iconf->enable_karma) {
-			wpa_printf(MSG_MSGDEBUG,"MANA - Directed probe request for actual/legitimate SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
+			wpa_printf(MSG_DEBUG,"MANA - Directed probe request for actual/legitimate SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
 		} 
     	if (sta)
     		sta->ssid_probe = &hapd->conf->ssid;
 	} else if (res == NO_SSID_MATCH) { //Probed for unseen SSID
-		wpa_printf(MSG_MSGDEBUG,"MANA - Directed probe request for foreign SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
+		wpa_printf(MSG_DEBUG,"MANA - Directed probe request for foreign SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
 		if (hapd->iconf->enable_karma) {
 			if (sta) {
 				// Make hostapd think they probed for us, necessary for security policy
@@ -647,7 +647,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 		}
 	} else { //Probed for wildcard i.e. WILDCARD_SSID_MATCH
 		if (hapd->iconf->enable_karma) {
-			wpa_printf(MSG_MSGDEBUG,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
+			wpa_printf(MSG_DEBUG,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
 			iterate = 1; //iterate through hash emitting multiple probe responses
 		}
     	if (sta)
