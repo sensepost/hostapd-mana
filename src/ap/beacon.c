@@ -603,12 +603,12 @@ void handle_probe_req(struct hostapd_data *hapd,
 	// todo change emit code below (global flag?)
 	if (res == EXACT_SSID_MATCH) { //Probed for configured address
 		if (hapd->iconf->enable_karma) {
-			wpa_printf(MSG_MSGDUMP,"MANA - Directed probe request for actual/legitimate SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
+			wpa_printf(MSG_MSGDEBUG,"MANA - Directed probe request for actual/legitimate SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
 		} 
     	if (sta)
     		sta->ssid_probe = &hapd->conf->ssid;
 	} else if (res == NO_SSID_MATCH) { //Probed for unseen SSID
-		wpa_printf(MSG_MSGDUMP,"MANA - Directed probe request for foreign SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
+		wpa_printf(MSG_MSGDEBUG,"MANA - Directed probe request for foreign SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
 		if (hapd->iconf->enable_karma) {
 			if (sta) {
 				// Make hostapd think they probed for us, necessary for security policy
@@ -647,7 +647,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 		}
 	} else { //Probed for wildcard i.e. WILDCARD_SSID_MATCH
 		if (hapd->iconf->enable_karma) {
-			wpa_printf(MSG_MSGDUMP,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
+			wpa_printf(MSG_MSGDEBUG,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
 			iterate = 1; //iterate through hash emitting multiple probe responses
 		}
     	if (sta)
@@ -733,23 +733,23 @@ void handle_probe_req(struct hostapd_data *hapd,
 			size_t resp2_len;
 			int flag = 0;
 			if (hapd->iconf->karma_loud) {
-				wpa_printf(MSG_INFO, " MANA - Generated LOUD Broadcast response : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
+				wpa_printf(MSG_INFO, "MANA - Generated LOUD Broadcast response : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
 				resp2 = hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
 				flag = 1;
 			} else { //non-loud karma mode
 				if (os_memcmp(k->sta_addr, mgmt->sa, ETH_ALEN) == 0) {
-					wpa_printf(MSG_INFO, " MANA - Generated Broadcast response : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
+					wpa_printf(MSG_INFO, "MANA - Generated Broadcast response : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
 					resp2 = hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
 					flag = 1;
 				}
 			}
 			if (flag == 1) {
 				if (resp2 == NULL) {
-					wpa_printf(MSG_ERROR, " MANA - Could not generate SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
+					wpa_printf(MSG_ERROR, "MANA - Could not generate SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
 				} else {
-					wpa_printf(MSG_MSGDUMP, " MANA - Successfully generated SSID response for %s (len %zu) :)", k->ssid_txt, k->ssid_len);
+					wpa_printf(MSG_MSGDUMP, "MANA - Successfully generated SSID response for %s (len %zu) :)", k->ssid_txt, k->ssid_len);
 					if (hostapd_drv_send_mlme(hapd, resp2, resp2_len, noack) < 0) {
-						wpa_printf(MSG_ERROR, " MANA - Failed sending prove response for SSID %s (%zu)", k->ssid_txt, k->ssid_len);
+						wpa_printf(MSG_ERROR, "MANA - Failed sending prove response for SSID %s (%zu)", k->ssid_txt, k->ssid_len);
 					}
 					os_free(resp2);
 				}
