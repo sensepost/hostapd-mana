@@ -575,9 +575,10 @@ static void eap_ttls_process_phase2_chap(struct eap_sm *sm,
 	wpa_hexdump(MSG_DEBUG, "MANA EAP-TTLS-CHAP: Challenge Hash", hash, CHAP_MD5_LEN);
 	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-CHAP) : Username:%s", sm->identity);
 	printf("MANA (EAP-TTLS-CHAP) : ");
+	int x;
 	for (x=0;x<CHAP_MD5_LEN;x++)
                 printf("%02x:",hash[x]);
-        printf("%02x\n",hash[CHAP_MD5_LEN]);
+        printf("%02x\n",hash[CHAP_MD5_LEN-1]);
 
         wpa_printf(MSG_INFO, "MANA (EAP-TTLS-CHAP) : Response");
         printf("MANA (EAP-TTLS-CHAP) : ");
@@ -593,7 +594,7 @@ static void eap_ttls_process_phase2_chap(struct eap_sm *sm,
 		for (x = 0; x < CHAP_MD5_LEN; x++) {
 			fprintf(f, "%02x:", hash[x]);
 		}
-		fprintf(f, "%02x|", hash[CHAP_MD5_LEN];
+		fprintf(f, "%02x|", hash[CHAP_MD5_LEN-1]);
 		for (x = 0; x < password_len; x++) {
 			fprintf(f, "%02x:", password[x]);
 		}
@@ -663,9 +664,10 @@ static void eap_ttls_process_phase2_mschap(struct eap_sm *sm,
 		nt_challenge_response(challenge, sm->user->password,
 				      sm->user->password_len, nt_response);
 
-	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAP) : Username:%s", name);
+	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAP) : Username:%s", sm->identity);
 	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAP) : Challenge");
 	printf("MANA (EAP-TTLS-MSCHAP) : ");
+	int x;
 	for (x=0;x<challenge_len;x++)
                 printf("%02x:",challenge[x]);
         printf("%02x\n",challenge[challenge_len]);
@@ -803,6 +805,7 @@ static void eap_ttls_process_phase2_mschapv2(struct eap_sm *sm,
 	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAPV2) : Username:%s", username);
 	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAPV2) : Challenge");
 	printf("MANA (EAP-TTLS-MSCHAPV2) : ");
+	int x;
 	for (x=0;x<7;x++)
                 printf("%02x:",challenge_hash1[x]);
         printf("%02x\n",challenge_hash1[7]);
