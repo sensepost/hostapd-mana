@@ -605,8 +605,10 @@ void handle_probe_req(struct hostapd_data *hapd,
 		if (hapd->iconf->enable_karma) {
 			wpa_printf(MSG_DEBUG,"MANA - Directed probe request for actual/legitimate SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
 		} 
-    	if (sta)
+    	if (sta) {
     		sta->ssid_probe = &hapd->conf->ssid;
+    		sta->ssid_probe_karma = &hapd->conf->ssid;
+		}
 	} else if (res == NO_SSID_MATCH) { //Probed for unseen SSID
 		wpa_printf(MSG_DEBUG,"MANA - Directed probe request for foreign SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
 		if (hapd->iconf->enable_karma) {
@@ -614,7 +616,6 @@ void handle_probe_req(struct hostapd_data *hapd,
 				// Make hostapd think they probed for us, necessary for security policy
 				sta->ssid_probe = &hapd->conf->ssid;
 				// Store what was actually probed for
-				//sta->ssid_probe_karma = &hapd->conf->ssid;
 				sta->ssid_probe_karma = (struct hostapd_ssid*)os_malloc(sizeof(struct hostapd_ssid));
 				os_memcpy(sta->ssid_probe_karma,&hapd->conf->ssid,sizeof(hapd->conf->ssid));
 				os_memcpy(sta->ssid_probe_karma->ssid, elems.ssid, elems.ssid_len);
