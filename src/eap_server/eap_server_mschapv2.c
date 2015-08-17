@@ -330,7 +330,38 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: NT-Response", nt_response, 24);
 	wpa_printf(MSG_MSGDUMP, "EAP-MSCHAPV2: Flags 0x%x", flags);
 	wpa_hexdump_ascii(MSG_MSGDUMP, "EAP-MSCHAPV2: Name", name, name_len);
-	
+
+	buf = os_malloc(name_len * 4 + 1);
+	if (buf) {
+		printf_encode(buf, name_len * 4 + 1, name, name_len);
+		eap_log_msg(sm, "EAP-MSCHAPV2 Name '%s'", buf);
+		os_free(buf);
+	}
+
+	/* MSCHAPv2 does not include optional domain name in the
+	 * challenge-response calculation, so remove domain prefix
+	 * (if present). */
+	username = sm->identity;
+	username_len = sm->identity_len;
+	for (i = 0; i < username_len; i++) {
+		if (username[i] == '\\') {
+			username_len -= i + 1;
+			username += i + 1;
+			break;
+		}
+	}
+
+	user = name;
+	user_len = name_len;
+	for (i = 0; i < user_len; i++) {
+		if (user[i] == '\\') {
+			user_len -= i + 1;
+			user += i + 1;
+			break;
+		}
+	}
+
+	//MANA EAP capture
 	challenge_hash(peer_challenge, data->auth_challenge, name, name_len, challenge_hash1);
 
 	wpa_hexdump(MSG_DEBUG, "EAP-MSCHAPV2: Challenge Hash", challenge_hash1, 8);
@@ -361,37 +392,6 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		}
 		fprintf(f, "%02x\n", nt_response[23]);
 		fclose(f);
-	}
-
-
-	buf = os_malloc(name_len * 4 + 1);
-	if (buf) {
-		printf_encode(buf, name_len * 4 + 1, name, name_len);
-		eap_log_msg(sm, "EAP-MSCHAPV2 Name '%s'", buf);
-		os_free(buf);
-	}
-
-	/* MSCHAPv2 does not include optional domain name in the
-	 * challenge-response calculation, so remove domain prefix
-	 * (if present). */
-	username = sm->identity;
-	username_len = sm->identity_len;
-	for (i = 0; i < username_len; i++) {
-		if (username[i] == '\\') {
-			username_len -= i + 1;
-			username += i + 1;
-			break;
-		}
-	}
-
-	user = name;
-	user_len = name_len;
-	for (i = 0; i < user_len; i++) {
-		if (user[i] == '\\') {
-			user_len -= i + 1;
-			user += i + 1;
-			break;
-		}
 	}
 
 	if (username_len != user_len ||
