@@ -409,30 +409,25 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 			  username, username_len);
 
 	if (sm->user->password_hash) {
-		//res = generate_nt_response_pwhash(data->auth_challenge,
-		generate_nt_response_pwhash(data->auth_challenge,
+		res = generate_nt_response_pwhash(data->auth_challenge,
 						  peer_challenge,
 						  username, username_len,
 						  sm->user->password,
 						  expected);
 	} else {
-		//res = generate_nt_response(data->auth_challenge,
-		generate_nt_response(data->auth_challenge,
+		res = generate_nt_response(data->auth_challenge,
 					   peer_challenge,
 					   username, username_len,
 					   sm->user->password,
 					   sm->user->password_len,
 					   expected);
 	}
-	//if (res) {
-		//data->state = FAILURE;
-		//return;
-	//}
+	if (res) {
+		data->state = FAILURE;
+		return;
+	}
 
-	nt_response = expected;
-	//os_memset((void *)nt_response, 0, 24);
-	//os_memset((void *)expected, 0, 24);
-	//if (os_memcmp_const(nt_response, expected, 24) == 0) {
+	if (os_memcmp_const(nt_response, expected, 24) == 0) {
 		const u8 *pw_hash;
 		u8 pw_hash_buf[16], pw_hash_hash[16];
 
@@ -448,9 +443,8 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 			if (nt_password_hash(sm->user->password,
 					     sm->user->password_len,
 					     pw_hash_buf) < 0) {
-				//data->state = FAILURE;
-				data->state = SUCCESS;
-				//return;
+				data->state = FAILURE;
+				return;
 			}
 			pw_hash = pw_hash_buf;
 		}
@@ -464,9 +458,12 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		data->master_key_valid = 1;
 		wpa_hexdump_key(MSG_INFO, "EAP-MSCHAPV2: Derived Master Key",
 				data->master_key, MSCHAPV2_KEY_LEN);
-	//} else {
-		//data->state = SUCCESS;
-	//}
+	} else {
+		wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: Expected NT-Response",
+			    expected, 24);
+		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Invalid NT-Response");
+		data->state = FAILURE_REQ;
+	}
 }
 
 
