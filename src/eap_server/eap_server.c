@@ -97,7 +97,7 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 	struct eap_user *user2;
 	char ident = 't';
 
-	wpa_printf(MSG_INFO, "MANA (EAP) : identity: %s", identity);
+	wpa_printf(MSG_INFO, "MANA (EAP) : identity: %.*s", identity_len, identity);
 
 	if (sm == NULL || sm->eapol_cb == NULL ||
 	    sm->eapol_cb->get_eap_user == NULL) {

@@ -290,6 +290,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
   	u8 challenge_hash1[8];
 	const u8 *username, *user;
 	size_t username_len, user_len;
+	int res;
 	int x;
 	char *buf;
 
