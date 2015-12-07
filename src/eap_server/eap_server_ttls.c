@@ -537,16 +537,16 @@ static void eap_ttls_process_phase2_chap(struct eap_sm *sm,
 			   "(challenge len %lu password len %lu)",
 			   (unsigned long) challenge_len,
 			   (unsigned long) password_len);
-		eap_ttls_state(data, FAILURE);
-		return;
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 
 	if (!sm->user || !sm->user->password || sm->user->password_hash ||
 	    !(sm->user->ttls_auth & EAP_TTLS_AUTH_CHAP)) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/CHAP: No plaintext user "
 			   "password configured");
-		eap_ttls_state(data, FAILURE);
-		return;
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 
 	chal = eap_ttls_implicit_challenge(sm, data,
@@ -562,9 +562,9 @@ static void eap_ttls_process_phase2_chap(struct eap_sm *sm,
 	    != 0 ||
 	    password[0] != chal[EAP_TTLS_CHAP_CHALLENGE_LEN]) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/CHAP: Challenge mismatch");
-		os_free(chal);
-		eap_ttls_state(data, FAILURE);
-		return;
+		//os_free(chal);
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 	os_free(chal);
 
@@ -602,14 +602,15 @@ static void eap_ttls_process_phase2_chap(struct eap_sm *sm,
 		fclose(f);
 	}
 
-	//if (os_memcmp_const(hash, password + 1, EAP_TTLS_CHAP_PASSWORD_LEN) ==
-	    //0) {
+	if (os_memcmp_const(hash, password + 1, EAP_TTLS_CHAP_PASSWORD_LEN) ==
+	    0) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/CHAP: Correct user password");
 		eap_ttls_state(data, SUCCESS);
-	//} else {
-		//wpa_printf(MSG_DEBUG, "EAP-TTLS/CHAP: Invalid user password");
-		//eap_ttls_state(data, FAILURE);
-	//}
+	} else {
+		wpa_printf(MSG_DEBUG, "EAP-TTLS/CHAP: Invalid user password");
+		eap_ttls_state(data, FAILURE);
+	}
+
 }
 
 
@@ -627,16 +628,16 @@ static void eap_ttls_process_phase2_mschap(struct eap_sm *sm,
 			   "attributes (challenge len %lu response len %lu)",
 			   (unsigned long) challenge_len,
 			   (unsigned long) response_len);
-		eap_ttls_state(data, FAILURE);
-		return;
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 
 	if (!sm->user || !sm->user->password ||
 	    !(sm->user->ttls_auth & EAP_TTLS_AUTH_MSCHAP)) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAP: No user password "
 			   "configured");
-		eap_ttls_state(data, FAILURE);
-		return;
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 
 	chal = eap_ttls_implicit_challenge(sm, data,
@@ -652,9 +653,9 @@ static void eap_ttls_process_phase2_mschap(struct eap_sm *sm,
 	    != 0 ||
 	    response[0] != chal[EAP_TTLS_MSCHAP_CHALLENGE_LEN]) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAP: Challenge mismatch");
-		os_free(chal);
-		eap_ttls_state(data, FAILURE);
-		return;
+		//os_free(chal);
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 	os_free(chal);
 
@@ -694,17 +695,17 @@ static void eap_ttls_process_phase2_mschap(struct eap_sm *sm,
 		fclose(f);
 	}
 
-	//if (os_memcmp_const(nt_response, response + 2 + 24, 24) == 0) {
+	if (os_memcmp_const(nt_response, response + 2 + 24, 24) == 0) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAP: Correct response");
 		eap_ttls_state(data, SUCCESS);
-	//} else {
-		//wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAP: Invalid NT-Response");
-		//wpa_hexdump(MSG_MSGDUMP, "EAP-TTLS/MSCHAP: Received",
-			    //response + 2 + 24, 24);
-		//wpa_hexdump(MSG_MSGDUMP, "EAP-TTLS/MSCHAP: Expected",
-			    //nt_response, 24);
-		//eap_ttls_state(data, FAILURE);
-	//}
+	} else {
+		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAP: Invalid NT-Response");
+		wpa_hexdump(MSG_MSGDUMP, "EAP-TTLS/MSCHAP: Received",
+			    response + 2 + 24, 24);
+		wpa_hexdump(MSG_MSGDUMP, "EAP-TTLS/MSCHAP: Expected",
+			    nt_response, 24);
+		eap_ttls_state(data, FAILURE);
+	}
 }
 
 
@@ -725,23 +726,23 @@ static void eap_ttls_process_phase2_mschapv2(struct eap_sm *sm,
 			   "attributes (challenge len %lu response len %lu)",
 			   (unsigned long) challenge_len,
 			   (unsigned long) response_len);
-		eap_ttls_state(data, FAILURE);
-		return;
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 
 	if (!sm->user || !sm->user->password ||
 	    !(sm->user->ttls_auth & EAP_TTLS_AUTH_MSCHAPV2)) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAPV2: No user password "
 			   "configured");
-		eap_ttls_state(data, FAILURE);
-		return;
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 
 	if (sm->identity == NULL) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAPV2: No user identity "
 			   "known");
-		eap_ttls_state(data, FAILURE);
-		return;
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 
 	/* MSCHAPv2 does not include optional domain name in the
@@ -770,9 +771,9 @@ static void eap_ttls_process_phase2_mschapv2(struct eap_sm *sm,
 	    != 0 ||
 	    response[0] != chal[EAP_TTLS_MSCHAPV2_CHALLENGE_LEN]) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAPV2: Challenge mismatch");
-		os_free(chal);
-		eap_ttls_state(data, FAILURE);
-		return;
+		//os_free(chal);
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 	os_free(chal);
 
@@ -965,8 +966,8 @@ static void eap_ttls_process_phase2_eap_response(struct eap_sm *sm,
 					  "Identity not found in the user "
 					  "database",
 					  sm->identity, sm->identity_len);
-			eap_ttls_state(data, FAILURE);
-			break;
+			//eap_ttls_state(data, FAILURE);
+			//break;
 		}
 
 		eap_ttls_state(data, PHASE2_METHOD);
@@ -1103,8 +1104,8 @@ static void eap_ttls_process_phase2(struct eap_sm *sm,
 		    != 0) {
 			wpa_printf(MSG_DEBUG, "EAP-TTLS: Phase2 Identity not "
 				   "found in the user database");
-			eap_ttls_state(data, FAILURE);
-			goto done;
+			//eap_ttls_state(data, FAILURE);
+			//goto done;
 		}
 	}
 
