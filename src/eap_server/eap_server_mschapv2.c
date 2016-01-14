@@ -363,7 +363,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	}
 
 	//MANA EAP capture
-	challenge_hash(peer_challenge, data->auth_challenge, name, name_len, challenge_hash1);
+	challenge_hash(peer_challenge, data->auth_challenge, username, username_len, challenge_hash1);
 
 	wpa_hexdump(MSG_DEBUG, "EAP-MSCHAPV2: Challenge Hash", challenge_hash1, 8);
 	wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Username:%s", name);
