@@ -94,7 +94,7 @@ struct sta_info {
 
 	struct hostapd_ssid *ssid; /* SSID selection based on (Re)AssocReq */
 	struct hostapd_ssid *ssid_probe; /* SSID selection based on ProbeReq */
-	struct hostapd_ssid *ssid_probe_karma; /* SSID selection based on ProbeReq */
+	struct hostapd_ssid *ssid_probe_mana; /* SSID selection based on ProbeReq */
 
 	int vlan_id;
 	 /* PSKs from RADIUS authentication server */

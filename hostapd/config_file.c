@@ -1877,20 +1877,26 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->logger_syslog = atoi(pos);
 	} else if (os_strcmp(buf, "logger_stdout") == 0) {
 		bss->logger_stdout = atoi(pos);
-	// KARMA START
-	} else if (os_strcmp(buf, "enable_karma") == 0) {
+	// MANA START
+	} else if (os_strcmp(buf, "enable_mana") == 0) {
 		int val = atoi(pos);
-		conf->enable_karma = (val != 0);
-		if (conf->enable_karma) {
-			wpa_printf(MSG_DEBUG, "KARMA: Enabled");
+		conf->enable_mana = (val != 0);
+		if (conf->enable_mana) {
+			wpa_printf(MSG_DEBUG, "MANA: Enabled");
 		}
-	} else if (os_strcmp(buf, "karma_loud") == 0) {
+	} else if (os_strcmp(buf, "mana_loud") == 0) {
 		int val = atoi(pos);
-		conf->karma_loud = (val != 0);
-		if (conf->karma_loud) {
-			wpa_printf(MSG_DEBUG, "KARMA: Loud mode enabled");
+		conf->mana_loud = (val != 0);
+		if (conf->mana_loud) {
+			wpa_printf(MSG_DEBUG, "MANA: Loud mode enabled");
 		}
-	// KARMA END
+	} else if (os_strcmp(buf, "mana_macacl") == 0) {
+		int val = atoi(pos);
+		conf->mana_macacl = (val != 0);
+		if (conf->mana_macacl) {
+			wpa_printf(MSG_DEBUG, "MANA: MAC ACLs extended to management frames");
+		}
+	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
 			   line);
@@ -3172,7 +3178,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "spectrum_mgmt_required") == 0) {
 		conf->spectrum_mgmt_required = atoi(pos);
 	} else if (os_strcmp(buf, "ennode") == 0) {
-		setenv("KARMANODE", pos, 1);
+		setenv("MANANODE", pos, 1);
 	} else {
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",
@@ -3222,11 +3228,11 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 
 	conf->last_bss = conf->bss[0];
 
-	// KARMA START
-	conf->enable_karma = 0; //default off
-	conf->karma_loud = 0; //default off
-	
-	// KARMA END
+	// MANA START
+	conf->enable_mana = 0; //default off;
+	conf->mana_loud = 0; //default off; 1 - advertise all networks across all devices, 0 - advertise specific networks to the device it was discovered from
+	conf->mana_macacl = 0; //default off; 0 - off, 1 - extend MAC ACL to management frames
+	// MANA END
 
 	while (fgets(buf, sizeof(buf), f)) {
 		struct hostapd_bss_config *bss;

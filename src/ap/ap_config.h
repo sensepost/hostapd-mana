@@ -522,10 +522,11 @@ struct hostapd_config {
 	struct hostapd_bss_config **bss, *last_bss;
 	size_t num_bss;
 
-	// KARMA
-	int enable_karma;
-	int karma_loud;
-	// KARMA END
+	// MANA
+	int enable_mana;
+	int mana_loud;
+	int mana_macacl;
+	// MANA END
 
 	u16 beacon_int;
 	int rts_threshold;

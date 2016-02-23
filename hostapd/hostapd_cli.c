@@ -86,17 +86,18 @@ static const char *commands_help =
 "   interface [ifname]   show interfaces/select interface\n"
 "   level <debug level>  change debug level\n"
 "   license              show full hostapd_cli license\n"
-// KARMA START
+// MANA START
 "   ping                   send a ping, get a pong\n"
-"   karma_change_ssid      change the default SSID for when Karma is off\n"
-"   karma_get_ssid         get the default SSID for when Karma is off\n"
-"   karma_enable           enable Karma\n"
-"   karma_disable          disable Karma\n"
-"   karma_get_state        get the state of Karma\n"
-"   karma_add_black_mac    add a MAC to the black list\n"
-"   karma_add_white_mac    add a MAC to the white list\n"
-"   karma_reload_eap       reload users when challenge/response is cracked\n"
-// KARMA END
+"   mana_change_ssid      change the default SSID for when Mana is off\n"
+"   mana_get_ssid         get the default SSID for when Mana is off\n"
+"   mana_enable           enable Mana\n"
+"   mana_disable          disable Mana\n"
+"   mana_get_state        get the state of Mana\n"
+"   mana_loud_on		  enable Mana's loud mode\n"
+"   mana_loud_off		  disable Mana's loud mode\n"
+"   mana_macacl_on		  enable MAC ACLs at management frame level\n"
+"   mana_macacl_off		  disable MAC ACLs at management frame level\n"
+// MANA END
 "   quit                 exit hostapd_cli\n";
 
 static struct wpa_ctrl *ctrl_conn;
@@ -347,14 +348,14 @@ static int hostapd_cli_cmd_disassociate(struct wpa_ctrl *ctrl, int argc,
 	return wpa_ctrl_command(ctrl, buf);
 }
 
-// KARMA START
-static int hostapd_cli_cmd_karma_change_ssid(struct wpa_ctrl *ctrl, int argc,
+// MANA START
+static int hostapd_cli_cmd_mana_change_ssid(struct wpa_ctrl *ctrl, int argc,
 					char *argv[])
 {
 	// Max length of SSID is 32 chars + the command and the null byte
 	char buf[50];
 	if (argc < 1) {
-		printf("Invalid 'change Karma SSID' command - exactly one "
+		printf("Invalid 'change Mana SSID' command - exactly one "
 		       "argument, SSID, is required.\n");
 		return -1;
 	}
@@ -362,74 +363,46 @@ static int hostapd_cli_cmd_karma_change_ssid(struct wpa_ctrl *ctrl, int argc,
 		printf("The max length of an SSID is %i\n", HOSTAPD_MAX_SSID_LEN);
 		return -1;
 	}
-	os_snprintf(buf, sizeof(buf), "KARMA_CHANGE_SSID %s", argv[0]);
+	os_snprintf(buf, sizeof(buf), "MANA_CHANGE_SSID %s", argv[0]);
 	return wpa_ctrl_command(ctrl, buf);
 }
 
-static int hostapd_cli_cmd_karma_get_ssid(struct wpa_ctrl *ctrl, int argc,
+static int hostapd_cli_cmd_mana_get_ssid(struct wpa_ctrl *ctrl, int argc,
 					char *argv[])
 {
-	return wpa_ctrl_command(ctrl, "KARMA_GET_SSID");
-}
-
-static int hostapd_cli_cmd_karma_add_white_mac(struct wpa_ctrl *ctrl, int argc,
-					char *argv[])
-{
-	// Max length of MAC is 17 chars + the command and the null byte
-	char buf[50];
-	if (argc < 1) {
-		printf("Invalid 'add white MAC' command - exactly one "
-		       "argument, MAC, is required.\n");
-		return -1;
-	}
-	// Can't find a define for the length of a MAC address as a string
-	// ETH_ALEN is the number of individual bytes
-	if (strlen(argv[0]) != 17) {
-		printf("The MAC should be in the format 00:11:22:33:44:55\n");
-		return -1;
-	}
-	os_snprintf(buf, sizeof(buf), "KARMA_ADD_WHITE_MAC %s", argv[0]);
-	return wpa_ctrl_command(ctrl, buf);
-}
-
-static int hostapd_cli_cmd_karma_add_black_mac(struct wpa_ctrl *ctrl, int argc,
-					char *argv[])
-{
-	// Max length of MAC is 17 chars + the command and the null byte
-	char buf[50];
-	if (argc < 1) {
-		printf("Invalid 'add black MAC' command - exactly one "
-		       "argument, MAC, is required.\n");
-		return -1;
-	}
-	// Can't find a define for the length of a MAC address as a string
-	// ETH_ALEN is the number of individual bytes
-	if (strlen(argv[0]) != 17) {
-		printf("The MAC should be in the format 00:11:22:33:44:55\n");
-		return -1;
-	}
-	os_snprintf(buf, sizeof(buf), "KARMA_ADD_BLACK_MAC %s", argv[0]);
-	return wpa_ctrl_command(ctrl, buf);
+	return wpa_ctrl_command(ctrl, "MANA_GET_SSID");
 }
 
 // These should be one function with a parameter
-static int hostapd_cli_cmd_karma_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+static int hostapd_cli_cmd_mana_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
-	return wpa_ctrl_command(ctrl, "KARMA_DISABLE");
+	return wpa_ctrl_command(ctrl, "MANA_DISABLE");
 }
-static int hostapd_cli_cmd_karma_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+static int hostapd_cli_cmd_mana_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
-	return wpa_ctrl_command(ctrl, "KARMA_ENABLE");
+	return wpa_ctrl_command(ctrl, "MANA_ENABLE");
 }
-static int hostapd_cli_cmd_karma_get_state(struct wpa_ctrl *ctrl, int argc, char *argv[])
+static int hostapd_cli_cmd_mana_get_state(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
-	return wpa_ctrl_command(ctrl, "KARMA_STATE");
+	return wpa_ctrl_command(ctrl, "MANA_STATE");
 }
-static int hostapd_cli_cmd_karma_reload_eap(struct wpa_ctrl *ctrl, int argc, char *argv[])
+static int hostapd_cli_cmd_mana_loud_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
-	return wpa_ctrl_command(ctrl, "KARMA_EAP");
+	return wpa_ctrl_command(ctrl, "LOUD_DISABLE");
 }
-// END KARMA
+static int hostapd_cli_cmd_mana_loud_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "LOUD_ENABLE");
+}
+static int hostapd_cli_cmd_mana_macacl_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANAACL_DISABLE");
+}
+static int hostapd_cli_cmd_mana_macacl_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANAACL_ENABLE");
+}
+// END MANA
 
 
 #ifdef CONFIG_IEEE80211W
@@ -1092,18 +1065,19 @@ static struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "quit", hostapd_cli_cmd_quit },
 	{ "set", hostapd_cli_cmd_set },
 	{ "get", hostapd_cli_cmd_get },
-// KARMA START
+// MANA START
 // Because I always type ? first
 	{ "?", hostapd_cli_cmd_help },
-	{ "karma_add_black_mac", hostapd_cli_cmd_karma_add_black_mac},
-	{ "karma_add_white_mac", hostapd_cli_cmd_karma_add_white_mac},
-	{ "karma_change_ssid", hostapd_cli_cmd_karma_change_ssid},
-	{ "karma_get_ssid", hostapd_cli_cmd_karma_get_ssid},
-	{ "karma_get_state", hostapd_cli_cmd_karma_get_state},
-	{ "karma_disable", hostapd_cli_cmd_karma_disable},
-	{ "karma_enable", hostapd_cli_cmd_karma_enable},
-	{ "karma_reload_eap", hostapd_cli_cmd_karma_reload_eap},
-// END KARMA
+	{ "mana_change_ssid", hostapd_cli_cmd_mana_change_ssid},
+	{ "mana_get_ssid", hostapd_cli_cmd_mana_get_ssid},
+	{ "mana_get_state", hostapd_cli_cmd_mana_get_state},
+	{ "mana_disable", hostapd_cli_cmd_mana_disable},
+	{ "mana_enable", hostapd_cli_cmd_mana_enable},
+	{ "mana_loud_off", hostapd_cli_cmd_mana_loud_disable},
+	{ "mana_loud_on", hostapd_cli_cmd_mana_loud_enable},
+	{ "mana_macacl_off", hostapd_cli_cmd_mana_macacl_disable},
+	{ "mana_macacl_on", hostapd_cli_cmd_mana_macacl_enable},
+// END MANA
 	{ "set_qos_map_set", hostapd_cli_cmd_set_qos_map_set },
 	{ "send_qos_map_conf", hostapd_cli_cmd_send_qos_map_conf },
 	{ "chan_switch", hostapd_cli_cmd_chan_switch },

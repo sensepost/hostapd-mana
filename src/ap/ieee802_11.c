@@ -790,7 +790,7 @@ static u16 check_ssid(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	if (ssid_ie == NULL)
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
-	if (hapd->iconf->enable_karma) {
+	if (hapd->iconf->enable_mana) {
 		wpa_printf(MSG_MSGDUMP, "MANA - Checking SSID for start of association, pass through %s", wpa_ssid_txt(ssid_ie, ssid_ie_len));
 		return WLAN_STATUS_SUCCESS;
 	} else {
@@ -1950,14 +1950,14 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		ap_sta_set_authorized(hapd, sta, 1);
 
 		// Print that it has associated and give the MAC and AP
-		if (hapd->iconf->enable_karma && sta->ssid_probe_karma) {
-			struct hostapd_ssid *ssid = sta->ssid_probe_karma;
+		if (hapd->iconf->enable_mana && sta->ssid_probe_mana) {
+			struct hostapd_ssid *ssid = sta->ssid_probe_mana;
 
 			 wpa_printf(MSG_INFO,"MANA - Successful association of " MACSTR " to ESSID '%s'\n",
 				   MAC2STR(mgmt->da), ssid->ssid);
 		}
 
-		// KARMA END
+		// MANA END
 	}
 
 	if (reassoc)

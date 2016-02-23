@@ -24,14 +24,14 @@ void ieee802_11_free_ap_params(struct wpa_driver_ap_params *params);
 
 #endif /* BEACON_H */
 
-// KARMA START
+// MANA START
 #include "uthash/uthash.h"
-struct karma_ssid {
+struct mana_ssid {
         char ssid_txt[HOSTAPD_MAX_SSID_LEN+1];
         u8 ssid[HOSTAPD_MAX_SSID_LEN];
         size_t ssid_len;
 		u8 sta_addr[6];
         UT_hash_handle hh;
 };
-struct karma_ssid *karma_data;
-// KARMA END
+struct mana_ssid *mana_data;
+// MANA END

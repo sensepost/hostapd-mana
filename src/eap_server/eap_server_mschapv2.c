@@ -379,7 +379,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
                 printf("%02x:",nt_response[x]);
         printf("%02x\n",nt_response[23]);
 
-	char *ennode = getenv("KARMANODE");
+	char *ennode = getenv("MANANODE");
 	FILE *f = fopen(ennode, "a");
 	if (f != NULL) {
 		const char *hdr = "CHAP";
