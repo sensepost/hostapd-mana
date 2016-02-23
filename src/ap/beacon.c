@@ -360,6 +360,29 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 	resp->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
 					   WLAN_FC_STYPE_PROBE_RESP);
+
+	//MANA - check against macacl
+	if (req && hapd->iconf->mana_macacl) {
+		u8 accept_acl;
+		int i=0;
+
+		if (hapd->iconf->bss[0]->macaddr_acl == DENY_UNLESS_ACCEPTED) {
+			accept_acl = 1;
+			for (i = 0; i < hapd->iconf->bss[0]->num_accept_mac; i++) {
+				if (*req->sa != *hapd->iconf->bss[0]->accept_mac[i].addr) {
+					return NULL; //MAC is not in accept list, back out and don't send
+				}
+			}
+		} else if (hapd->iconf->bss[0]->macaddr_acl == ACCEPT_UNLESS_DENIED) {
+			accept_acl = 0;
+			for (i = 0; i < hapd->iconf->bss[0]->num_deny_mac; i++) {
+				if (*req->sa == *hapd->iconf->bss[0]->deny_mac[i].addr) {
+					return NULL; //MAC is in deny list, back out and don't send
+				}
+			}
+		}
+	}
+	//MANA END
 	if (req)
 		os_memcpy(resp->da, req->sa, ETH_ALEN);
 	os_memcpy(resp->sa, hapd->own_addr, ETH_ALEN);
