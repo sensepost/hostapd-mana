@@ -363,27 +363,17 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 	//MANA - check against macacl
 	if (req && hapd->iconf->mana_macacl) {
-		int i=0;
-		int match=0;
+		int match;
 		if (hapd->iconf->bss[0]->macaddr_acl == DENY_UNLESS_ACCEPTED) {
-			for (i = 0; i < hapd->iconf->bss[0]->num_accept_mac; i++) {
-				//if (*req->sa == *hapd->iconf->bss[0]->accept_mac[i].addr) {
-				if (os_memcmp(req->sa, hapd->iconf->bss[0]->accept_mac[i].addr, ETH_ALEN) == 0) {
-					match = 1;
-					break;
-				}
-			}
+			match = hostapd_maclist_found(hapd->conf->accept_mac, hapd->conf->num_accept_mac, req->sa, NULL);
 			if (!match) {
 				wpa_printf(MSG_DEBUG, "MANA: Station MAC is not authorised by accept ACL: " MACSTR, MAC2STR(req->sa));
 				return NULL; //MAC is not in accept list, back out and don't send
 			}
 		} else if (hapd->iconf->bss[0]->macaddr_acl == ACCEPT_UNLESS_DENIED) {
-			for (i = 0; i < hapd->iconf->bss[0]->num_deny_mac; i++) {
-				//if (*req->sa == *hapd->iconf->bss[0]->deny_mac[i].addr) {
-				if (os_memcmp(req->sa, hapd->iconf->bss[0]->deny_mac[i].addr, ETH_ALEN) == 0) {
-					wpa_printf(MSG_DEBUG, "MANA: Station MAC is not authorised by deny ACL: " MACSTR, MAC2STR(req->sa));
-					return NULL; //MAC is in deny list, back out and don't send
-				}
+			if (hostapd_maclist_found(hapd->conf->deny_mac, hapd->conf->num_deny_mac, req->sa, NULL)) {
+				wpa_printf(MSG_DEBUG, "MANA: Station MAC is not authorised by deny ACL: " MACSTR, MAC2STR(req->sa));
+				return NULL; //MAC is in deny list, back out and don't send
 			}
 		}
 		wpa_printf(MSG_INFO, "MANA: Station MAC is authorised by ACL: " MACSTR, MAC2STR(req->sa));

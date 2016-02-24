@@ -583,13 +583,23 @@ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 			  const u8 *addr, int *vlan_id)
 {
 	int start, end, middle, res;
+	u8 mac1[ETH_ALEN], mac2[ETH_ALEN]; //MANA
+	int i; //MANA
 
 	start = 0;
 	end = num_entries - 1;
 
 	while (start <= end) {
 		middle = (start + end) / 2;
-		res = os_memcmp(list[middle].addr, addr, ETH_ALEN);
+		//MANA start - apply MAC mask
+		for (i=0; i<ETH_ALEN; i++) {
+			mac1[i] = list[middle].addr[i] & list[middle].mask[i];
+			mac2[i] = addr[i] & list[middle].mask[i];
+		}
+		//wpa_printf(MSG_DEBUG, "MANA: Comparing " MACSTR "/"MACSTR " against " MACSTR " transformed to " MACSTR,MAC2STR(mac1), MAC2STR(list[middle].mask), MAC2STR(addr), MAC2STR(mac2));
+		res = os_memcmp(mac1, mac2, ETH_ALEN);
+		//MANA end
+		//res = os_memcmp(list[middle].addr, addr, ETH_ALEN);
 		if (res == 0) {
 			if (vlan_id)
 				*vlan_id = list[middle].vlan_id;

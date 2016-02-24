@@ -198,7 +198,7 @@ static int hostapd_config_read_maclist(const char *fname,
 		}
 
 		//MANA Start - parse MAC mask
-		lastpost = pos;
+		lastpos = pos;
 		while (*pos != '\0') {
 			if (*pos == '\n') {
 				*pos = '\0';
@@ -206,7 +206,7 @@ static int hostapd_config_read_maclist(const char *fname,
 			}
 			pos++;
 		}
-		pos = lastpost;
+		pos = lastpos;
 
 		if (vlanflag) {
 			while (*pos != '\0' && *pos != ' ' && *pos != '\t')
