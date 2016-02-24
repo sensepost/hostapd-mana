@@ -126,7 +126,7 @@ static int hostapd_config_read_maclist(const char *fname,
 	char *lastpos; //MANA
 	int line = 0;
 	u8 addr[ETH_ALEN];
-	u8 mask[ETH_ALEN]; //MANA
+	u8 mask[ETH_ALEN], transform[ETH_ALEN]; //MANA
 	struct mac_acl_entry *newacl;
 	int vlan_id;
 	int vlanflag = 0; //MANA
@@ -222,8 +222,12 @@ static int hostapd_config_read_maclist(const char *fname,
 				fclose(f);
 				return -1;
 			}
+			int i;
+			for (i=0; i<ETH_ALEN; i++) {
+				transform[i] = addr[i] & mask[i]; //We need to store it transformed for the binary search used in hostapd_maclist_found to get a properly sorted list
+			}
 		} else 
-			hwaddr_aton("00:00:00:00:00:00", mask);
+			hwaddr_aton("ff:ff:ff:ff:ff:ff", mask); //No mask specified to add a "no change" mask
 		//MANA End
 
 		newacl = os_realloc_array(*acl, *num + 1, sizeof(**acl));
@@ -234,7 +238,7 @@ static int hostapd_config_read_maclist(const char *fname,
 		}
 
 		*acl = newacl;
-		os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
+		os_memcpy((*acl)[*num].addr, transform, ETH_ALEN);
 		os_memcpy((*acl)[*num].mask, mask, ETH_ALEN);
 		(*acl)[*num].vlan_id = vlan_id;
 		(*num)++;
