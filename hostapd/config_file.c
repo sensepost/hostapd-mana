@@ -123,10 +123,13 @@ static int hostapd_config_read_maclist(const char *fname,
 {
 	FILE *f;
 	char buf[128], *pos;
+	char *lastpos; //MANA
 	int line = 0;
 	u8 addr[ETH_ALEN];
+	u8 mask[ETH_ALEN]; //MANA
 	struct mac_acl_entry *newacl;
 	int vlan_id;
+	int vlanflag = 0; //MANA
 
 	if (!fname)
 		return 0;
@@ -154,6 +157,7 @@ static int hostapd_config_read_maclist(const char *fname,
 		}
 		if (buf[0] == '\0')
 			continue;
+		lastpos = pos; //MANA
 		pos = buf;
 		if (buf[0] == '-') {
 			rem = 1;
@@ -186,8 +190,41 @@ static int hostapd_config_read_maclist(const char *fname,
 			pos++;
 		while (*pos == ' ' || *pos == '\t')
 			pos++;
-		if (*pos != '\0')
-			vlan_id = atoi(pos);
+		if (*pos != '\0') {
+			if (*(pos+2) != ':') { //MANA
+				vlan_id = atoi(pos);
+				vlanflag = 1;
+			}
+		}
+
+		//MANA Start - parse MAC mask
+		lastpost = pos;
+		while (*pos != '\0') {
+			if (*pos == '\n') {
+				*pos = '\0';
+				break;
+			}
+			pos++;
+		}
+		pos = lastpost;
+
+		if (vlanflag) {
+			while (*pos != '\0' && *pos != ' ' && *pos != '\t')
+				pos++;
+			while (*pos == ' ' || *pos == '\t')
+				pos++;
+		}
+
+		if (*pos != '\0') {
+			if (hwaddr_aton(pos, mask)) {
+				wpa_printf(MSG_ERROR, "Invalid MAC mask '%s' at "
+					   "line %d in '%s'", pos, line, fname);
+				fclose(f);
+				return -1;
+			}
+		} else 
+			hwaddr_aton("00:00:00:00:00:00", mask);
+		//MANA End
 
 		newacl = os_realloc_array(*acl, *num + 1, sizeof(**acl));
 		if (newacl == NULL) {
@@ -198,6 +235,7 @@ static int hostapd_config_read_maclist(const char *fname,
 
 		*acl = newacl;
 		os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
+		os_memcpy((*acl)[*num].mask, mask, ETH_ALEN);
 		(*acl)[*num].vlan_id = vlan_id;
 		(*num)++;
 	}
