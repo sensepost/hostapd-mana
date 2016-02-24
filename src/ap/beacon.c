@@ -775,7 +775,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 			}
 			if (flag) {
 				if (resp2 == NULL) {
-					wpa_printf(MSG_ERROR, "MANA - Could not generate SSID response for %s (%zu) to station : " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(resp2->da));
+					wpa_printf(MSG_ERROR, "MANA - Could not generate SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
 				} else {
 					wpa_printf(MSG_DEBUG, "MANA - Successfully generated SSID response for %s (len %zu) to station : " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(resp2->da)); 
 					if (hostapd_drv_send_mlme(hapd, resp2, resp2_len, noack) < 0) {
