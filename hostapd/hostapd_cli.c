@@ -95,8 +95,10 @@ static const char *commands_help =
 "   mana_get_state        get the state of Mana\n"
 "   mana_loud_on		  enable Mana's loud mode\n"
 "   mana_loud_off		  disable Mana's loud mode\n"
+"   mana_loud_state		  check Mana's loud mode state\n"
 "   mana_macacl_on		  enable MAC ACLs at management frame level\n"
 "   mana_macacl_off		  disable MAC ACLs at management frame level\n"
+"   mana_macacl_state	  check Mana's ACL mode\n"
 // MANA END
 "   quit                 exit hostapd_cli\n";
 
@@ -394,6 +396,10 @@ static int hostapd_cli_cmd_mana_loud_enable(struct wpa_ctrl *ctrl, int argc, cha
 {
 	return wpa_ctrl_command(ctrl, "LOUD_ENABLE");
 }
+static int hostapd_cli_cmd_mana_get_mode(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_MODE");
+}
 static int hostapd_cli_cmd_mana_macacl_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "MANAACL_DISABLE");
@@ -401,6 +407,10 @@ static int hostapd_cli_cmd_mana_macacl_disable(struct wpa_ctrl *ctrl, int argc, 
 static int hostapd_cli_cmd_mana_macacl_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "MANAACL_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_aclmode(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_ACLMODE");
 }
 // END MANA
 
@@ -1075,8 +1085,10 @@ static struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "mana_enable", hostapd_cli_cmd_mana_enable},
 	{ "mana_loud_off", hostapd_cli_cmd_mana_loud_disable},
 	{ "mana_loud_on", hostapd_cli_cmd_mana_loud_enable},
+	{ "mana_loud_state", hostapd_cli_cmd_mana_get_mode},
 	{ "mana_macacl_off", hostapd_cli_cmd_mana_macacl_disable},
 	{ "mana_macacl_on", hostapd_cli_cmd_mana_macacl_enable},
+	{ "mana_macacl_state", hostapd_cli_cmd_mana_get_aclmode},
 // END MANA
 	{ "set_qos_map_set", hostapd_cli_cmd_set_qos_map_set },
 	{ "send_qos_map_conf", hostapd_cli_cmd_send_qos_map_conf },

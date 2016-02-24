@@ -1641,11 +1641,19 @@ static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 		}
 	} else if (os_strcmp(buf, "MANA_MODE") == 0) {
 		if (hostapd_ctrl_iface_mana_get_mode(hapd)) {
-			os_memcpy(reply, "LOUD MODE ENABLED\n", 18);
-			reply_len = 18;
+			os_memcpy(reply, "MANA LOUD MODE ENABLED\n", 23);
+			reply_len = 23;
 		} else {
-			os_memcpy(reply, "LOUD MODE DISABLED\n", 19);
-			reply_len = 19;
+			os_memcpy(reply, "MANA LOUD MODE DISABLED\n", 24);
+			reply_len = 24;
+		}
+	} else if (os_strcmp(buf, "MANA_ACLMODE") == 0) {
+		if (hostapd_ctrl_iface_mana_get_aclmode(hapd)) {
+			os_memcpy(reply, "MANA ACL MODE ENABLED\n", 22);
+			reply_len = 22;
+		} else {
+			os_memcpy(reply, "MAN ACL MODE DISABLED\n", 22);
+			reply_len = 22;
 		}
 	} else if (os_strcmp(buf, "MANA_GET_SSID") == 0) {
 		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE GET SSID");
