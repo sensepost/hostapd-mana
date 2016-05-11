@@ -605,6 +605,10 @@ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 				*vlan_id = list[middle].vlan_id;
 			return 1;
 		}
+		//MANA start
+		if (res != 0)
+			res = os_memcmp(mac1, addr, ETH_ALEN); //binary search requires a constant value, transformed value is changing each time
+		//MANA end
 		if (res < 0)
 			start = middle + 1;
 		else
