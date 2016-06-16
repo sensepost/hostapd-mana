@@ -3219,8 +3219,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->local_pwr_constraint = val;
 	} else if (os_strcmp(buf, "spectrum_mgmt_required") == 0) {
 		conf->spectrum_mgmt_required = atoi(pos);
-	} else if (os_strcmp(buf, "ennode") == 0) {
+	} else if (os_strcmp(buf, "ennode") == 0) { //MANA
 		setenv("MANANODE", pos, 1);
+	} else if (os_strcmp(buf, "mana_outfile") == 0) { //MANA
+		setenv("MANAOUTFILE", pos, 1);
 	} else {
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",

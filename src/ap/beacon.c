@@ -653,6 +653,14 @@ void handle_probe_req(struct hostapd_data *hapd,
 				d->ssid_len = elems.ssid_len;
 				os_memcpy(d->sta_addr, mgmt->sa, ETH_ALEN);
 				HASH_ADD_STR(mana_data, ssid_txt, d);
+
+				//Quick hack to output observed MACs & SSIDs
+				char *mana_outfile = getenv("MANAOUTFILE");
+				FILE *f = fopen(mana_outfile, "a");
+				if (f != NULL) {
+					fprintf(f,"%s," MACSTR "\n", wpa_ssid_txt(elems.ssid, elems.ssid_len), MAC2STR(mgmt->sa));
+					fclose(f);
+				}
 			}
 		} else { //No SSID Match and no Mana behave as normal
 			if (!(mgmt->da[0] & 0x01)) {
