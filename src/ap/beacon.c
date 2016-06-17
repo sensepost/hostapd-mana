@@ -51,6 +51,21 @@ static u8 * hostapd_eid_bss_load(struct hostapd_data *hapd, u8 *eid, size_t len)
 	return eid;
 }
 
+//Start MANA
+static void log_ssid(const u8 *ssid, size_t ssid_len, const u8 *mac) {
+	//Quick hack to output observed MACs & SSIDs
+	//TODO: Fix this so it works in loud mode, right now will only log an SSID once
+	char *mana_outfile = getenv("MANAOUTFILE");
+	FILE *f = fopen(mana_outfile, "a");
+	if (f != NULL) {
+		int rand=0;
+		if (mac[0] & 2) //Check if locally administered aka random MAC
+			rand=1;	
+		fprintf(f,MACSTR ", %s, %d\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand);
+		fclose(f);
+	}
+}
+//End MANA
 
 static u8 ieee802_11_erp_info(struct hostapd_data *hapd)
 {
@@ -656,14 +671,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 					//os_memcpy(d->sta_addr, mgmt->sa, ETH_ALEN);
 					HASH_ADD_STR(mana_ssidhash, ssid_txt, d);
 
-					//Quick hack to output observed MACs & SSIDs
-					//TODO: Fix this so it works in loud mode, right now will only log an SSID once
-					char *mana_outfile = getenv("MANAOUTFILE");
-					FILE *f = fopen(mana_outfile, "a");
-					if (f != NULL) {
-						fprintf(f,"%s," MACSTR "\n", wpa_ssid_txt(elems.ssid, elems.ssid_len), MAC2STR(mgmt->sa));
-						fclose(f);
-					}
+					log_ssid(elems.ssid, elems.ssid_len, mgmt->sa);
 				}
 			} else { //Not loud mode, Check if the STA probing is in our hash
 				struct mana_mac *newsta = NULL;
@@ -686,13 +694,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 					newssid->ssid_len = elems.ssid_len;
 					HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
 
-					//Quick hack to output observed MACs & SSIDs
-					char *mana_outfile = getenv("MANAOUTFILE");
-					FILE *f = fopen(mana_outfile, "a");
-					if (f != NULL) {
-						fprintf(f,"%s," MACSTR "\n", wpa_ssid_txt(elems.ssid, elems.ssid_len), MAC2STR(mgmt->sa));
-						fclose(f);
-					}
+					log_ssid(elems.ssid, elems.ssid_len, mgmt->sa);
 				} else { //Seen MAC, check if SSID is new
 					// Check if the SSID probed for is in the hash for this STA
 					struct mana_ssid *newssid = NULL;
@@ -704,13 +706,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 						newssid->ssid_len = elems.ssid_len;
 						HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
 
-						//Quick hack to output observed MACs & SSIDs
-						char *mana_outfile = getenv("MANAOUTFILE");
-						FILE *f = fopen(mana_outfile, "a");
-						if (f != NULL) {
-							fprintf(f,"%s," MACSTR "\n", wpa_ssid_txt(elems.ssid, elems.ssid_len), MAC2STR(mgmt->sa));
-							fclose(f);
-						}
+						log_ssid(elems.ssid, elems.ssid_len, mgmt->sa);
 					}
 				}
 			}
