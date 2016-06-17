@@ -30,8 +30,16 @@ struct mana_ssid {
         char ssid_txt[HOSTAPD_MAX_SSID_LEN+1];
         u8 ssid[HOSTAPD_MAX_SSID_LEN];
         size_t ssid_len;
-		u8 sta_addr[6];
+		//u8 sta_addr[6];
         UT_hash_handle hh;
 };
-struct mana_ssid *mana_data;
+//struct mana_ssid *mana_data;
+struct mana_mac {
+	//char mac_txt[18];
+	u8 sta_addr[6];
+	struct mana_ssid *ssids;
+	UT_hash_handle hh;
+};
+struct mana_mac *mana_machash;
+struct mana_ssid *mana_ssidhash;
 // MANA END

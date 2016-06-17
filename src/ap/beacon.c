@@ -30,7 +30,8 @@
 #include "dfs.h"
 
 // MANA START
-struct mana_ssid *mana_data = NULL;
+struct mana_mac *mana_machash = NULL;
+struct mana_ssid *mana_ssidhash = NULL;
 // MANA END
 
 #ifdef NEED_AP_MLME
@@ -642,24 +643,75 @@ void handle_probe_req(struct hostapd_data *hapd,
 				sta->ssid_probe_mana->ssid_len = elems.ssid_len;
 			}
 
-			// Check if the SSID probed for is in the hash for this STA
-			struct mana_ssid *d = NULL;
-			HASH_FIND_STR(mana_data, wpa_ssid_txt(elems.ssid, elems.ssid_len), d);
-			if (d == NULL) {
-				wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) for STA " MACSTR " to the hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
-				d = (struct mana_ssid*)os_malloc(sizeof(struct mana_ssid));
-				os_memcpy(d->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
-				os_memcpy(d->ssid, elems.ssid, elems.ssid_len);
-				d->ssid_len = elems.ssid_len;
-				os_memcpy(d->sta_addr, mgmt->sa, ETH_ALEN);
-				HASH_ADD_STR(mana_data, ssid_txt, d);
+			if (hapd->iconf->mana_loud) {
+				// Check if the SSID probed for is in the hash for this STA
+				struct mana_ssid *d = NULL;
+				HASH_FIND_STR(mana_ssidhash, wpa_ssid_txt(elems.ssid, elems.ssid_len), d);
+				if (d == NULL) {
+					wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) for STA " MACSTR " to the hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
+					d = (struct mana_ssid*)os_malloc(sizeof(struct mana_ssid));
+					os_memcpy(d->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
+					os_memcpy(d->ssid, elems.ssid, elems.ssid_len);
+					d->ssid_len = elems.ssid_len;
+					//os_memcpy(d->sta_addr, mgmt->sa, ETH_ALEN);
+					HASH_ADD_STR(mana_ssidhash, ssid_txt, d);
 
-				//Quick hack to output observed MACs & SSIDs
-				char *mana_outfile = getenv("MANAOUTFILE");
-				FILE *f = fopen(mana_outfile, "a");
-				if (f != NULL) {
-					fprintf(f,"%s," MACSTR "\n", wpa_ssid_txt(elems.ssid, elems.ssid_len), MAC2STR(mgmt->sa));
-					fclose(f);
+					//Quick hack to output observed MACs & SSIDs
+					//TODO: Fix this so it works in loud mode, right now will only log an SSID once
+					char *mana_outfile = getenv("MANAOUTFILE");
+					FILE *f = fopen(mana_outfile, "a");
+					if (f != NULL) {
+						fprintf(f,"%s," MACSTR "\n", wpa_ssid_txt(elems.ssid, elems.ssid_len), MAC2STR(mgmt->sa));
+						fclose(f);
+					}
+				}
+			} else { //Not loud mode, Check if the STA probing is in our hash
+				struct mana_mac *newsta = NULL;
+				//char strmac[18];
+				//snprintf(strmac, sizeof(strmac), MACSTR, MAC2STR(mgmt->sa));
+				HASH_FIND(hh,mana_machash, mgmt->sa, 6, newsta);
+
+				if (newsta == NULL) { //MAC not seen before adding to hash
+					wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) for STA " MACSTR " to the hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
+					//Add STA	
+					newsta = (struct mana_mac*)os_malloc(sizeof(struct mana_mac));
+					os_memcpy(newsta->sta_addr, mgmt->sa, ETH_ALEN);
+					//os_memcpy(newsta->mac_txt, strmac, sizeof(strmac));
+					newsta->ssids = NULL;
+					HASH_ADD(hh,mana_machash, sta_addr, 6, newsta);
+					//Add SSID to subhash
+					struct mana_ssid *newssid = os_malloc(sizeof(struct mana_ssid));
+					os_memcpy(newssid->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
+					os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
+					newssid->ssid_len = elems.ssid_len;
+					HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
+
+					//Quick hack to output observed MACs & SSIDs
+					char *mana_outfile = getenv("MANAOUTFILE");
+					FILE *f = fopen(mana_outfile, "a");
+					if (f != NULL) {
+						fprintf(f,"%s," MACSTR "\n", wpa_ssid_txt(elems.ssid, elems.ssid_len), MAC2STR(mgmt->sa));
+						fclose(f);
+					}
+				} else { //Seen MAC, check if SSID is new
+					// Check if the SSID probed for is in the hash for this STA
+					struct mana_ssid *newssid = NULL;
+					HASH_FIND_STR(newsta->ssids, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
+					if (newssid == NULL) { //SSID not found, add to sub hash
+						newssid = (struct mana_ssid*)os_malloc(sizeof(struct mana_ssid));
+						os_memcpy(newssid->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
+						os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
+						newssid->ssid_len = elems.ssid_len;
+						HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
+
+						//Quick hack to output observed MACs & SSIDs
+						char *mana_outfile = getenv("MANAOUTFILE");
+						FILE *f = fopen(mana_outfile, "a");
+						if (f != NULL) {
+							fprintf(f,"%s," MACSTR "\n", wpa_ssid_txt(elems.ssid, elems.ssid_len), MAC2STR(mgmt->sa));
+							fclose(f);
+						}
+					}
 				}
 			}
 		} else { //No SSID Match and no Mana behave as normal
@@ -754,24 +806,13 @@ void handle_probe_req(struct hostapd_data *hapd,
 	os_free(resp);
 
 	if (iterate) { // Only iterate through the hash if this is set
+		struct ieee80211_mgmt *resp2;
+		size_t resp2_len;
 		struct mana_ssid *k;
-		for ( k = mana_data; k != NULL; k = (struct mana_ssid*)(k->hh.next))
-		{
-			//u8 *resp2;
-			struct ieee80211_mgmt *resp2;
-			size_t resp2_len;
-			int flag = 0;
-			if (hapd->iconf->mana_loud) {
+		if (hapd->iconf->mana_loud) {
+			for ( k = mana_ssidhash; k != NULL; k = (struct mana_ssid*)(k->hh.next)) {
 				wpa_printf(MSG_DEBUG, "MANA - Attempting to generate LOUD Broadcast response : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(mgmt->sa));
-				//TODO MANA: Only send unique probe responses, no point sending multiples from each STA where SSIDs are common
 				resp2 = (struct ieee80211_mgmt*)hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
-				flag = 1;
-			} else if (os_memcmp(k->sta_addr, mgmt->sa, ETH_ALEN) == 0) {
-				wpa_printf(MSG_INFO, "MANA - Attempting to generated Broadcast response : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(k->sta_addr));
-				resp2 = (struct ieee80211_mgmt*)hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
-				flag = 1;
-			}
-			if (flag) {
 				if (resp2 == NULL) {
 					wpa_printf(MSG_ERROR, "MANA - Could not generate SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
 				} else {
@@ -780,6 +821,26 @@ void handle_probe_req(struct hostapd_data *hapd,
 						wpa_printf(MSG_ERROR, "MANA - Failed sending prove response for SSID %s (%zu)", k->ssid_txt, k->ssid_len);
 					}
 					os_free(resp2);
+				}
+			}
+		} else { //Not loud mode, only send for one mac
+			struct mana_mac *newsta = NULL;
+			char strmac[18];
+			snprintf(strmac, sizeof(strmac), MACSTR, MAC2STR(mgmt->sa));
+			HASH_FIND(hh, mana_machash, mgmt->sa, 6, newsta);
+			if (newsta != NULL) { 
+				for ( k = newsta->ssids; k != NULL; k = (struct mana_ssid*)(k->hh.next)) {
+					wpa_printf(MSG_INFO, "MANA - Attempting to generated Broadcast response : %s (%zu) for STA %s", k->ssid_txt, k->ssid_len, strmac);
+					resp2 = (struct ieee80211_mgmt*)hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
+					if (resp2 == NULL) {
+						wpa_printf(MSG_ERROR, "MANA - Could not generate SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
+					} else {
+						wpa_printf(MSG_DEBUG, "MANA - Successfully generated SSID response for %s (len %zu) to station : " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(resp2->da)); 
+						if (hostapd_drv_send_mlme(hapd, resp2, resp2_len, noack) < 0) {
+							wpa_printf(MSG_ERROR, "MANA - Failed sending prove response for SSID %s (%zu)", k->ssid_txt, k->ssid_len);
+						}
+						os_free(resp2);
+					}
 				}
 			}
 		}
