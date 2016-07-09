@@ -826,14 +826,14 @@ void handle_probe_req(struct hostapd_data *hapd,
 			HASH_FIND(hh, mana_machash, mgmt->sa, 6, newsta);
 			if (newsta != NULL) { 
 				for ( k = newsta->ssids; k != NULL; k = (struct mana_ssid*)(k->hh.next)) {
-					wpa_printf(MSG_INFO, "MANA - Attempting to generated Broadcast response : %s (%zu) for STA %s", k->ssid_txt, k->ssid_len, strmac);
+					wpa_printf(MSG_INFO, "MANA - Attempting to generate Broadcast response : %s (%zu) for STA %s", k->ssid_txt, k->ssid_len, strmac);
 					resp2 = (struct ieee80211_mgmt*)hostapd_gen_probe_resp(hapd, sta, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
 					if (resp2 == NULL) {
 						wpa_printf(MSG_ERROR, "MANA - Could not generate SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
 					} else {
 						wpa_printf(MSG_DEBUG, "MANA - Successfully generated SSID response for %s (len %zu) to station : " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(resp2->da)); 
 						if (hostapd_drv_send_mlme(hapd, resp2, resp2_len, noack) < 0) {
-							wpa_printf(MSG_ERROR, "MANA - Failed sending prove response for SSID %s (%zu)", k->ssid_txt, k->ssid_len);
+							wpa_printf(MSG_ERROR, "MANA - Failed sending probe response for SSID %s (%zu)", k->ssid_txt, k->ssid_len);
 						}
 						os_free(resp2);
 					}
