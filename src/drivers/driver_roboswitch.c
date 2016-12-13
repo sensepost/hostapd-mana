@@ -1,6 +1,6 @@
 /*
  * WPA Supplicant - roboswitch driver interface
- * Copyright (c) 2008-2009 Jouke Witteveen
+ * Copyright (c) 2008-2012 Jouke Witteveen
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -91,7 +91,8 @@ static u16 wpa_driver_roboswitch_mdio_read(
 	mii->reg_num = reg;
 
 	if (ioctl(drv->fd, SIOCGMIIREG, &drv->ifr) < 0) {
-		perror("ioctl[SIOCGMIIREG]");
+		wpa_printf(MSG_ERROR, "ioctl[SIOCGMIIREG]: %s",
+			   strerror(errno));
 		return 0x00;
 	}
 	return mii->val_out;
@@ -108,7 +109,8 @@ static void wpa_driver_roboswitch_mdio_write(
 	mii->val_in = val;
 
 	if (ioctl(drv->fd, SIOCSMIIREG, &drv->ifr) < 0) {
-		perror("ioctl[SIOCSMIIREG");
+		wpa_printf(MSG_ERROR, "ioctl[SIOCSMIIREG]: %s",
+			   strerror(errno));
 	}
 }
 
@@ -394,11 +396,14 @@ static void * wpa_driver_roboswitch_init(void *ctx, const char *ifname)
 	os_memset(&drv->ifr, 0, sizeof(drv->ifr));
 	os_strlcpy(drv->ifr.ifr_name, drv->ifname, IFNAMSIZ);
 	if (ioctl(drv->fd, SIOCGMIIPHY, &drv->ifr) < 0) {
-		perror("ioctl[SIOCGMIIPHY]");
+		wpa_printf(MSG_ERROR, "ioctl[SIOCGMIIPHY]: %s",
+			   strerror(errno));
 		os_free(drv);
 		return NULL;
 	}
-	if (if_mii(&drv->ifr)->phy_id != ROBO_PHY_ADDR) {
+	/* BCM63xx devices provide 0 here */
+	if (if_mii(&drv->ifr)->phy_id != ROBO_PHY_ADDR &&
+	    if_mii(&drv->ifr)->phy_id != 0) {
 		wpa_printf(MSG_INFO, "%s: Invalid phy address (not a "
 			   "RoboSwitch?)", __func__);
 		os_free(drv);

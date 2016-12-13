@@ -1,6 +1,6 @@
 /*
  * WPA Supplicant - Common definitions
- * Copyright (c) 2004-2008, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2004-2015, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -49,6 +49,8 @@ typedef enum { FALSE = 0, TRUE = 1 } Boolean;
 #define WPA_KEY_MGMT_WAPI_CERT BIT(13)
 #define WPA_KEY_MGMT_CCKM BIT(14)
 #define WPA_KEY_MGMT_OSEN BIT(15)
+#define WPA_KEY_MGMT_IEEE8021X_SUITE_B BIT(16)
+#define WPA_KEY_MGMT_IEEE8021X_SUITE_B_192 BIT(17)
 
 static inline int wpa_key_mgmt_wpa_ieee8021x(int akm)
 {
@@ -56,7 +58,9 @@ static inline int wpa_key_mgmt_wpa_ieee8021x(int akm)
 			 WPA_KEY_MGMT_FT_IEEE8021X |
 			 WPA_KEY_MGMT_CCKM |
 			 WPA_KEY_MGMT_OSEN |
-			 WPA_KEY_MGMT_IEEE8021X_SHA256));
+			 WPA_KEY_MGMT_IEEE8021X_SHA256 |
+			 WPA_KEY_MGMT_IEEE8021X_SUITE_B |
+			 WPA_KEY_MGMT_IEEE8021X_SUITE_B_192));
 }
 
 static inline int wpa_key_mgmt_wpa_psk(int akm)
@@ -85,7 +89,19 @@ static inline int wpa_key_mgmt_sha256(int akm)
 {
 	return !!(akm & (WPA_KEY_MGMT_PSK_SHA256 |
 			 WPA_KEY_MGMT_IEEE8021X_SHA256 |
-			 WPA_KEY_MGMT_OSEN));
+			 WPA_KEY_MGMT_OSEN |
+			 WPA_KEY_MGMT_IEEE8021X_SUITE_B));
+}
+
+static inline int wpa_key_mgmt_sha384(int akm)
+{
+	return !!(akm & WPA_KEY_MGMT_IEEE8021X_SUITE_B_192);
+}
+
+static inline int wpa_key_mgmt_suite_b(int akm)
+{
+	return !!(akm & (WPA_KEY_MGMT_IEEE8021X_SUITE_B |
+			 WPA_KEY_MGMT_IEEE8021X_SUITE_B_192));
 }
 
 static inline int wpa_key_mgmt_wpa(int akm)
@@ -158,7 +174,7 @@ enum wpa_states {
 	/**
 	 * WPA_INTERFACE_DISABLED - Interface disabled
 	 *
-	 * This stat eis entered if the network interface is disabled, e.g.,
+	 * This state is entered if the network interface is disabled, e.g.,
 	 * due to rfkill. wpa_supplicant refuses any new operations that would
 	 * use the radio until the interface has been enabled.
 	 */
@@ -279,6 +295,7 @@ enum hostapd_hw_mode {
 	HOSTAPD_MODE_IEEE80211G,
 	HOSTAPD_MODE_IEEE80211A,
 	HOSTAPD_MODE_IEEE80211AD,
+	HOSTAPD_MODE_IEEE80211ANY,
 	NUM_HOSTAPD_MODES
 };
 
@@ -294,10 +311,34 @@ enum wpa_ctrl_req_type {
 	WPA_CTRL_REQ_EAP_OTP,
 	WPA_CTRL_REQ_EAP_PASSPHRASE,
 	WPA_CTRL_REQ_SIM,
+	WPA_CTRL_REQ_PSK_PASSPHRASE,
+	WPA_CTRL_REQ_EXT_CERT_CHECK,
 	NUM_WPA_CTRL_REQS
 };
 
 /* Maximum number of EAP methods to store for EAP server user information */
 #define EAP_MAX_METHODS 8
+
+enum mesh_plink_state {
+	PLINK_IDLE = 1,
+	PLINK_OPN_SNT,
+	PLINK_OPN_RCVD,
+	PLINK_CNF_RCVD,
+	PLINK_ESTAB,
+	PLINK_HOLDING,
+	PLINK_BLOCKED, /* not defined in the IEEE 802.11 standard */
+};
+
+enum set_band {
+	WPA_SETBAND_AUTO,
+	WPA_SETBAND_5G,
+	WPA_SETBAND_2G
+};
+
+enum wpa_radio_work_band {
+	BAND_2_4_GHZ = BIT(0),
+	BAND_5_GHZ = BIT(1),
+	BAND_60_GHZ = BIT(2),
+};
 
 #endif /* DEFS_H */

@@ -102,6 +102,12 @@ char * os_readfile(const char *name, size_t *len)
 }
 
 
+int os_fdatasync(FILE *stream)
+{
+	return 0;
+}
+
+
 void * os_zalloc(size_t size)
 {
 	return NULL;
@@ -234,3 +240,9 @@ int os_snprintf(char *str, size_t size, const char *format, ...)
 	return 0;
 }
 #endif /* OS_NO_C_LIB_DEFINES */
+
+
+int os_exec(const char *program, const char *arg, int wait_completion)
+{
+	return -1;
+}

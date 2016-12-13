@@ -251,13 +251,16 @@ void format_date(struct wpabuf *buf)
  * use for constructing UUIDs for subscriptions. Presumably any method from
  * rfc4122 is good enough; I've chosen random number method.
  */
-static void uuid_make(u8 uuid[UUID_LEN])
+static int uuid_make(u8 uuid[UUID_LEN])
 {
-	os_get_random(uuid, UUID_LEN);
+	if (os_get_random(uuid, UUID_LEN) < 0)
+		return -1;
 
 	/* Replace certain bits as specified in rfc4122 or X.667 */
 	uuid[6] &= 0x0f; uuid[6] |= (4 << 4);   /* version 4 == random gen */
 	uuid[8] &= 0x3f; uuid[8] |= 0x80;
+
+	return 0;
 }
 
 
@@ -692,6 +695,7 @@ struct subscription * subscription_start(struct upnp_wps_device_sm *sm,
 	struct subscription *s;
 	time_t now = time(NULL);
 	time_t expire = now + UPNP_SUBSCRIBE_SEC;
+	char str[80];
 
 	/* Get rid of expired subscriptions so we have room */
 	subscription_list_age(sm, now);
@@ -700,10 +704,12 @@ struct subscription * subscription_start(struct upnp_wps_device_sm *sm,
 	if (dl_list_len(&sm->subscriptions) >= MAX_SUBSCRIPTIONS) {
 		s = dl_list_first(&sm->subscriptions, struct subscription,
 				  list);
-		wpa_printf(MSG_INFO, "WPS UPnP: Too many subscriptions, "
-			   "trashing oldest");
-		dl_list_del(&s->list);
-		subscription_destroy(s);
+		if (s) {
+			wpa_printf(MSG_INFO,
+				   "WPS UPnP: Too many subscriptions, trashing oldest");
+			dl_list_del(&s->list);
+			subscription_destroy(s);
+		}
 	}
 
 	s = os_zalloc(sizeof(*s));
@@ -714,7 +720,10 @@ struct subscription * subscription_start(struct upnp_wps_device_sm *sm,
 
 	s->sm = sm;
 	s->timeout_time = expire;
-	uuid_make(s->uuid);
+	if (uuid_make(s->uuid) < 0) {
+		subscription_destroy(s);
+		return NULL;
+	}
 	subscr_addr_list_create(s, callback_urls);
 	if (dl_list_empty(&s->addr_list)) {
 		wpa_printf(MSG_DEBUG, "WPS UPnP: No valid callback URLs in "
@@ -735,8 +744,10 @@ struct subscription * subscription_start(struct upnp_wps_device_sm *sm,
 		subscription_destroy(s);
 		return NULL;
 	}
-	wpa_printf(MSG_DEBUG, "WPS UPnP: Subscription %p started with %s",
-		   s, callback_urls);
+	uuid_bin2str(s->uuid, str, sizeof(str));
+	wpa_printf(MSG_DEBUG,
+		   "WPS UPnP: Subscription %p (SID %s) started with %s",
+		   s, str, callback_urls);
 	/* Schedule sending this */
 	event_send_all_later(sm);
 	return s;
@@ -1071,6 +1082,7 @@ upnp_wps_get_iface(struct upnp_wps_device_sm *sm, void *priv)
 void upnp_wps_device_deinit(struct upnp_wps_device_sm *sm, void *priv)
 {
 	struct upnp_wps_device_interface *iface;
+	struct upnp_wps_peer *peer;
 
 	if (!sm)
 		return;
@@ -1091,8 +1103,13 @@ void upnp_wps_device_deinit(struct upnp_wps_device_sm *sm, void *priv)
 					    iface->wps->registrar);
 	dl_list_del(&iface->list);
 
-	if (iface->peer.wps)
-		wps_deinit(iface->peer.wps);
+	while ((peer = dl_list_first(&iface->peers, struct upnp_wps_peer,
+				     list))) {
+		if (peer->wps)
+			wps_deinit(peer->wps);
+		dl_list_del(&peer->list);
+		os_free(peer);
+	}
 	os_free(iface->ctx->ap_pin);
 	os_free(iface->ctx);
 	os_free(iface);
@@ -1130,6 +1147,7 @@ upnp_wps_device_init(struct upnp_wps_device_ctx *ctx, struct wps_context *wps,
 	}
 	wpa_printf(MSG_DEBUG, "WPS UPnP: Init interface instance %p", iface);
 
+	dl_list_init(&iface->peers);
 	iface->ctx = ctx;
 	iface->wps = wps;
 	iface->priv = priv;

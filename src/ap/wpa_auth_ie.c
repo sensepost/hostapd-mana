@@ -1,6 +1,6 @@
 /*
  * hostapd - WPA/RSN IE and KDE definitions
- * Copyright (c) 2004-2008, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2004-2015, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -200,6 +200,16 @@ int wpa_write_rsn_ie(struct wpa_auth_config *conf, u8 *buf, size_t len,
 		num_suites++;
 	}
 #endif /* CONFIG_SAE */
+	if (conf->wpa_key_mgmt & WPA_KEY_MGMT_IEEE8021X_SUITE_B) {
+		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_802_1X_SUITE_B);
+		pos += RSN_SELECTOR_LEN;
+		num_suites++;
+	}
+	if (conf->wpa_key_mgmt & WPA_KEY_MGMT_IEEE8021X_SUITE_B_192) {
+		RSN_SELECTOR_PUT(pos, RSN_AUTH_KEY_MGMT_802_1X_SUITE_B_192);
+		pos += RSN_SELECTOR_LEN;
+		num_suites++;
+	}
 
 #ifdef CONFIG_RSN_TESTING
 	if (rsn_testing) {
@@ -241,7 +251,7 @@ int wpa_write_rsn_ie(struct wpa_auth_config *conf, u8 *buf, size_t len,
 	pos += 2;
 
 	if (pmkid) {
-		if (pos + 2 + PMKID_LEN > buf + len)
+		if (2 + PMKID_LEN > buf + len - pos)
 			return -1;
 		/* PMKID Count */
 		WPA_PUT_LE16(pos, 1);
@@ -251,8 +261,9 @@ int wpa_write_rsn_ie(struct wpa_auth_config *conf, u8 *buf, size_t len,
 	}
 
 #ifdef CONFIG_IEEE80211W
-	if (conf->ieee80211w != NO_MGMT_FRAME_PROTECTION) {
-		if (pos + 2 + 4 > buf + len)
+	if (conf->ieee80211w != NO_MGMT_FRAME_PROTECTION &&
+	    conf->group_mgmt_cipher != WPA_CIPHER_AES_128_CMAC) {
+		if (2 + 4 > buf + len - pos)
 			return -1;
 		if (pmkid == NULL) {
 			/* PMKID Count */
@@ -367,6 +378,23 @@ int wpa_auth_gen_wpa_ie(struct wpa_authenticator *wpa_auth)
 	u8 *pos, buf[128];
 	int res;
 
+#ifdef CONFIG_TESTING_OPTIONS
+	if (wpa_auth->conf.own_ie_override_len) {
+		wpa_hexdump(MSG_DEBUG, "WPA: Forced own IE(s) for testing",
+			    wpa_auth->conf.own_ie_override,
+			    wpa_auth->conf.own_ie_override_len);
+		os_free(wpa_auth->wpa_ie);
+		wpa_auth->wpa_ie =
+			os_malloc(wpa_auth->conf.own_ie_override_len);
+		if (wpa_auth->wpa_ie == NULL)
+			return -1;
+		os_memcpy(wpa_auth->wpa_ie, wpa_auth->conf.own_ie_override,
+			  wpa_auth->conf.own_ie_override_len);
+		wpa_auth->wpa_ie_len = wpa_auth->conf.own_ie_override_len;
+		return 0;
+	}
+#endif /* CONFIG_TESTING_OPTIONS */
+
 	pos = buf;
 
 	if (wpa_auth->conf.wpa == WPA_PROTO_OSEN) {
@@ -477,6 +505,10 @@ int wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		selector = RSN_AUTH_KEY_MGMT_UNSPEC_802_1X;
 		if (0) {
 		}
+		else if (data.key_mgmt & WPA_KEY_MGMT_IEEE8021X_SUITE_B_192)
+			selector = RSN_AUTH_KEY_MGMT_802_1X_SUITE_B_192;
+		else if (data.key_mgmt & WPA_KEY_MGMT_IEEE8021X_SUITE_B)
+			selector = RSN_AUTH_KEY_MGMT_802_1X_SUITE_B;
 #ifdef CONFIG_IEEE80211R
 		else if (data.key_mgmt & WPA_KEY_MGMT_FT_IEEE8021X)
 			selector = RSN_AUTH_KEY_MGMT_FT_802_1X;
@@ -555,6 +587,10 @@ int wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 	}
 	if (0) {
 	}
+	else if (key_mgmt & WPA_KEY_MGMT_IEEE8021X_SUITE_B_192)
+		sm->wpa_key_mgmt = WPA_KEY_MGMT_IEEE8021X_SUITE_B_192;
+	else if (key_mgmt & WPA_KEY_MGMT_IEEE8021X_SUITE_B)
+		sm->wpa_key_mgmt = WPA_KEY_MGMT_IEEE8021X_SUITE_B;
 #ifdef CONFIG_IEEE80211R
 	else if (key_mgmt & WPA_KEY_MGMT_FT_IEEE8021X)
 		sm->wpa_key_mgmt = WPA_KEY_MGMT_FT_IEEE8021X;
@@ -676,11 +712,14 @@ int wpa_validate_wpa_ie(struct wpa_authenticator *wpa_auth,
 		}
 	}
 	if (sm->pmksa && pmkid) {
+		struct vlan_description *vlan;
+
+		vlan = sm->pmksa->vlan_desc;
 		wpa_auth_vlogger(wpa_auth, sm->addr, LOGGER_DEBUG,
-				 "PMKID found from PMKSA cache "
-				 "eap_type=%d vlan_id=%d",
+				 "PMKID found from PMKSA cache eap_type=%d vlan=%d%s",
 				 sm->pmksa->eap_type_authsrv,
-				 sm->pmksa->vlan_id);
+				 vlan ? vlan->untagged : 0,
+				 (vlan && vlan->tagged[0]) ? "+" : "");
 		os_memcpy(wpa_auth->dot11RSNAPMKIDUsed, pmkid, PMKID_LEN);
 	}
 
@@ -755,7 +794,7 @@ static int wpa_parse_generic(const u8 *pos, const u8 *end,
 		return 0;
 	}
 
-	if (pos + 1 + RSN_SELECTOR_LEN < end &&
+	if (1 + RSN_SELECTOR_LEN < end - pos &&
 	    pos[1] >= RSN_SELECTOR_LEN + PMKID_LEN &&
 	    RSN_SELECTOR_GET(pos + 2) == RSN_KEY_DATA_PMKID) {
 		ie->pmkid = pos + 2 + RSN_SELECTOR_LEN;
@@ -851,13 +890,13 @@ int wpa_parse_kde_ies(const u8 *buf, size_t len, struct wpa_eapol_ie_parse *ie)
 	int ret = 0;
 
 	os_memset(ie, 0, sizeof(*ie));
-	for (pos = buf, end = pos + len; pos + 1 < end; pos += 2 + pos[1]) {
+	for (pos = buf, end = pos + len; end - pos > 1; pos += 2 + pos[1]) {
 		if (pos[0] == 0xdd &&
 		    ((pos == buf + len - 1) || pos[1] == 0)) {
 			/* Ignore padding */
 			break;
 		}
-		if (pos + 2 + pos[1] > end) {
+		if (2 + pos[1] > end - pos) {
 			wpa_printf(MSG_DEBUG, "WPA: EAPOL-Key Key Data "
 				   "underflow (ie=%d len=%d pos=%d)",
 				   pos[0], pos[1], (int) (pos - buf));

@@ -23,6 +23,7 @@ struct radius_das_data {
 	struct hostapd_ip_addr client_addr;
 	unsigned int time_window;
 	int require_event_timestamp;
+	int require_message_authenticator;
 	void *ctx;
 	enum radius_das_res (*disconnect)(void *ctx,
 					  struct radius_das_attrs *attr);
@@ -42,6 +43,7 @@ static struct radius_msg * radius_das_disconnect(struct radius_das_data *das,
 		RADIUS_ATTR_CALLING_STATION_ID,
 		RADIUS_ATTR_NAS_IDENTIFIER,
 		RADIUS_ATTR_ACCT_SESSION_ID,
+		RADIUS_ATTR_ACCT_MULTI_SESSION_ID,
 		RADIUS_ATTR_EVENT_TIMESTAMP,
 		RADIUS_ATTR_MESSAGE_AUTHENTICATOR,
 		RADIUS_ATTR_CHARGEABLE_USER_IDENTITY,
@@ -129,6 +131,12 @@ static struct radius_msg * radius_das_disconnect(struct radius_das_data *das,
 		attrs.acct_session_id_len = len;
 	}
 
+	if (radius_msg_get_attr_ptr(msg, RADIUS_ATTR_ACCT_MULTI_SESSION_ID,
+				    &buf, &len, NULL) == 0) {
+		attrs.acct_multi_session_id = buf;
+		attrs.acct_multi_session_id_len = len;
+	}
+
 	if (radius_msg_get_attr_ptr(msg, RADIUS_ATTR_CHARGEABLE_USER_IDENTITY,
 				    &buf, &len, NULL) == 0) {
 		attrs.cui = buf;
@@ -146,6 +154,12 @@ static struct radius_msg * radius_das_disconnect(struct radius_das_data *das,
 		wpa_printf(MSG_INFO, "DAS: Session not found for request from "
 			   "%s:%d", abuf, from_port);
 		error = 503;
+		break;
+	case RADIUS_DAS_MULTI_SESSION_MATCH:
+		wpa_printf(MSG_INFO,
+			   "DAS: Multiple sessions match for request from %s:%d",
+			   abuf, from_port);
+		error = 508;
 		break;
 	case RADIUS_DAS_SUCCESS:
 		error = 0;
@@ -221,9 +235,11 @@ static void radius_das_receive(int sock, void *eloop_ctx, void *sock_ctx)
 		radius_msg_dump(msg);
 
 	if (radius_msg_verify_das_req(msg, das->shared_secret,
-				       das->shared_secret_len)) {
-		wpa_printf(MSG_DEBUG, "DAS: Invalid authenticator in packet "
-			   "from %s:%d - drop", abuf, from_port);
+				       das->shared_secret_len,
+				       das->require_message_authenticator)) {
+		wpa_printf(MSG_DEBUG,
+			   "DAS: Invalid authenticator or Message-Authenticator in packet from %s:%d - drop",
+			   abuf, from_port);
 		goto fail;
 	}
 
@@ -232,7 +248,7 @@ static void radius_das_receive(int sock, void *eloop_ctx, void *sock_ctx)
 				  (u8 *) &val, 4);
 	if (res == 4) {
 		u32 timestamp = ntohl(val);
-		if ((unsigned int) abs(now.sec - timestamp) >
+		if ((unsigned int) abs((int) (now.sec - timestamp)) >
 		    das->time_window) {
 			wpa_printf(MSG_DEBUG, "DAS: Unacceptable "
 				   "Event-Timestamp (%u; local time %u) in "
@@ -349,6 +365,8 @@ radius_das_init(struct radius_das_conf *conf)
 
 	das->time_window = conf->time_window;
 	das->require_event_timestamp = conf->require_event_timestamp;
+	das->require_message_authenticator =
+		conf->require_message_authenticator;
 	das->ctx = conf->ctx;
 	das->disconnect = conf->disconnect;
 

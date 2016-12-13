@@ -1,6 +1,6 @@
 /*
  * EAP peer state machines internal structures (RFC 4137)
- * Copyright (c) 2004-2007, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2004-2014, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -10,6 +10,7 @@
 #define EAP_I_H
 
 #include "wpabuf.h"
+#include "utils/list.h"
 #include "eap_peer/eap.h"
 #include "eap_common/eap_common.h"
 
@@ -277,6 +278,16 @@ struct eap_method {
 };
 
 
+struct eap_erp_key {
+	struct dl_list list;
+	size_t rRK_len;
+	size_t rIK_len;
+	u8 rRK[ERP_MAX_KEY_LEN];
+	u8 rIK[ERP_MAX_KEY_LEN];
+	u32 next_seq;
+	char keyname_nai[];
+};
+
 /**
  * struct eap_sm - EAP state machine data
  */
@@ -317,17 +328,19 @@ struct eap_sm {
 	/* not defined in RFC 4137 */
 	Boolean changed;
 	void *eapol_ctx;
-	struct eapol_callbacks *eapol_cb;
+	const struct eapol_callbacks *eapol_cb;
 	void *eap_method_priv;
 	int init_phase2;
 	int fast_reauth;
+	Boolean reauthInit; /* send EAP-Identity/Re-auth */
+	u32 erp_seq;
 
 	Boolean rxResp /* LEAP only */;
 	Boolean leap_done;
 	Boolean peap_done;
-	u8 req_md5[16]; /* MD5() of the current EAP packet */
-	u8 last_md5[16]; /* MD5() of the previously received EAP packet; used
-			  * in duplicate request detection. */
+	u8 req_sha1[20]; /* SHA1() of the current EAP packet */
+	u8 last_sha1[20]; /* SHA1() of the previously received EAP packet; used
+			   * in duplicate request detection. */
 
 	void *msg_ctx;
 	void *scard_ctx;
@@ -353,6 +366,10 @@ struct eap_sm {
 	int external_sim;
 
 	unsigned int expected_failure:1;
+	unsigned int ext_cert_check:1;
+	unsigned int waiting_ext_cert_check:1;
+
+	struct dl_list erp_keys; /* struct eap_erp_key */
 };
 
 const u8 * eap_get_config_identity(struct eap_sm *sm, size_t *len);

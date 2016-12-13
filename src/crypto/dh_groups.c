@@ -1153,7 +1153,7 @@ dh_group ## id ## _prime, sizeof(dh_group ## id ## _prime), \
 dh_group ## id ## _order, sizeof(dh_group ## id ## _order), safe }
 		
 
-static struct dh_group dh_groups[] = {
+static const struct dh_group dh_groups[] = {
 	DH_GROUP(5, 1),
 #ifdef ALL_DH_GROUPS
 	DH_GROUP(1, 1),
@@ -1198,14 +1198,14 @@ struct wpabuf * dh_init(const struct dh_group *dh, struct wpabuf **priv)
 	if (dh == NULL)
 		return NULL;
 
-	wpabuf_free(*priv);
+	wpabuf_clear_free(*priv);
 	*priv = wpabuf_alloc(dh->prime_len);
 	if (*priv == NULL)
 		return NULL;
 
 	if (random_get_bytes(wpabuf_put(*priv, dh->prime_len), dh->prime_len))
 	{
-		wpabuf_free(*priv);
+		wpabuf_clear_free(*priv);
 		*priv = NULL;
 		return NULL;
 	}
@@ -1218,14 +1218,19 @@ struct wpabuf * dh_init(const struct dh_group *dh, struct wpabuf **priv)
 
 	pv_len = dh->prime_len;
 	pv = wpabuf_alloc(pv_len);
-	if (pv == NULL)
+	if (pv == NULL) {
+		wpabuf_clear_free(*priv);
+		*priv = NULL;
 		return NULL;
+	}
 	if (crypto_mod_exp(dh->generator, dh->generator_len,
 			   wpabuf_head(*priv), wpabuf_len(*priv),
 			   dh->prime, dh->prime_len, wpabuf_mhead(pv),
 			   &pv_len) < 0) {
-		wpabuf_free(pv);
+		wpabuf_clear_free(pv);
 		wpa_printf(MSG_INFO, "DH: crypto_mod_exp failed");
+		wpabuf_clear_free(*priv);
+		*priv = NULL;
 		return NULL;
 	}
 	wpabuf_put(pv, pv_len);
@@ -1260,7 +1265,7 @@ struct wpabuf * dh_derive_shared(const struct wpabuf *peer_public,
 			   wpabuf_head(own_private), wpabuf_len(own_private),
 			   dh->prime, dh->prime_len,
 			   wpabuf_mhead(shared), &shared_len) < 0) {
-		wpabuf_free(shared);
+		wpabuf_clear_free(shared);
 		wpa_printf(MSG_INFO, "DH: crypto_mod_exp failed");
 		return NULL;
 	}

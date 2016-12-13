@@ -55,10 +55,11 @@ static int hostapd_radius_get_eap_user(void *ctx, const u8 *identity,
 {
 	const struct hostapd_eap_user *eap_user;
 	int i;
+	int rv = -1;
 
 	eap_user = hostapd_get_eap_user(ctx, identity, identity_len, phase2);
 	if (eap_user == NULL)
-		return -1;
+		goto out;
 
 	if (user == NULL)
 		return 0;
@@ -72,7 +73,7 @@ static int hostapd_radius_get_eap_user(void *ctx, const u8 *identity,
 	if (eap_user->password) {
 		user->password = os_malloc(eap_user->password_len);
 		if (user->password == NULL)
-			return -1;
+			goto out;
 		os_memcpy(user->password, eap_user->password,
 			  eap_user->password_len);
 		user->password_len = eap_user->password_len;
@@ -83,8 +84,13 @@ static int hostapd_radius_get_eap_user(void *ctx, const u8 *identity,
 	user->ttls_auth = eap_user->ttls_auth;
 	user->remediation = eap_user->remediation;
 	user->accept_attr = eap_user->accept_attr;
+	rv = 0;
 
-	return 0;
+out:
+	if (rv)
+		wpa_printf(MSG_DEBUG, "%s: Failed to find user", __func__);
+
+	return rv;
 }
 
 
@@ -124,6 +130,9 @@ static int hostapd_setup_radius_srv(struct hostapd_data *hapd)
 	srv.subscr_remediation_url = conf->subscr_remediation_url;
 	srv.subscr_remediation_method = conf->subscr_remediation_method;
 #endif /* CONFIG_HS20 */
+	srv.erp = conf->eap_server_erp;
+	srv.erp_domain = conf->erp_domain;
+	srv.tls_session_lifetime = conf->tls_session_lifetime;
 
 	hapd->radius_srv = radius_server_init(&srv);
 	if (hapd->radius_srv == NULL) {
@@ -143,9 +152,12 @@ int authsrv_init(struct hostapd_data *hapd)
 	if (hapd->conf->eap_server &&
 	    (hapd->conf->ca_cert || hapd->conf->server_cert ||
 	     hapd->conf->private_key || hapd->conf->dh_file)) {
+		struct tls_config conf;
 		struct tls_connection_params params;
 
-		hapd->ssl_ctx = tls_init(NULL);
+		os_memset(&conf, 0, sizeof(conf));
+		conf.tls_session_lifetime = hapd->conf->tls_session_lifetime;
+		hapd->ssl_ctx = tls_init(&conf);
 		if (hapd->ssl_ctx == NULL) {
 			wpa_printf(MSG_ERROR, "Failed to initialize TLS");
 			authsrv_deinit(hapd);
@@ -158,8 +170,11 @@ int authsrv_init(struct hostapd_data *hapd)
 		params.private_key = hapd->conf->private_key;
 		params.private_key_passwd = hapd->conf->private_key_passwd;
 		params.dh_file = hapd->conf->dh_file;
+		params.openssl_ciphers = hapd->conf->openssl_ciphers;
 		params.ocsp_stapling_response =
 			hapd->conf->ocsp_stapling_response;
+		params.ocsp_stapling_response_multi =
+			hapd->conf->ocsp_stapling_response_multi;
 
 		if (tls_global_set_params(hapd->ssl_ctx, &params)) {
 			wpa_printf(MSG_ERROR, "Failed to set TLS parameters");
@@ -180,6 +195,7 @@ int authsrv_init(struct hostapd_data *hapd)
 	if (hapd->conf->eap_sim_db) {
 		hapd->eap_sim_db_priv =
 			eap_sim_db_init(hapd->conf->eap_sim_db,
+					hapd->conf->eap_sim_db_timeout,
 					hostapd_sim_db_cb, hapd);
 		if (hapd->eap_sim_db_priv == NULL) {
 			wpa_printf(MSG_ERROR, "Failed to initialize EAP-SIM "

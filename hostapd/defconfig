@@ -15,12 +15,11 @@ CONFIG_DRIVER_HOSTAP=y
 # Driver interface for wired authenticator
 #CONFIG_DRIVER_WIRED=y
 
-# Driver interface for madwifi driver
-#CONFIG_DRIVER_MADWIFI=y
-#CFLAGS += -I../../madwifi # change to the madwifi source directory
-
 # Driver interface for drivers using the nl80211 kernel interface
 CONFIG_DRIVER_NL80211=y
+
+# QCA vendor extensions to nl80211
+#CONFIG_DRIVER_NL80211_QCA=y
 
 # driver_nl80211.c requires libnl. If you are compiling it yourself
 # you may need to point hostapd to your version of libnl.
@@ -59,6 +58,9 @@ CONFIG_IEEE80211W=y
 
 # Integrated EAP server
 CONFIG_EAP=y
+
+# EAP Re-authentication Protocol (ERP) in integrated EAP server
+CONFIG_ERP=y
 
 # EAP-MD5 for the integrated EAP server
 CONFIG_EAP_MD5=y
@@ -109,7 +111,7 @@ CONFIG_EAP_TTLS=y
 # Note: If OpenSSL is used as the TLS library, OpenSSL 1.0 or newer is needed
 # for EAP-FAST support. Older OpenSSL releases would need to be patched, e.g.,
 # with openssl-0.9.8x-tls-extensions.patch, to add the needed functions.
-CONFIG_EAP_FAST=y
+#CONFIG_EAP_FAST=y
 
 # Wi-Fi Protected Setup (WPS)
 #CONFIG_WPS=y
@@ -142,7 +144,7 @@ CONFIG_IPV6=y
 #CONFIG_IEEE80211R=y
 
 # Use the hostapd's IEEE 802.11 authentication (ACL), but without
-# the IEEE 802.11 Management capability (e.g., madwifi or FreeBSD/net80211)
+# the IEEE 802.11 Management capability (e.g., FreeBSD/net80211)
 #CONFIG_DRIVER_RADIUS_ACL=y
 
 # IEEE 802.11n (High Throughput) support
@@ -241,6 +243,15 @@ CONFIG_IPV6=y
 # requirements described above.
 #CONFIG_NO_RANDOM_POOL=y
 
+# Should we use poll instead of select? Select is used by default.
+#CONFIG_ELOOP_POLL=y
+
+# Should we use epoll instead of select? Select is used by default.
+#CONFIG_ELOOP_EPOLL=y
+
+# Should we use kqueue instead of select? Select is used by default.
+#CONFIG_ELOOP_KQUEUE=y
+
 # Select TLS implementation
 # openssl = OpenSSL (default)
 # gnutls = GnuTLS
@@ -284,6 +295,12 @@ CONFIG_IPV6=y
 # Enable SQLite database support in hlr_auc_gw, EAP-SIM DB, and eap_user_file
 #CONFIG_SQLITE=y
 
+# Enable Fast Session Transfer (FST)
+#CONFIG_FST=y
+
+# Enable CLI commands for FST testing
+#CONFIG_FST_TEST=y
+
 # Testing options
 # This can be used to enable some testing options (see also the example
 # configuration file) that are really useful only for testing clients that
@@ -315,3 +332,14 @@ CONFIG_IPV6=y
 # http://wireless.kernel.org/en/users/Documentation/acs
 #
 #CONFIG_ACS=y
+
+# Multiband Operation support
+# These extentions facilitate efficient use of multiple frequency bands
+# available to the AP and the devices that may associate with it.
+#CONFIG_MBO=y
+
+# Client Taxonomy
+# Has the AP retain the Probe Request and (Re)Association Request frames from
+# a client, from which a signature can be produced which can identify the model
+# of client device like "Nexus 6P" or "iPhone 5s".
+#CONFIG_TAXONOMY=y

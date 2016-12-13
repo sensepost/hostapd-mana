@@ -1,6 +1,6 @@
 /*
  * hostapd - PMKSA cache for IEEE 802.11i RSN
- * Copyright (c) 2004-2008, 2012, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2004-2008, 2012-2015, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -12,6 +12,7 @@
 #include "utils/eloop.h"
 #include "eapol_auth/eapol_auth_sm.h"
 #include "eapol_auth/eapol_auth_sm_i.h"
+#include "radius/radius_das.h"
 #include "sta_info.h"
 #include "ap_config.h"
 #include "pmksa_cache_auth.h"
@@ -37,6 +38,7 @@ static void pmksa_cache_set_expiration(struct rsn_pmksa_cache *pmksa);
 
 static void _pmksa_cache_free_entry(struct rsn_pmksa_cache_entry *entry)
 {
+	os_free(entry->vlan_desc);
 	os_free(entry->identity);
 	wpabuf_free(entry->cui);
 #ifndef CONFIG_NO_RADIUS
@@ -90,6 +92,20 @@ void pmksa_cache_free_entry(struct rsn_pmksa_cache *pmksa,
 }
 
 
+/**
+ * pmksa_cache_auth_flush - Flush all PMKSA cache entries
+ * @pmksa: Pointer to PMKSA cache data from pmksa_cache_auth_init()
+ */
+void pmksa_cache_auth_flush(struct rsn_pmksa_cache *pmksa)
+{
+	while (pmksa->pmksa) {
+		wpa_printf(MSG_DEBUG, "RSN: Flush PMKSA cache entry for "
+			   MACSTR, MAC2STR(pmksa->pmksa->spa));
+		pmksa_cache_free_entry(pmksa, pmksa->pmksa);
+	}
+}
+
+
 static void pmksa_cache_expire(void *eloop_ctx, void *timeout_ctx)
 {
 	struct rsn_pmksa_cache *pmksa = eloop_ctx;
@@ -125,6 +141,8 @@ static void pmksa_cache_set_expiration(struct rsn_pmksa_cache *pmksa)
 static void pmksa_cache_from_eapol_data(struct rsn_pmksa_cache_entry *entry,
 					struct eapol_state_machine *eapol)
 {
+	struct vlan_description *vlan_desc;
+
 	if (eapol == NULL)
 		return;
 
@@ -145,11 +163,22 @@ static void pmksa_cache_from_eapol_data(struct rsn_pmksa_cache_entry *entry,
 #endif /* CONFIG_NO_RADIUS */
 
 	entry->eap_type_authsrv = eapol->eap_type_authsrv;
-	entry->vlan_id = ((struct sta_info *) eapol->sta)->vlan_id;
+
+	vlan_desc = ((struct sta_info *) eapol->sta)->vlan_desc;
+	if (vlan_desc && vlan_desc->notempty) {
+		entry->vlan_desc = os_zalloc(sizeof(struct vlan_description));
+		if (entry->vlan_desc)
+			*entry->vlan_desc = *vlan_desc;
+	} else {
+		entry->vlan_desc = NULL;
+	}
+
+	entry->acct_multi_session_id = eapol->acct_multi_session_id;
 }
 
 
-void pmksa_cache_to_eapol_data(struct rsn_pmksa_cache_entry *entry,
+void pmksa_cache_to_eapol_data(struct hostapd_data *hapd,
+			       struct rsn_pmksa_cache_entry *entry,
 			       struct eapol_state_machine *eapol)
 {
 	if (entry == NULL || eapol == NULL)
@@ -182,7 +211,11 @@ void pmksa_cache_to_eapol_data(struct rsn_pmksa_cache_entry *entry,
 	}
 
 	eapol->eap_type_authsrv = entry->eap_type_authsrv;
-	((struct sta_info *) eapol->sta)->vlan_id = entry->vlan_id;
+#ifndef CONFIG_NO_VLAN
+	ap_sta_set_vlan(hapd, eapol->sta, entry->vlan_desc);
+#endif /* CONFIG_NO_VLAN */
+
+	eapol->acct_multi_session_id = entry->acct_multi_session_id;
 }
 
 
@@ -227,6 +260,9 @@ static void pmksa_cache_link_entry(struct rsn_pmksa_cache *pmksa,
  * @pmksa: Pointer to PMKSA cache data from pmksa_cache_auth_init()
  * @pmk: The new pairwise master key
  * @pmk_len: PMK length in bytes, usually PMK_LEN (32)
+ * @pmkid: Calculated PMKID
+ * @kck: Key confirmation key or %NULL if not yet derived
+ * @kck_len: KCK length in bytes
  * @aa: Authenticator address
  * @spa: Supplicant address
  * @session_timeout: Session timeout
@@ -241,14 +277,18 @@ static void pmksa_cache_link_entry(struct rsn_pmksa_cache *pmksa,
  */
 struct rsn_pmksa_cache_entry *
 pmksa_cache_auth_add(struct rsn_pmksa_cache *pmksa,
-		     const u8 *pmk, size_t pmk_len,
-		const u8 *aa, const u8 *spa, int session_timeout,
-		struct eapol_state_machine *eapol, int akmp)
+		     const u8 *pmk, size_t pmk_len, const u8 *pmkid,
+		     const u8 *kck, size_t kck_len,
+		     const u8 *aa, const u8 *spa, int session_timeout,
+		     struct eapol_state_machine *eapol, int akmp)
 {
 	struct rsn_pmksa_cache_entry *entry, *pos;
 	struct os_reltime now;
 
-	if (pmk_len > PMK_LEN)
+	if (pmk_len > PMK_LEN_MAX)
+		return NULL;
+
+	if (wpa_key_mgmt_suite_b(akmp) && !kck)
 		return NULL;
 
 	entry = os_zalloc(sizeof(*entry));
@@ -256,8 +296,15 @@ pmksa_cache_auth_add(struct rsn_pmksa_cache *pmksa,
 		return NULL;
 	os_memcpy(entry->pmk, pmk, pmk_len);
 	entry->pmk_len = pmk_len;
-	rsn_pmkid(pmk, pmk_len, aa, spa, entry->pmkid,
-		  wpa_key_mgmt_sha256(akmp));
+	if (pmkid)
+		os_memcpy(entry->pmkid, pmkid, PMKID_LEN);
+	else if (akmp == WPA_KEY_MGMT_IEEE8021X_SUITE_B_192)
+		rsn_pmkid_suite_b_192(kck, kck_len, aa, spa, entry->pmkid);
+	else if (wpa_key_mgmt_suite_b(akmp))
+		rsn_pmkid_suite_b(kck, kck_len, aa, spa, entry->pmkid);
+	else
+		rsn_pmkid(pmk, pmk_len, aa, spa, entry->pmkid,
+			  wpa_key_mgmt_sha256(akmp));
 	os_get_reltime(&now);
 	entry->expiration = now.sec;
 	if (session_timeout > 0)
@@ -319,7 +366,13 @@ pmksa_cache_add_okc(struct rsn_pmksa_cache *pmksa,
 	radius_copy_class(&entry->radius_class, &old_entry->radius_class);
 #endif /* CONFIG_NO_RADIUS */
 	entry->eap_type_authsrv = old_entry->eap_type_authsrv;
-	entry->vlan_id = old_entry->vlan_id;
+	if (old_entry->vlan_desc) {
+		entry->vlan_desc = os_zalloc(sizeof(struct vlan_description));
+		if (entry->vlan_desc)
+			*entry->vlan_desc = *old_entry->vlan_desc;
+	} else {
+		entry->vlan_desc = NULL;
+	}
 	entry->opportunistic = 1;
 
 	pmksa_cache_link_entry(pmksa, entry);
@@ -436,4 +489,119 @@ pmksa_cache_auth_init(void (*free_cb)(struct rsn_pmksa_cache_entry *entry,
 	}
 
 	return pmksa;
+}
+
+
+static int das_attr_match(struct rsn_pmksa_cache_entry *entry,
+			  struct radius_das_attrs *attr)
+{
+	int match = 0;
+
+	if (attr->sta_addr) {
+		if (os_memcmp(attr->sta_addr, entry->spa, ETH_ALEN) != 0)
+			return 0;
+		match++;
+	}
+
+	if (attr->acct_multi_session_id) {
+		char buf[20];
+
+		if (attr->acct_multi_session_id_len != 16)
+			return 0;
+		os_snprintf(buf, sizeof(buf), "%016llX",
+			    (unsigned long long) entry->acct_multi_session_id);
+		if (os_memcmp(attr->acct_multi_session_id, buf, 16) != 0)
+			return 0;
+		match++;
+	}
+
+	if (attr->cui) {
+		if (!entry->cui ||
+		    attr->cui_len != wpabuf_len(entry->cui) ||
+		    os_memcmp(attr->cui, wpabuf_head(entry->cui),
+			      attr->cui_len) != 0)
+			return 0;
+		match++;
+	}
+
+	if (attr->user_name) {
+		if (!entry->identity ||
+		    attr->user_name_len != entry->identity_len ||
+		    os_memcmp(attr->user_name, entry->identity,
+			      attr->user_name_len) != 0)
+			return 0;
+		match++;
+	}
+
+	return match;
+}
+
+
+int pmksa_cache_auth_radius_das_disconnect(struct rsn_pmksa_cache *pmksa,
+					   struct radius_das_attrs *attr)
+{
+	int found = 0;
+	struct rsn_pmksa_cache_entry *entry, *prev;
+
+	if (attr->acct_session_id)
+		return -1;
+
+	entry = pmksa->pmksa;
+	while (entry) {
+		if (das_attr_match(entry, attr)) {
+			found++;
+			prev = entry;
+			entry = entry->next;
+			pmksa_cache_free_entry(pmksa, prev);
+			continue;
+		}
+		entry = entry->next;
+	}
+
+	return found ? 0 : -1;
+}
+
+
+/**
+ * pmksa_cache_auth_list - Dump text list of entries in PMKSA cache
+ * @pmksa: Pointer to PMKSA cache data from pmksa_cache_auth_init()
+ * @buf: Buffer for the list
+ * @len: Length of the buffer
+ * Returns: Number of bytes written to buffer
+ *
+ * This function is used to generate a text format representation of the
+ * current PMKSA cache contents for the ctrl_iface PMKSA command.
+ */
+int pmksa_cache_auth_list(struct rsn_pmksa_cache *pmksa, char *buf, size_t len)
+{
+	int i, ret;
+	char *pos = buf;
+	struct rsn_pmksa_cache_entry *entry;
+	struct os_reltime now;
+
+	os_get_reltime(&now);
+	ret = os_snprintf(pos, buf + len - pos,
+			  "Index / SPA / PMKID / expiration (in seconds) / opportunistic\n");
+	if (os_snprintf_error(buf + len - pos, ret))
+		return pos - buf;
+	pos += ret;
+	i = 0;
+	entry = pmksa->pmksa;
+	while (entry) {
+		ret = os_snprintf(pos, buf + len - pos, "%d " MACSTR " ",
+				  i, MAC2STR(entry->spa));
+		if (os_snprintf_error(buf + len - pos, ret))
+			return pos - buf;
+		pos += ret;
+		pos += wpa_snprintf_hex(pos, buf + len - pos, entry->pmkid,
+					PMKID_LEN);
+		ret = os_snprintf(pos, buf + len - pos, " %d %d\n",
+				  (int) (entry->expiration - now.sec),
+				  entry->opportunistic);
+		if (os_snprintf_error(buf + len - pos, ret))
+			return pos - buf;
+		pos += ret;
+		entry = entry->next;
+	}
+	return pos - buf;
 }

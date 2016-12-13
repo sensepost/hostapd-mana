@@ -6,14 +6,38 @@ ifndef CFLAGS
 CFLAGS = -MMD -O2 -Wall -g
 endif
 
+ifdef LIBS
+# If LIBS is set with some global build system defaults, clone those for
+# LIBS_c, LIBS_h, and LIBS_n to cover hostapd_cli, hlr_auc_gw, and
+# nt_password_hash as well.
+ifndef LIBS_c
+LIBS_c := $(LIBS)
+endif
+ifndef LIBS_h
+LIBS_h := $(LIBS)
+endif
+ifndef LIBS_n
+LIBS_n := $(LIBS)
+endif
+endif
+
+CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS += -I$(abspath ../src)
 CFLAGS += -I$(abspath ../src/utils)
 
-# Uncomment following line and set the path to your kernel tree include
-# directory if your C library does not include all header files.
-# CFLAGS += -DUSE_KERNEL_HEADERS -I/usr/src/linux/include
+export BINDIR ?= /usr/local/bin/
 
 -include .config
+
+ifndef CONFIG_NO_GITVER
+# Add VERSION_STR postfix for builds from a git repository
+ifeq ($(wildcard ../.git),../.git)
+GITVER := $(shell git describe --dirty=+)
+ifneq ($(GITVER),)
+CFLAGS += -DGIT_VERSION_STR_POSTFIX=\"-$(GITVER)\"
+endif
+endif
+endif
 
 ifdef CONFIG_TESTING_OPTIONS
 CFLAGS += -DCONFIG_TESTING_OPTIONS
@@ -59,8 +83,14 @@ OBJS += ../src/ap/preauth_auth.o
 OBJS += ../src/ap/pmksa_cache_auth.o
 OBJS += ../src/ap/ieee802_11_shared.o
 OBJS += ../src/ap/beacon.o
+OBJS += ../src/ap/bss_load.o
+OBJS += ../src/ap/neighbor_db.o
+OBJS += ../src/ap/rrm.o
 
-OBJS_c = hostapd_cli.o ../src/common/wpa_ctrl.o ../src/utils/os_$(CONFIG_OS).o
+OBJS_c = hostapd_cli.o
+OBJS_c += ../src/common/wpa_ctrl.o
+OBJS_c += ../src/utils/os_$(CONFIG_OS).o
+OBJS_c += ../src/common/cli.o
 
 NEED_RC4=y
 NEED_AES=y
@@ -69,6 +99,11 @@ NEED_SHA1=y
 
 OBJS += ../src/drivers/drivers.o
 CFLAGS += -DHOSTAPD
+
+ifdef CONFIG_TAXONOMY
+CFLAGS += -DCONFIG_TAXONOMY
+OBJS += ../src/ap/taxonomy.o
+endif
 
 ifdef CONFIG_MODULE_TESTS
 CFLAGS += -DCONFIG_MODULE_TESTS
@@ -103,7 +138,20 @@ LIBS_h += -lrt
 LIBS_n += -lrt
 endif
 
+ifdef CONFIG_ELOOP_POLL
+CFLAGS += -DCONFIG_ELOOP_POLL
+endif
+
+ifdef CONFIG_ELOOP_EPOLL
+CFLAGS += -DCONFIG_ELOOP_EPOLL
+endif
+
+ifdef CONFIG_ELOOP_KQUEUE
+CFLAGS += -DCONFIG_ELOOP_KQUEUE
+endif
+
 OBJS += ../src/utils/common.o
+OBJS_c += ../src/utils/common.o
 OBJS += ../src/utils/wpa_debug.o
 OBJS_c += ../src/utils/wpa_debug.o
 OBJS += ../src/utils/wpabuf.o
@@ -112,6 +160,7 @@ OBJS += ../src/utils/ip_addr.o
 
 OBJS += ../src/common/ieee802_11_common.o
 OBJS += ../src/common/wpa_common.o
+OBJS += ../src/common/hw_features_common.o
 
 OBJS += ../src/eapol_auth/eapol_auth_sm.o
 
@@ -151,24 +200,53 @@ ifdef CONFIG_NO_VLAN
 CFLAGS += -DCONFIG_NO_VLAN
 else
 OBJS += ../src/ap/vlan_init.o
-ifdef CONFIG_VLAN_NETLINK
+OBJS += ../src/ap/vlan_ifconfig.o
+OBJS += ../src/ap/vlan.o
 ifdef CONFIG_FULL_DYNAMIC_VLAN
+# Define CONFIG_FULL_DYNAMIC_VLAN to have hostapd manipulate bridges
+# and VLAN interfaces for the VLAN feature.
+CFLAGS += -DCONFIG_FULL_DYNAMIC_VLAN
+OBJS += ../src/ap/vlan_full.o
+ifdef CONFIG_VLAN_NETLINK
 OBJS += ../src/ap/vlan_util.o
+else
+OBJS += ../src/ap/vlan_ioctl.o
 endif
-CFLAGS += -DCONFIG_VLAN_NETLINK
 endif
 endif
 
 ifdef CONFIG_NO_CTRL_IFACE
 CFLAGS += -DCONFIG_NO_CTRL_IFACE
 else
+ifeq ($(CONFIG_CTRL_IFACE), udp)
+CFLAGS += -DCONFIG_CTRL_IFACE_UDP
+else
+ifeq ($(CONFIG_CTRL_IFACE), udp6)
+CFLAGS += -DCONFIG_CTRL_IFACE_UDP
+CFLAGS += -DCONFIG_CTRL_IFACE_UDP_IPV6
+else
+ifeq ($(CONFIG_CTRL_IFACE), udp-remote)
+CFLAGS += -DCONFIG_CTRL_IFACE_UDP
+CFLAGS += -DCONFIG_CTRL_IFACE_UDP_REMOTE
+else
+ifeq ($(CONFIG_CTRL_IFACE), udp6-remote)
+CFLAGS += -DCONFIG_CTRL_IFACE_UDP
+CFLAGS += -DCONFIG_CTRL_IFACE_UDP_REMOTE
+CFLAGS += -DCONFIG_CTRL_IFACE_UDP_IPV6
+else
+CFLAGS += -DCONFIG_CTRL_IFACE_UNIX
+endif
+endif
+endif
+endif
+OBJS += ../src/common/ctrl_iface_common.o
 OBJS += ctrl_iface.o
 OBJS += ../src/ap/ctrl_iface_ap.o
 endif
 
-OBJS += ../src/crypto/md5.o
-
-CFLAGS += -DCONFIG_CTRL_IFACE -DCONFIG_CTRL_IFACE_UNIX
+ifndef CONFIG_NO_CTRL_IFACE
+CFLAGS += -DCONFIG_CTRL_IFACE
+endif
 
 ifdef CONFIG_IAPP
 CFLAGS += -DCONFIG_IAPP
@@ -187,6 +265,22 @@ endif
 
 ifdef CONFIG_HS20
 NEED_AES_OMAC1=y
+CONFIG_PROXYARP=y
+endif
+
+ifdef CONFIG_PROXYARP
+CONFIG_L2_PACKET=y
+endif
+
+ifdef CONFIG_SUITEB
+CFLAGS += -DCONFIG_SUITEB
+NEED_SHA256=y
+NEED_AES_OMAC1=y
+endif
+
+ifdef CONFIG_SUITEB192
+CFLAGS += -DCONFIG_SUITEB192
+NEED_SHA384=y
 endif
 
 ifdef CONFIG_IEEE80211W
@@ -208,6 +302,7 @@ CFLAGS += -DCONFIG_SAE
 OBJS += ../src/common/sae.o
 NEED_ECC=y
 NEED_DH_GROUPS=y
+NEED_AP_MLME=y
 endif
 
 ifdef CONFIG_WNM
@@ -221,6 +316,11 @@ endif
 
 ifdef CONFIG_IEEE80211AC
 CFLAGS += -DCONFIG_IEEE80211AC
+endif
+
+ifdef CONFIG_MBO
+CFLAGS += -DCONFIG_MBO
+OBJS += ../src/ap/mbo_ap.o
 endif
 
 include ../src/drivers/drivers.mak
@@ -245,6 +345,12 @@ else
 OBJS += ../src/l2_packet/l2_packet_none.o
 endif
 
+
+ifdef CONFIG_ERP
+CFLAGS += -DCONFIG_ERP
+NEED_SHA256=y
+NEED_HMAC_SHA256_KDF=y
+endif
 
 ifdef CONFIG_EAP_MD5
 CFLAGS += -DEAP_SERVER_MD5
@@ -499,6 +605,7 @@ endif
 ifeq ($(CONFIG_TLS), openssl)
 ifdef TLS_FUNCS
 OBJS += ../src/crypto/tls_openssl.o
+OBJS += ../src/crypto/tls_openssl_ocsp.o
 LIBS += -lssl
 endif
 OBJS += ../src/crypto/crypto_openssl.o
@@ -506,8 +613,14 @@ HOBJS += ../src/crypto/crypto_openssl.o
 ifdef NEED_FIPS186_2_PRF
 OBJS += ../src/crypto/fips_prf_openssl.o
 endif
+NEED_SHA256=y
+NEED_TLS_PRF_SHA256=y
 LIBS += -lcrypto
 LIBS_h += -lcrypto
+ifdef CONFIG_TLS_ADD_DL
+LIBS += -ldl
+LIBS_h += -ldl
+endif
 endif
 
 ifeq ($(CONFIG_TLS), gnutls)
@@ -525,33 +638,6 @@ LIBS += -lgcrypt
 LIBS_h += -lgcrypt
 CONFIG_INTERNAL_SHA256=y
 CONFIG_INTERNAL_RC4=y
-CONFIG_INTERNAL_DH_GROUP5=y
-endif
-
-ifeq ($(CONFIG_TLS), schannel)
-ifdef TLS_FUNCS
-OBJS += ../src/crypto/tls_schannel.o
-endif
-OBJS += ../src/crypto/crypto_cryptoapi.o
-OBJS_p += ../src/crypto/crypto_cryptoapi.o
-CONFIG_INTERNAL_SHA256=y
-CONFIG_INTERNAL_RC4=y
-CONFIG_INTERNAL_DH_GROUP5=y
-endif
-
-ifeq ($(CONFIG_TLS), nss)
-ifdef TLS_FUNCS
-OBJS += ../src/crypto/tls_nss.o
-LIBS += -lssl3
-endif
-OBJS += ../src/crypto/crypto_nss.o
-ifdef NEED_FIPS186_2_PRF
-OBJS += ../src/crypto/fips_prf_internal.o
-SHA1OBJS += ../src/crypto/sha1-internal.o
-endif
-LIBS += -lnss3
-LIBS_h += -lnss3
-CONFIG_INTERNAL_MD4=y
 CONFIG_INTERNAL_DH_GROUP5=y
 endif
 
@@ -620,6 +706,8 @@ CONFIG_INTERNAL_SHA1=y
 CONFIG_INTERNAL_MD4=y
 CONFIG_INTERNAL_MD5=y
 CONFIG_INTERNAL_SHA256=y
+CONFIG_INTERNAL_SHA384=y
+CONFIG_INTERNAL_SHA512=y
 CONFIG_INTERNAL_RC4=y
 CONFIG_INTERNAL_DH_GROUP5=y
 endif
@@ -661,7 +749,9 @@ ifdef CONFIG_INTERNAL_AES
 AESOBJS += ../src/crypto/aes-internal.o ../src/crypto/aes-internal-enc.o
 endif
 
+ifneq ($(CONFIG_TLS), openssl)
 AESOBJS += ../src/crypto/aes-wrap.o
+endif
 ifdef NEED_AES_EAX
 AESOBJS += ../src/crypto/aes-eax.o
 NEED_AES_CTR=y
@@ -676,12 +766,16 @@ ifdef NEED_AES_OMAC1
 AESOBJS += ../src/crypto/aes-omac1.o
 endif
 ifdef NEED_AES_UNWRAP
+ifneq ($(CONFIG_TLS), openssl)
 NEED_AES_DEC=y
 AESOBJS += ../src/crypto/aes-unwrap.o
 endif
+endif
 ifdef NEED_AES_CBC
 NEED_AES_DEC=y
+ifneq ($(CONFIG_TLS), openssl)
 AESOBJS += ../src/crypto/aes-cbc.o
+endif
 endif
 ifdef NEED_AES_DEC
 ifdef CONFIG_INTERNAL_AES
@@ -718,6 +812,10 @@ ifdef NEED_SHA1
 OBJS += $(SHA1OBJS)
 endif
 
+ifneq ($(CONFIG_TLS), openssl)
+OBJS += ../src/crypto/md5.o
+endif
+
 ifdef NEED_MD5
 ifdef CONFIG_INTERNAL_MD5
 OBJS += ../src/crypto/md5-internal.o
@@ -737,9 +835,15 @@ OBJS += ../src/crypto/des-internal.o
 endif
 endif
 
+ifdef CONFIG_NO_RC4
+CFLAGS += -DCONFIG_NO_RC4
+endif
+
 ifdef NEED_RC4
 ifdef CONFIG_INTERNAL_RC4
+ifndef CONFIG_NO_RC4
 OBJS += ../src/crypto/rc4.o
+endif
 endif
 endif
 
@@ -755,6 +859,23 @@ endif
 ifdef NEED_TLS_PRF_SHA256
 OBJS += ../src/crypto/sha256-tlsprf.o
 endif
+ifdef NEED_HMAC_SHA256_KDF
+OBJS += ../src/crypto/sha256-kdf.o
+endif
+endif
+ifdef NEED_SHA384
+CFLAGS += -DCONFIG_SHA384
+OBJS += ../src/crypto/sha384-prf.o
+endif
+
+ifdef CONFIG_INTERNAL_SHA384
+CFLAGS += -DCONFIG_INTERNAL_SHA384
+OBJS += ../src/crypto/sha384-internal.o
+endif
+
+ifdef CONFIG_INTERNAL_SHA512
+CFLAGS += -DCONFIG_INTERNAL_SHA512
+OBJS += ../src/crypto/sha512-internal.o
 endif
 
 ifdef NEED_DH_GROUPS
@@ -780,7 +901,9 @@ OBJS += ../src/crypto/random.o
 HOBJS += ../src/crypto/random.o
 HOBJS += ../src/utils/eloop.o
 HOBJS += $(SHA1OBJS)
+ifneq ($(CONFIG_TLS), openssl)
 HOBJS += ../src/crypto/md5.o
+endif
 endif
 
 ifdef CONFIG_RADIUS_SERVER
@@ -794,12 +917,6 @@ endif
 
 ifdef CONFIG_DRIVER_RADIUS_ACL
 CFLAGS += -DCONFIG_DRIVER_RADIUS_ACL
-endif
-
-ifdef CONFIG_FULL_DYNAMIC_VLAN
-# define CONFIG_FULL_DYNAMIC_VLAN to have hostapd manipulate bridges
-# and vlan interfaces for the vlan feature.
-CFLAGS += -DCONFIG_FULL_DYNAMIC_VLAN
 endif
 
 ifdef NEED_BASE64
@@ -839,6 +956,15 @@ OBJS += ../src/common/gas.o
 OBJS += ../src/ap/gas_serv.o
 endif
 
+ifdef CONFIG_PROXYARP
+CFLAGS += -DCONFIG_PROXYARP
+OBJS += ../src/ap/x_snoop.o
+OBJS += ../src/ap/dhcp_snoop.o
+ifdef CONFIG_IPV6
+OBJS += ../src/ap/ndisc_snoop.o
+endif
+endif
+
 OBJS += ../src/drivers/driver_common.o
 
 ifdef CONFIG_WPA_CLI_EDIT
@@ -871,6 +997,21 @@ LIBS += -lsqlite3
 LIBS_h += -lsqlite3
 endif
 
+ifdef CONFIG_FST
+CFLAGS += -DCONFIG_FST
+OBJS += ../src/fst/fst.o
+OBJS += ../src/fst/fst_group.o
+OBJS += ../src/fst/fst_iface.o
+OBJS += ../src/fst/fst_session.o
+OBJS += ../src/fst/fst_ctrl_aux.o
+ifdef CONFIG_FST_TEST
+CFLAGS += -DCONFIG_FST_TEST
+endif
+ifndef CONFIG_NO_CTRL_IFACE
+OBJS += ../src/fst/fst_ctrl_iface.o
+endif
+endif
+
 ALL=hostapd hostapd_cli
 
 all: verify_config $(ALL)
@@ -879,6 +1020,10 @@ Q=@
 E=echo
 ifeq ($(V), 1)
 Q=
+E=true
+endif
+ifeq ($(QUIET), 1)
+Q=@
 E=true
 endif
 
@@ -901,9 +1046,10 @@ verify_config:
 		exit 1; \
 	fi
 
-install: all
-	mkdir -p $(DESTDIR)/usr/local/bin
-	for i in $(ALL); do cp -f $$i $(DESTDIR)/usr/local/bin/$$i; done
+$(DESTDIR)$(BINDIR)/%: %
+	install -D $(<) $(@)
+
+install: $(addprefix $(DESTDIR)$(BINDIR)/,$(ALL))
 
 ../src/drivers/build.hostapd:
 	@if [ -f ../src/drivers/build.wpa_supplicant ]; then \
@@ -924,10 +1070,13 @@ hostapd_cli: $(OBJS_c)
 	$(Q)$(CC) $(LDFLAGS) -o hostapd_cli $(OBJS_c) $(LIBS_c)
 	@$(E) "  LD " $@
 
-NOBJS = nt_password_hash.o ../src/crypto/ms_funcs.o $(SHA1OBJS) ../src/crypto/md5.o
+NOBJS = nt_password_hash.o ../src/crypto/ms_funcs.o $(SHA1OBJS)
+NOBJS += ../src/utils/common.o
 ifdef NEED_RC4
 ifdef CONFIG_INTERNAL_RC4
+ifndef CONFIG_NO_RC4
 NOBJS += ../src/crypto/rc4.o
+endif
 endif
 endif
 ifdef CONFIG_INTERNAL_MD5

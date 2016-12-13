@@ -301,6 +301,13 @@ static struct wpabuf * eap_ikev2_process_fragment(struct eap_ikev2_data *data,
 
 	if (data->in_buf == NULL) {
 		/* First fragment of the message */
+		if (message_length > 50000) {
+			/* Limit maximum memory allocation */
+			wpa_printf(MSG_DEBUG,
+				   "EAP-IKEV2: Ignore too long message");
+			ret->ignore = TRUE;
+			return NULL;
+		}
 		data->in_buf = wpabuf_alloc(message_length);
 		if (data->in_buf == NULL) {
 			wpa_printf(MSG_DEBUG, "EAP-IKEV2: No memory for "
@@ -315,6 +322,7 @@ static struct wpabuf * eap_ikev2_process_fragment(struct eap_ikev2_data *data,
 			   (unsigned long) wpabuf_tailroom(data->in_buf));
 	}
 
+	ret->ignore = FALSE;
 	return eap_ikev2_build_frag_ack(id, EAP_CODE_RESPONSE);
 }
 
@@ -505,7 +513,6 @@ static u8 * eap_ikev2_get_session_id(struct eap_sm *sm, void *priv, size_t *len)
 int eap_peer_ikev2_register(void)
 {
 	struct eap_method *eap;
-	int ret;
 
 	eap = eap_peer_method_alloc(EAP_PEER_METHOD_INTERFACE_VERSION,
 				    EAP_VENDOR_IETF, EAP_TYPE_IKEV2,
@@ -521,8 +528,5 @@ int eap_peer_ikev2_register(void)
 	eap->get_emsk = eap_ikev2_get_emsk;
 	eap->getSessionId = eap_ikev2_get_session_id;
 
-	ret = eap_peer_method_register(eap);
-	if (ret)
-		eap_peer_method_free(eap);
-	return ret;
+	return eap_peer_method_register(eap);
 }

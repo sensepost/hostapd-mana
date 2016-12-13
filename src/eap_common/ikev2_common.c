@@ -16,7 +16,7 @@
 #include "ikev2_common.h"
 
 
-static struct ikev2_integ_alg ikev2_integ_algs[] = {
+static const struct ikev2_integ_alg ikev2_integ_algs[] = {
 	{ AUTH_HMAC_SHA1_96, 20, 12 },
 	{ AUTH_HMAC_MD5_96, 16, 12 }
 };
@@ -24,7 +24,7 @@ static struct ikev2_integ_alg ikev2_integ_algs[] = {
 #define NUM_INTEG_ALGS ARRAY_SIZE(ikev2_integ_algs)
 
 
-static struct ikev2_prf_alg ikev2_prf_algs[] = {
+static const struct ikev2_prf_alg ikev2_prf_algs[] = {
 	{ PRF_HMAC_SHA1, 20, 20 },
 	{ PRF_HMAC_MD5, 16, 16 }
 };
@@ -32,7 +32,7 @@ static struct ikev2_prf_alg ikev2_prf_algs[] = {
 #define NUM_PRF_ALGS ARRAY_SIZE(ikev2_prf_algs)
 
 
-static struct ikev2_encr_alg ikev2_encr_algs[] = {
+static const struct ikev2_encr_alg ikev2_encr_algs[] = {
 	{ ENCR_AES_CBC, 16, 16 }, /* only 128-bit keys supported for now */
 	{ ENCR_3DES, 24, 8 }
 };
@@ -62,13 +62,15 @@ int ikev2_integ_hash(int alg, const u8 *key, size_t key_len, const u8 *data,
 	case AUTH_HMAC_SHA1_96:
 		if (key_len != 20)
 			return -1;
-		hmac_sha1(key, key_len, data, data_len, tmphash);
+		if (hmac_sha1(key, key_len, data, data_len, tmphash) < 0)
+			return -1;
 		os_memcpy(hash, tmphash, 12);
 		break;
 	case AUTH_HMAC_MD5_96:
 		if (key_len != 16)
 			return -1;
-		hmac_md5(key, key_len, data, data_len, tmphash);
+		if (hmac_md5(key, key_len, data, data_len, tmphash) < 0)
+			return -1;
 		os_memcpy(hash, tmphash, 12);
 		break;
 	default:
@@ -98,16 +100,13 @@ int ikev2_prf_hash(int alg, const u8 *key, size_t key_len,
 {
 	switch (alg) {
 	case PRF_HMAC_SHA1:
-		hmac_sha1_vector(key, key_len, num_elem, addr, len, hash);
-		break;
+		return hmac_sha1_vector(key, key_len, num_elem, addr, len,
+					hash);
 	case PRF_HMAC_MD5:
-		hmac_md5_vector(key, key_len, num_elem, addr, len, hash);
-		break;
+		return hmac_md5_vector(key, key_len, num_elem, addr, len, hash);
 	default:
 		return -1;
 	}
-
-	return 0;
 }
 
 
@@ -251,25 +250,29 @@ int ikev2_parse_payloads(struct ikev2_payloads *payloads,
 	os_memset(payloads, 0, sizeof(*payloads));
 
 	while (next_payload != IKEV2_PAYLOAD_NO_NEXT_PAYLOAD) {
-		int plen, pdatalen;
+		unsigned int plen, pdatalen, left;
 		const u8 *pdata;
 		wpa_printf(MSG_DEBUG, "IKEV2: Processing payload %u",
 			   next_payload);
-		if (end - pos < (int) sizeof(*phdr)) {
+		if (end < pos)
+			return -1;
+		left = end - pos;
+		if (left < sizeof(*phdr)) {
 			wpa_printf(MSG_INFO, "IKEV2:   Too short message for "
 				   "payload header (left=%ld)",
 				   (long) (end - pos));
+			return -1;
 		}
 		phdr = (const struct ikev2_payload_hdr *) pos;
 		plen = WPA_GET_BE16(phdr->payload_length);
-		if (plen < (int) sizeof(*phdr) || pos + plen > end) {
+		if (plen < sizeof(*phdr) || plen > left) {
 			wpa_printf(MSG_INFO, "IKEV2:   Invalid payload header "
 				   "length %d", plen);
 			return -1;
 		}
 
 		wpa_printf(MSG_DEBUG, "IKEV2:   Next Payload: %u  Flags: 0x%x"
-			   "  Payload Length: %d",
+			   "  Payload Length: %u",
 			   phdr->next_payload, phdr->flags, plen);
 
 		pdata = (const u8 *) (phdr + 1);

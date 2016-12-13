@@ -100,12 +100,6 @@ static int line_length(const char *l)
 }
 
 
-static int str_starts(const char *str, const char *start)
-{
-	return os_strncmp(str, start, os_strlen(start)) == 0;
-}
-
-
 /***************************************************************************
  * Advertisements.
  * These are multicast to the world to tell them we are here.
@@ -139,7 +133,7 @@ next_advertisement(struct upnp_wps_device_sm *sm,
 	uuid_bin2str(iface->wps->uuid, uuid_string, sizeof(uuid_string));
 	msg = wpabuf_alloc(800); /* more than big enough */
 	if (msg == NULL)
-		goto fail;
+		return NULL;
 	switch (a->type) {
 	case ADVERTISE_UP:
 	case ADVERTISE_DOWN:
@@ -213,10 +207,6 @@ next_advertisement(struct upnp_wps_device_sm *sm,
 		*islast = 1;
 
 	return msg;
-
-fail:
-	wpabuf_free(msg);
-	return NULL;
 }
 
 
@@ -317,7 +307,8 @@ static void advertisement_state_machine_handler(void *eloop_data,
 			 * (see notes above)
 			 */
 			next_timeout_msec = 0;
-			os_get_random((void *) &r, sizeof(r));
+			if (os_get_random((void *) &r, sizeof(r)) < 0)
+				r = 32768;
 			next_timeout_sec = UPNP_CACHE_SEC / 4 +
 				(((UPNP_CACHE_SEC / 4) * r) >> 16);
 			sm->advertise_count++;
@@ -743,11 +734,9 @@ int ssdp_listener_open(void)
 	int sd;
 
 	sd = socket(AF_INET, SOCK_DGRAM, 0);
-	if (sd < 0)
-		goto fail;
-	if (fcntl(sd, F_SETFL, O_NONBLOCK) != 0)
-		goto fail;
-	if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
+	if (sd < 0 ||
+	    fcntl(sd, F_SETFL, O_NONBLOCK) != 0 ||
+	    setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
 		goto fail;
 	os_memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
@@ -759,9 +748,8 @@ int ssdp_listener_open(void)
 	mcast_addr.imr_interface.s_addr = htonl(INADDR_ANY);
 	mcast_addr.imr_multiaddr.s_addr = inet_addr(UPNP_MULTICAST_ADDRESS);
 	if (setsockopt(sd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-		       (char *) &mcast_addr, sizeof(mcast_addr)))
-		goto fail;
-	if (setsockopt(sd, IPPROTO_IP, IP_MULTICAST_TTL,
+		       (char *) &mcast_addr, sizeof(mcast_addr)) ||
+	    setsockopt(sd, IPPROTO_IP, IP_MULTICAST_TTL,
 		       &ttl, sizeof(ttl)))
 		goto fail;
 

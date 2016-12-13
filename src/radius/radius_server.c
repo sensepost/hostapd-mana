@@ -35,7 +35,7 @@
  */
 #define RADIUS_MAX_MSG_LEN 3000
 
-static struct eapol_callbacks radius_server_eapol_cb;
+static const struct eapol_callbacks radius_server_eapol_cb;
 
 struct radius_client;
 struct radius_server_data;
@@ -250,6 +250,22 @@ struct radius_server_data {
 	 * server_id - Server identity
 	 */
 	const char *server_id;
+
+	/**
+	 * erp - Whether EAP Re-authentication Protocol (ERP) is enabled
+	 *
+	 * This controls whether the authentication server derives ERP key
+	 * hierarchy (rRK and rIK) from full EAP authentication and allows
+	 * these keys to be used to perform ERP to derive rMSK instead of full
+	 * EAP authentication to derive MSK.
+	 */
+	int erp;
+
+	const char *erp_domain;
+
+	struct dl_list erp_keys; /* struct eap_server_erp_key */
+
+	unsigned int tls_session_lifetime;
 
 	/**
 	 * wps - Wi-Fi Protected Setup context
@@ -673,6 +689,8 @@ radius_server_get_new_session(struct radius_server_data *data,
 	eap_conf.pwd_group = data->pwd_group;
 	eap_conf.server_id = (const u8 *) data->server_id;
 	eap_conf.server_id_len = os_strlen(data->server_id);
+	eap_conf.erp = data->erp;
+	eap_conf.tls_session_lifetime = data->tls_session_lifetime;
 	radius_server_testing_options(sess, &eap_conf);
 	sess->eap = eap_server_sm_init(sess, &radius_server_eapol_cb,
 				       &eap_conf);
@@ -1687,6 +1705,7 @@ radius_server_init(struct radius_server_conf *conf)
 	if (data == NULL)
 		return NULL;
 
+	dl_list_init(&data->erp_keys);
 	os_get_reltime(&data->start_time);
 	data->conf_ctx = conf->conf_ctx;
 	data->eap_sim_db_priv = conf->eap_sim_db_priv;
@@ -1695,8 +1714,10 @@ radius_server_init(struct radius_server_conf *conf)
 	data->ipv6 = conf->ipv6;
 	if (conf->pac_opaque_encr_key) {
 		data->pac_opaque_encr_key = os_malloc(16);
-		os_memcpy(data->pac_opaque_encr_key, conf->pac_opaque_encr_key,
-			  16);
+		if (data->pac_opaque_encr_key) {
+			os_memcpy(data->pac_opaque_encr_key,
+				  conf->pac_opaque_encr_key, 16);
+		}
 	}
 	if (conf->eap_fast_a_id) {
 		data->eap_fast_a_id = os_malloc(conf->eap_fast_a_id_len);
@@ -1725,6 +1746,9 @@ radius_server_init(struct radius_server_conf *conf)
 			data->eap_req_id_text_len = conf->eap_req_id_text_len;
 		}
 	}
+	data->erp = conf->erp;
+	data->erp_domain = conf->erp_domain;
+	data->tls_session_lifetime = conf->tls_session_lifetime;
 
 	if (conf->subscr_remediation_url) {
 		data->subscr_remediation_url =
@@ -1802,6 +1826,24 @@ radius_server_init(struct radius_server_conf *conf)
 
 
 /**
+ * radius_server_erp_flush - Flush all ERP keys
+ * @data: RADIUS server context from radius_server_init()
+ */
+void radius_server_erp_flush(struct radius_server_data *data)
+{
+	struct eap_server_erp_key *erp;
+
+	if (data == NULL)
+		return;
+	while ((erp = dl_list_first(&data->erp_keys, struct eap_server_erp_key,
+				    list)) != NULL) {
+		dl_list_del(&erp->list);
+		bin_clear_free(erp, sizeof(*erp));
+	}
+}
+
+
+/**
  * radius_server_deinit - Deinitialize RADIUS server
  * @data: RADIUS server context from radius_server_init()
  */
@@ -1835,6 +1877,8 @@ void radius_server_deinit(struct radius_server_data *data)
 	if (data->db)
 		sqlite3_close(data->db);
 #endif /* CONFIG_SQLITE */
+
+	radius_server_erp_flush(data);
 
 	os_free(data);
 }
@@ -1874,7 +1918,7 @@ int radius_server_get_mib(struct radius_server_data *data, char *buf,
 			  "radiusAuthServResetTime=0\n"
 			  "radiusAuthServConfigReset=4\n",
 			  uptime);
-	if (ret < 0 || ret >= end - pos) {
+	if (os_snprintf_error(end - pos, ret)) {
 		*pos = '\0';
 		return pos - buf;
 	}
@@ -1913,7 +1957,7 @@ int radius_server_get_mib(struct radius_server_data *data, char *buf,
 			  data->counters.malformed_acct_requests,
 			  data->counters.acct_bad_authenticators,
 			  data->counters.unknown_acct_types);
-	if (ret < 0 || ret >= end - pos) {
+	if (os_snprintf_error(end - pos, ret)) {
 		*pos = '\0';
 		return pos - buf;
 	}
@@ -1971,7 +2015,7 @@ int radius_server_get_mib(struct radius_server_data *data, char *buf,
 				  cli->counters.malformed_acct_requests,
 				  cli->counters.acct_bad_authenticators,
 				  cli->counters.unknown_acct_types);
-		if (ret < 0 || ret >= end - pos) {
+		if (os_snprintf_error(end - pos, ret)) {
 			*pos = '\0';
 			return pos - buf;
 		}
@@ -1997,6 +2041,12 @@ static int radius_server_get_eap_user(void *ctx, const u8 *identity,
 		sess->remediation = user->remediation;
 		sess->macacl = user->macacl;
 	}
+
+	if (ret) {
+		RADIUS_DEBUG("%s: User-Name not found from user database",
+			     __func__);
+	}
+
 	return ret;
 }
 
@@ -2017,11 +2067,57 @@ static void radius_server_log_msg(void *ctx, const char *msg)
 }
 
 
-static struct eapol_callbacks radius_server_eapol_cb =
+#ifdef CONFIG_ERP
+
+static const char * radius_server_get_erp_domain(void *ctx)
+{
+	struct radius_session *sess = ctx;
+	struct radius_server_data *data = sess->server;
+
+	return data->erp_domain;
+}
+
+
+static struct eap_server_erp_key *
+radius_server_erp_get_key(void *ctx, const char *keyname)
+{
+	struct radius_session *sess = ctx;
+	struct radius_server_data *data = sess->server;
+	struct eap_server_erp_key *erp;
+
+	dl_list_for_each(erp, &data->erp_keys, struct eap_server_erp_key,
+			 list) {
+		if (os_strcmp(erp->keyname_nai, keyname) == 0)
+			return erp;
+	}
+
+	return NULL;
+}
+
+
+static int radius_server_erp_add_key(void *ctx, struct eap_server_erp_key *erp)
+{
+	struct radius_session *sess = ctx;
+	struct radius_server_data *data = sess->server;
+
+	dl_list_add(&data->erp_keys, &erp->list);
+	return 0;
+}
+
+#endif /* CONFIG_ERP */
+
+
+static const struct eapol_callbacks radius_server_eapol_cb =
 {
 	.get_eap_user = radius_server_get_eap_user,
 	.get_eap_req_id_text = radius_server_get_eap_req_id_text,
 	.log_msg = radius_server_log_msg,
+#ifdef CONFIG_ERP
+	.get_erp_send_reauth_start = NULL,
+	.get_erp_domain = radius_server_get_erp_domain,
+	.erp_get_key = radius_server_erp_get_key,
+	.erp_add_key = radius_server_erp_add_key,
+#endif /* CONFIG_ERP */
 };
 
 

@@ -1294,10 +1294,31 @@ static Boolean eap_aka_isSuccess(struct eap_sm *sm, void *priv)
 }
 
 
+static u8 * eap_aka_get_session_id(struct eap_sm *sm, void *priv, size_t *len)
+{
+	struct eap_aka_data *data = priv;
+	u8 *id;
+
+	if (data->state != SUCCESS)
+		return NULL;
+
+	*len = 1 + EAP_AKA_RAND_LEN + EAP_AKA_AUTN_LEN;
+	id = os_malloc(*len);
+	if (id == NULL)
+		return NULL;
+
+	id[0] = data->eap_method;
+	os_memcpy(id + 1, data->rand, EAP_AKA_RAND_LEN);
+	os_memcpy(id + 1 + EAP_AKA_RAND_LEN, data->autn, EAP_AKA_AUTN_LEN);
+	wpa_hexdump(MSG_DEBUG, "EAP-AKA: Derived Session-Id", id, *len);
+
+	return id;
+}
+
+
 int eap_server_aka_register(void)
 {
 	struct eap_method *eap;
-	int ret;
 
 	eap = eap_server_method_alloc(EAP_SERVER_METHOD_INTERFACE_VERSION,
 				      EAP_VENDOR_IETF, EAP_TYPE_AKA, "AKA");
@@ -1313,11 +1334,9 @@ int eap_server_aka_register(void)
 	eap->getKey = eap_aka_getKey;
 	eap->isSuccess = eap_aka_isSuccess;
 	eap->get_emsk = eap_aka_get_emsk;
+	eap->getSessionId = eap_aka_get_session_id;
 
-	ret = eap_server_method_register(eap);
-	if (ret)
-		eap_server_method_free(eap);
-	return ret;
+	return eap_server_method_register(eap);
 }
 
 
@@ -1325,7 +1344,6 @@ int eap_server_aka_register(void)
 int eap_server_aka_prime_register(void)
 {
 	struct eap_method *eap;
-	int ret;
 
 	eap = eap_server_method_alloc(EAP_SERVER_METHOD_INTERFACE_VERSION,
 				      EAP_VENDOR_IETF, EAP_TYPE_AKA_PRIME,
@@ -1342,11 +1360,8 @@ int eap_server_aka_prime_register(void)
 	eap->getKey = eap_aka_getKey;
 	eap->isSuccess = eap_aka_isSuccess;
 	eap->get_emsk = eap_aka_get_emsk;
+	eap->getSessionId = eap_aka_get_session_id;
 
-	ret = eap_server_method_register(eap);
-	if (ret)
-		eap_server_method_free(eap);
-
-	return ret;
+	return eap_server_method_register(eap);
 }
 #endif /* EAP_SERVER_AKA_PRIME */

@@ -1,6 +1,6 @@
 /*
  * IEEE 802.1X-2004 Authenticator - EAPOL state machine
- * Copyright (c) 2002-2009, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2002-2015, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -22,7 +22,7 @@
 #define STATE_MACHINE_DEBUG_PREFIX "IEEE 802.1X"
 #define STATE_MACHINE_ADDR sm->addr
 
-static struct eapol_callbacks eapol_cb;
+static const struct eapol_callbacks eapol_cb;
 
 /* EAPOL state machines are described in IEEE Std 802.1X-2004, Chap. 8.2 */
 
@@ -43,6 +43,7 @@ sm->eapol->cb.set_port_authorized(sm->eapol->conf.ctx, sm->sta, 0)
 static void eapol_sm_step_run(struct eapol_state_machine *sm);
 static void eapol_sm_step_cb(void *eloop_ctx, void *timeout_ctx);
 static void eapol_auth_initialize(struct eapol_state_machine *sm);
+static void eapol_auth_conf_free(struct eapol_auth_config *conf);
 
 
 static void eapol_auth_logger(struct eapol_authenticator *eapol,
@@ -197,6 +198,18 @@ SM_STATE(AUTH_PAE, INITIALIZE)
 {
 	SM_ENTRY_MA(AUTH_PAE, INITIALIZE, auth_pae);
 	sm->portMode = Auto;
+
+	/*
+	 * Clearing keyRun here is not specified in IEEE Std 802.1X-2004, but
+	 * it looks like this would be logical thing to do here since the
+	 * EAPOL-Key exchange is not possible in this state. It is possible to
+	 * get here on disconnection event without advancing to the
+	 * AUTHENTICATING state to clear keyRun before the IEEE 802.11 RSN
+	 * authenticator state machine runs and that may advance from
+	 * AUTHENTICATION2 to INITPMK if keyRun = TRUE has been left from the
+	 * last association. This can be avoided by clearing keyRun here.
+	 */
+	sm->keyRun = FALSE;
 }
 
 
@@ -833,6 +846,8 @@ eapol_auth_alloc(struct eapol_authenticator *eapol, const u8 *addr,
 	eap_conf.pbc_in_m1 = eapol->conf.pbc_in_m1;
 	eap_conf.server_id = eapol->conf.server_id;
 	eap_conf.server_id_len = eapol->conf.server_id_len;
+	eap_conf.erp = eapol->conf.erp;
+	eap_conf.tls_session_lifetime = eapol->conf.tls_session_lifetime;
 	sm->eap = eap_server_sm_init(sm, &eapol_cb, &eap_conf);
 	if (sm->eap == NULL) {
 		eapol_auth_free(sm);
@@ -851,6 +866,14 @@ eapol_auth_alloc(struct eapol_authenticator *eapol, const u8 *addr,
 		sm->radius_cui = wpabuf_alloc_copy(radius_cui,
 						   os_strlen(radius_cui));
 
+#ifndef CONFIG_NO_RADIUS
+	if (radius_gen_session_id((u8 *) &sm->acct_multi_session_id,
+				  sizeof(sm->acct_multi_session_id)) < 0) {
+		eapol_auth_free(sm);
+		return NULL;
+	}
+#endif /* CONFIG_NO_RADIUS */
+
 	return sm;
 }
 
@@ -864,6 +887,9 @@ void eapol_auth_free(struct eapol_state_machine *sm)
 	eloop_cancel_timeout(eapol_sm_step_cb, sm, NULL);
 	if (sm->eap)
 		eap_server_sm_deinit(sm->eap);
+
+	wpabuf_free(sm->radius_cui);
+	os_free(sm->identity);
 	os_free(sm);
 }
 
@@ -1020,11 +1046,44 @@ static const char * eapol_sm_get_eap_req_id_text(void *ctx, size_t *len)
 }
 
 
-static struct eapol_callbacks eapol_cb =
+static int eapol_sm_get_erp_send_reauth_start(void *ctx)
+{
+	struct eapol_state_machine *sm = ctx;
+	return sm->eapol->conf.erp_send_reauth_start;
+}
+
+
+static const char * eapol_sm_get_erp_domain(void *ctx)
+{
+	struct eapol_state_machine *sm = ctx;
+	return sm->eapol->conf.erp_domain;
+}
+
+
+static struct eap_server_erp_key * eapol_sm_erp_get_key(void *ctx,
+							const char *keyname)
+{
+	struct eapol_state_machine *sm = ctx;
+	return sm->eapol->cb.erp_get_key(sm->eapol->conf.ctx, keyname);
+}
+
+
+static int eapol_sm_erp_add_key(void *ctx, struct eap_server_erp_key *erp)
+{
+	struct eapol_state_machine *sm = ctx;
+	return sm->eapol->cb.erp_add_key(sm->eapol->conf.ctx, erp);
+}
+
+
+static const struct eapol_callbacks eapol_cb =
 {
 	eapol_sm_get_eap_user,
 	eapol_sm_get_eap_req_id_text,
-	NULL
+	NULL,
+	eapol_sm_get_erp_send_reauth_start,
+	eapol_sm_get_erp_domain,
+	eapol_sm_erp_get_key,
+	eapol_sm_erp_add_key,
 };
 
 
@@ -1037,6 +1096,87 @@ int eapol_auth_eap_pending_cb(struct eapol_state_machine *sm, void *ctx)
 	eapol_auth_step(sm);
 
 	return 0;
+}
+
+
+void eapol_auth_reauthenticate(struct eapol_state_machine *sm)
+{
+	wpa_printf(MSG_DEBUG, "EAPOL: External reauthentication trigger for "
+		   MACSTR, MAC2STR(sm->addr));
+	sm->reAuthenticate = TRUE;
+	eapol_auth_step(sm);
+}
+
+
+int eapol_auth_set_conf(struct eapol_state_machine *sm, const char *param,
+			const char *value)
+{
+	wpa_printf(MSG_DEBUG, "EAPOL: External configuration operation for "
+		   MACSTR " - param=%s value=%s",
+		   MAC2STR(sm->addr), param, value);
+
+	if (os_strcasecmp(param, "AdminControlledDirections") == 0) {
+		if (os_strcmp(value, "Both") == 0)
+			sm->adminControlledDirections = Both;
+		else if (os_strcmp(value, "In") == 0)
+			sm->adminControlledDirections = In;
+		else
+			return -1;
+		eapol_auth_step(sm);
+		return 0;
+	}
+
+	if (os_strcasecmp(param, "AdminControlledPortControl") == 0) {
+		if (os_strcmp(value, "ForceAuthorized") == 0)
+			sm->portControl = ForceAuthorized;
+		else if (os_strcmp(value, "ForceUnauthorized") == 0)
+			sm->portControl = ForceUnauthorized;
+		else if (os_strcmp(value, "Auto") == 0)
+			sm->portControl = Auto;
+		else
+			return -1;
+		eapol_auth_step(sm);
+		return 0;
+	}
+
+	if (os_strcasecmp(param, "quietPeriod") == 0) {
+		sm->quietPeriod = atoi(value);
+		return 0;
+	}
+
+	if (os_strcasecmp(param, "serverTimeout") == 0) {
+		sm->serverTimeout = atoi(value);
+		return 0;
+	}
+
+	if (os_strcasecmp(param, "reAuthPeriod") == 0) {
+		sm->reAuthPeriod = atoi(value);
+		return 0;
+	}
+
+	if (os_strcasecmp(param, "reAuthEnabled") == 0) {
+		if (os_strcmp(value, "TRUE") == 0)
+			sm->reAuthEnabled = TRUE;
+		else if (os_strcmp(value, "FALSE") == 0)
+			sm->reAuthEnabled = FALSE;
+		else
+			return -1;
+		eapol_auth_step(sm);
+		return 0;
+	}
+
+	if (os_strcasecmp(param, "KeyTransmissionEnabled") == 0) {
+		if (os_strcmp(value, "TRUE") == 0)
+			sm->keyTxEnabled = TRUE;
+		else if (os_strcmp(value, "FALSE") == 0)
+			sm->keyTxEnabled = FALSE;
+		else
+			return -1;
+		eapol_auth_step(sm);
+		return 0;
+	}
+
+	return -1;
 }
 
 
@@ -1069,21 +1209,16 @@ static int eapol_auth_conf_clone(struct eapol_auth_config *dst,
 	}
 	if (src->pac_opaque_encr_key) {
 		dst->pac_opaque_encr_key = os_malloc(16);
-		if (dst->pac_opaque_encr_key == NULL) {
-			os_free(dst->eap_req_id_text);
-			return -1;
-		}
+		if (dst->pac_opaque_encr_key == NULL)
+			goto fail;
 		os_memcpy(dst->pac_opaque_encr_key, src->pac_opaque_encr_key,
 			  16);
 	} else
 		dst->pac_opaque_encr_key = NULL;
 	if (src->eap_fast_a_id) {
 		dst->eap_fast_a_id = os_malloc(src->eap_fast_a_id_len);
-		if (dst->eap_fast_a_id == NULL) {
-			os_free(dst->eap_req_id_text);
-			os_free(dst->pac_opaque_encr_key);
-			return -1;
-		}
+		if (dst->eap_fast_a_id == NULL)
+			goto fail;
 		os_memcpy(dst->eap_fast_a_id, src->eap_fast_a_id,
 			  src->eap_fast_a_id_len);
 		dst->eap_fast_a_id_len = src->eap_fast_a_id_len;
@@ -1091,12 +1226,8 @@ static int eapol_auth_conf_clone(struct eapol_auth_config *dst,
 		dst->eap_fast_a_id = NULL;
 	if (src->eap_fast_a_id_info) {
 		dst->eap_fast_a_id_info = os_strdup(src->eap_fast_a_id_info);
-		if (dst->eap_fast_a_id_info == NULL) {
-			os_free(dst->eap_req_id_text);
-			os_free(dst->pac_opaque_encr_key);
-			os_free(dst->eap_fast_a_id);
-			return -1;
-		}
+		if (dst->eap_fast_a_id_info == NULL)
+			goto fail;
 	} else
 		dst->eap_fast_a_id_info = NULL;
 	dst->eap_fast_prov = src->eap_fast_prov;
@@ -1106,7 +1237,24 @@ static int eapol_auth_conf_clone(struct eapol_auth_config *dst,
 	dst->tnc = src->tnc;
 	dst->wps = src->wps;
 	dst->fragment_size = src->fragment_size;
+
+	os_free(dst->erp_domain);
+	if (src->erp_domain) {
+		dst->erp_domain = os_strdup(src->erp_domain);
+		if (dst->erp_domain == NULL)
+			goto fail;
+	} else {
+		dst->erp_domain = NULL;
+	}
+	dst->erp_send_reauth_start = src->erp_send_reauth_start;
+	dst->erp = src->erp;
+	dst->tls_session_lifetime = src->tls_session_lifetime;
+
 	return 0;
+
+fail:
+	eapol_auth_conf_free(dst);
+	return -1;
 }
 
 
@@ -1120,6 +1268,8 @@ static void eapol_auth_conf_free(struct eapol_auth_config *conf)
 	conf->eap_fast_a_id = NULL;
 	os_free(conf->eap_fast_a_id_info);
 	conf->eap_fast_a_id_info = NULL;
+	os_free(conf->erp_domain);
+	conf->erp_domain = NULL;
 }
 
 
@@ -1152,6 +1302,8 @@ struct eapol_authenticator * eapol_auth_init(struct eapol_auth_config *conf,
 	eapol->cb.abort_auth = cb->abort_auth;
 	eapol->cb.tx_key = cb->tx_key;
 	eapol->cb.eapol_event = cb->eapol_event;
+	eapol->cb.erp_get_key = cb->erp_get_key;
+	eapol->cb.erp_add_key = cb->erp_add_key;
 
 	return eapol;
 }

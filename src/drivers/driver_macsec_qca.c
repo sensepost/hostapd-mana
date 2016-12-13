@@ -11,6 +11,7 @@
 #include "includes.h"
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include <inttypes.h>
 #ifdef __linux__
 #include <netpacket/packet.h>
 #include <net/if_arp.h>
@@ -91,7 +92,7 @@ static int macsec_qca_multicast_membership(int sock, int ifindex,
 	if (setsockopt(sock, SOL_PACKET,
 		       add ? PACKET_ADD_MEMBERSHIP : PACKET_DROP_MEMBERSHIP,
 		       &mreq, sizeof(mreq)) < 0) {
-		perror("setsockopt");
+		wpa_printf(MSG_ERROR, "setsockopt: %s", strerror(errno));
 		return -1;
 	}
 	return 0;
@@ -131,14 +132,15 @@ static int macsec_qca_get_ifflags(const char *ifname, int *flags)
 
 	s = socket(PF_INET, SOCK_DGRAM, 0);
 	if (s < 0) {
-		perror("socket");
+		wpa_printf(MSG_ERROR, "socket: %s", strerror(errno));
 		return -1;
 	}
 
 	os_memset(&ifr, 0, sizeof(ifr));
 	os_strlcpy(ifr.ifr_name, ifname, IFNAMSIZ);
 	if (ioctl(s, SIOCGIFFLAGS, (caddr_t) &ifr) < 0) {
-		perror("ioctl[SIOCGIFFLAGS]");
+		wpa_printf(MSG_ERROR, "ioctl[SIOCGIFFLAGS]: %s",
+			   strerror(errno));
 		close(s);
 		return -1;
 	}
@@ -155,7 +157,7 @@ static int macsec_qca_set_ifflags(const char *ifname, int flags)
 
 	s = socket(PF_INET, SOCK_DGRAM, 0);
 	if (s < 0) {
-		perror("socket");
+		wpa_printf(MSG_ERROR, "socket: %s", strerror(errno));
 		return -1;
 	}
 
@@ -163,7 +165,8 @@ static int macsec_qca_set_ifflags(const char *ifname, int flags)
 	os_strlcpy(ifr.ifr_name, ifname, IFNAMSIZ);
 	ifr.ifr_flags = flags & 0xffff;
 	if (ioctl(s, SIOCSIFFLAGS, (caddr_t) &ifr) < 0) {
-		perror("ioctl[SIOCSIFFLAGS]");
+		wpa_printf(MSG_ERROR, "ioctl[SIOCSIFFLAGS]: %s",
+			   strerror(errno));
 		close(s);
 		return -1;
 	}
@@ -180,14 +183,15 @@ static int macsec_qca_get_ifstatus(const char *ifname, int *status)
 
 	s = socket(PF_INET, SOCK_DGRAM, 0);
 	if (s < 0) {
-		perror("socket");
+		wpa_print(MSG_ERROR, "socket: %s", strerror(errno));
 		return -1;
 	}
 
 	os_memset(&ifmr, 0, sizeof(ifmr));
 	os_strlcpy(ifmr.ifm_name, ifname, IFNAMSIZ);
 	if (ioctl(s, SIOCGIFMEDIA, (caddr_t) &ifmr) < 0) {
-		perror("ioctl[SIOCGIFMEDIA]");
+		wpa_printf(MSG_ERROR, "ioctl[SIOCGIFMEDIA]: %s",
+			   strerror(errno));
 		close(s);
 		return -1;
 	}
@@ -211,7 +215,7 @@ static int macsec_qca_multi(const char *ifname, const u8 *addr, int add)
 
 	s = socket(PF_INET, SOCK_DGRAM, 0);
 	if (s < 0) {
-		perror("socket");
+		wpa_printf(MSG_ERROR, "socket: %s", strerror(errno));
 		return -1;
 	}
 
@@ -245,7 +249,8 @@ static int macsec_qca_multi(const char *ifname, const u8 *addr, int add)
 #endif /* defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__) */
 
 	if (ioctl(s, add ? SIOCADDMULTI : SIOCDELMULTI, (caddr_t) &ifr) < 0) {
-		perror("ioctl[SIOC{ADD/DEL}MULTI]");
+		wpa_printf(MSG_ERROR, "ioctl[SIOC{ADD/DEL}MULTI]: %s",
+			   strerror(errno));
 		close(s);
 		return -1;
 	}
@@ -323,7 +328,7 @@ static void * macsec_qca_init(void *ctx, const char *ifname)
 #ifdef __linux__
 	drv->pf_sock = socket(PF_PACKET, SOCK_DGRAM, 0);
 	if (drv->pf_sock < 0)
-		perror("socket(PF_PACKET)");
+		wpa_printf(MSG_ERROR, "socket(PF_PACKET): %s", strerror(errno));
 #else /* __linux__ */
 	drv->pf_sock = -1;
 #endif /* __linux__ */
@@ -481,15 +486,12 @@ static int macsec_qca_set_replay_protect(void *priv, Boolean enabled,
 }
 
 
-static int macsec_qca_set_current_cipher_suite(void *priv, const u8 *cs,
-					       size_t cs_len)
+static int macsec_qca_set_current_cipher_suite(void *priv, u64 cs)
 {
-	u8 default_cs_id[] = CS_ID_GCM_AES_128;
-
-	if (cs_len != CS_ID_LEN ||
-	    os_memcmp(cs, default_cs_id, cs_len) != 0) {
-		wpa_hexdump(MSG_ERROR, "macsec: NOT supported CipherSuite",
-			    cs, cs_len);
+	if (cs != CS_ID_GCM_AES_128) {
+		wpa_printf(MSG_ERROR,
+			   "%s: NOT supported CipherSuite: %016" PRIx64,
+			   __func__, cs);
 		return -1;
 	}
 
