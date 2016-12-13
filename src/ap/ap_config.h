@@ -58,6 +58,7 @@ typedef u8 macaddr[ETH_ALEN];
 
 struct mac_acl_entry {
 	macaddr addr;
+	macaddr mask; //MANA
 	struct vlan_description vlan_id;
 };
 
@@ -604,6 +605,12 @@ struct hostapd_bss_config {
 struct hostapd_config {
 	struct hostapd_bss_config **bss, *last_bss;
 	size_t num_bss;
+
+	// MANA
+	int enable_mana;
+	int mana_loud;
+	int mana_macacl;
+	// MANA END
 
 	u16 beacon_int;
 	int rts_threshold;

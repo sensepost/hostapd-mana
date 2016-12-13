@@ -16,6 +16,7 @@
 #include "utils/edit.h"
 #include "common/version.h"
 #include "common/cli.h"
+#include "ap/ap_config.h" //MANA
 
 #ifndef CONFIG_NO_CTRL_IFACE
 
@@ -331,6 +332,70 @@ static char ** hostapd_complete_deauthenticate(const char *str, int pos)
 
 	return res;
 }
+
+// MANA START
+static int hostapd_cli_cmd_mana_change_ssid(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	// Max length of SSID is 32 chars + the command and the null byte
+	char buf[50];
+	if (argc < 1) {
+		printf("Invalid 'change Mana SSID' command - exactly one "
+		       "argument, SSID, is required.\n");
+		return -1;
+	}
+	if (strlen(argv[0]) > SSID_MAX_LEN) {
+		printf("The max length of an SSID is %i\n", SSID_MAX_LEN);
+		return -1;
+	}
+	os_snprintf(buf, sizeof(buf), "MANA_CHANGE_SSID %s", argv[0]);
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+static int hostapd_cli_cmd_mana_get_ssid(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_GET_SSID");
+}
+
+// These should be one function with a parameter
+static int hostapd_cli_cmd_mana_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_DISABLE");
+}
+static int hostapd_cli_cmd_mana_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_state(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_STATE");
+}
+static int hostapd_cli_cmd_mana_loud_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "LOUD_DISABLE");
+}
+static int hostapd_cli_cmd_mana_loud_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "LOUD_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_mode(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_MODE");
+}
+static int hostapd_cli_cmd_mana_macacl_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANAACL_DISABLE");
+}
+static int hostapd_cli_cmd_mana_macacl_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANAACL_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_aclmode(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_ACLMODE");
+}
+// END MANA
 
 
 static int hostapd_cli_cmd_disassociate(struct wpa_ctrl *ctrl, int argc,
@@ -1360,6 +1425,21 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "req_lci", hostapd_cli_cmd_req_lci, NULL, NULL },
 	{ "req_range", hostapd_cli_cmd_req_range, NULL, NULL },
 	{ "driver_flags", hostapd_cli_cmd_driver_flags, NULL, NULL },
+ // MANA START
+ 	{ "?", hostapd_cli_cmd_help, NULL, NULL }, //One of digininja's original changes :)
+ 	{ "mana_change_ssid", hostapd_cli_cmd_mana_change_ssid, NULL, "= change the default SSID for when mana is off" },
+ 	{ "mana_get_ssid", hostapd_cli_cmd_mana_get_ssid, NULL, "= get the default SSID for when mana is off" },
+ 	{ "mana_get_state", hostapd_cli_cmd_mana_get_state, NULL, "= get the state of mana" },
+ 	{ "mana_disable", hostapd_cli_cmd_mana_disable, NULL, "= disable mana" },
+ 	{ "mana_enable", hostapd_cli_cmd_mana_enable, NULL, "= enable mana" },
+ 	{ "mana_loud_off", hostapd_cli_cmd_mana_loud_disable, NULL, "= disable mana's loud mode" },
+ 	{ "mana_loud_on", hostapd_cli_cmd_mana_loud_enable, NULL, "= enable mana's loud mode" },
+ 	{ "mana_loud_state", hostapd_cli_cmd_mana_get_mode, NULL, "= check mana's loud mode" },
+ 	{ "mana_macacl_off", hostapd_cli_cmd_mana_macacl_disable, NULL, "= disable MAC ACLs at management frame level" },
+ 	{ "mana_macacl_on", hostapd_cli_cmd_mana_macacl_enable, NULL, "= enable MAC ACLs at management frame level" },
+ 	{ "mana_macacl_state", hostapd_cli_cmd_mana_get_aclmode, NULL, "= check mana's MAC ACL mode" },
+ // END MANA
+
 	{ NULL, NULL, NULL, NULL }
 };
 

@@ -21,6 +21,8 @@
 #include "ap/ap_config.h"
 #include "config_file.h"
 
+#include <stdlib.h>
+
 
 #ifndef CONFIG_NO_RADIUS
 #ifdef EAP_SERVER
@@ -118,16 +120,18 @@ static int hostapd_acl_comp(const void *a, const void *b)
 	return os_memcmp(aa->addr, bb->addr, sizeof(macaddr));
 }
 
-
 static int hostapd_config_read_maclist(const char *fname,
 				       struct mac_acl_entry **acl, int *num)
 {
 	FILE *f;
 	char buf[128], *pos;
+	char *lastpos; //MANA
 	int line = 0;
 	u8 addr[ETH_ALEN];
+	u8 mask[ETH_ALEN], transform[ETH_ALEN]; //MANA
 	struct mac_acl_entry *newacl;
 	int vlan_id;
+	int vlanflag = 0; //MANA
 
 	if (!fname)
 		return 0;
@@ -155,6 +159,7 @@ static int hostapd_config_read_maclist(const char *fname,
 		}
 		if (buf[0] == '\0')
 			continue;
+		lastpos = pos; //MANA
 		pos = buf;
 		if (buf[0] == '-') {
 			rem = 1;
@@ -187,8 +192,45 @@ static int hostapd_config_read_maclist(const char *fname,
 			pos++;
 		while (*pos == ' ' || *pos == '\t')
 			pos++;
-		if (*pos != '\0')
-			vlan_id = atoi(pos);
+		if (*pos != '\0') {
+			if (*(pos+2) != ':') { //MANA
+				vlan_id = atoi(pos);
+				vlanflag = 1;
+			}
+		}
+
+		//MANA Start - parse MAC mask
+		lastpos = pos;
+		while (*pos != '\0') {
+			if (*pos == '\n') {
+				*pos = '\0';
+				break;
+			}
+			pos++;
+		}
+		pos = lastpos;
+
+		if (vlanflag) {
+			while (*pos != '\0' && *pos != ' ' && *pos != '\t')
+				pos++;
+			while (*pos == ' ' || *pos == '\t')
+				pos++;
+		}
+
+		if (*pos != '\0') {
+			if (hwaddr_aton(pos, mask)) {
+				wpa_printf(MSG_ERROR, "Invalid MAC mask '%s' at "
+					   "line %d in '%s'", pos, line, fname);
+				fclose(f);
+				return -1;
+			}
+			int i;
+			for (i=0; i<ETH_ALEN; i++) {
+				transform[i] = addr[i] & mask[i]; //We need to store it transformed for the binary search used in hostapd_maclist_found to get a properly sorted list
+			}
+		} else 
+			hwaddr_aton("ff:ff:ff:ff:ff:ff", mask); //No mask specified to add a "no change" mask
+		//MANA End
 
 		newacl = os_realloc_array(*acl, *num + 1, sizeof(**acl));
 		if (newacl == NULL) {
@@ -198,7 +240,9 @@ static int hostapd_config_read_maclist(const char *fname,
 		}
 
 		*acl = newacl;
-		os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
+		//os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
+		os_memcpy((*acl)[*num].addr, transform, ETH_ALEN); //MANA
+		os_memcpy((*acl)[*num].mask, mask, ETH_ALEN); //MANA
 		os_memset(&(*acl)[*num].vlan_id, 0,
 			  sizeof((*acl)[*num].vlan_id));
 		(*acl)[*num].vlan_id.untagged = vlan_id;
@@ -2029,6 +2073,26 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->logger_syslog = atoi(pos);
 	} else if (os_strcmp(buf, "logger_stdout") == 0) {
 		bss->logger_stdout = atoi(pos);
+	// MANA START
+	} else if (os_strcmp(buf, "enable_mana") == 0) {
+		int val = atoi(pos);
+		conf->enable_mana = (val != 0);
+		if (conf->enable_mana) {
+			wpa_printf(MSG_DEBUG, "MANA: Enabled");
+		}
+	} else if (os_strcmp(buf, "mana_loud") == 0) {
+		int val = atoi(pos);
+		conf->mana_loud = (val != 0);
+		if (conf->mana_loud) {
+			wpa_printf(MSG_DEBUG, "MANA: Loud mode enabled");
+		}
+	} else if (os_strcmp(buf, "mana_macacl") == 0) {
+		int val = atoi(pos);
+		conf->mana_macacl = (val != 0);
+		if (conf->mana_macacl) {
+			wpa_printf(MSG_DEBUG, "MANA: MAC ACLs extended to management frames");
+		}
+	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
 			   line);
@@ -3491,6 +3555,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ftm_responder = atoi(pos);
 	} else if (os_strcmp(buf, "ftm_initiator") == 0) {
 		bss->ftm_initiator = atoi(pos);
+	} else if (os_strcmp(buf, "ennode") == 0) { //MANA
+		setenv("MANANODE", pos, 1);
+	} else if (os_strcmp(buf, "mana_outfile") == 0) { //MANA
+		setenv("MANAOUTFILE", pos, 1);
 	} else {
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",
@@ -3539,6 +3607,12 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	}
 
 	conf->last_bss = conf->bss[0];
+
+	// MANA START
+	conf->enable_mana = 0; //default off;
+	conf->mana_loud = 0; //default off; 1 - advertise all networks across all devices, 0 - advertise specific networks to the device it was discovered from
+	conf->mana_macacl = 0; //default off; 0 - off, 1 - extend MAC ACL to management frames
+	// MANA END
 
 	while (fgets(buf, sizeof(buf), f)) {
 		struct hostapd_bss_config *bss;

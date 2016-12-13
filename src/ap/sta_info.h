@@ -218,6 +218,7 @@ struct sta_info {
 	struct wpabuf *probe_ie_taxonomy;
 	struct wpabuf *assoc_ie_taxonomy;
 #endif /* CONFIG_TAXONOMY */
+	struct hostapd_ssid *ssid_probe_mana; //MANA
 };
 
 

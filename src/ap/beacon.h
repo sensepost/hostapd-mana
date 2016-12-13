@@ -31,3 +31,23 @@ void sta_track_claim_taxonomy_info(struct hostapd_iface *iface, const u8 *addr,
 				   struct wpabuf **probe_ie_taxonomy);
 
 #endif /* BEACON_H */
+
+// MANA START
+#include "uthash/uthash.h"
+struct mana_ssid {
+        char ssid_txt[SSID_MAX_LEN+1];
+        u8 ssid[SSID_MAX_LEN];
+        size_t ssid_len;
+		//u8 sta_addr[6];
+        UT_hash_handle hh;
+};
+//struct mana_ssid *mana_data;
+struct mana_mac {
+	//char mac_txt[18];
+	u8 sta_addr[6];
+	struct mana_ssid *ssids;
+	UT_hash_handle hh;
+};
+struct mana_mac *mana_machash;
+struct mana_ssid *mana_ssidhash;
+// MANA END
