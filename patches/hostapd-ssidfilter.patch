@@ -1,0 +1,202 @@
+diff -ruN hostapd-mana/hostapd/config_file.c ../hostapd-mana/hostapd/config_file.c
+--- hostapd-mana/hostapd/config_file.c	2017-01-25 19:27:52.044627783 -0600
++++ ../hostapd-mana/hostapd/config_file.c	2017-01-25 19:06:45.140655475 -0600
+@@ -117,6 +117,62 @@
+ 	const struct mac_acl_entry *bb = b;
+ 	return os_memcmp(aa->addr, bb->addr, sizeof(macaddr));
+ }
++static int hostapd_config_read_ssidlist(const char *fname, struct ssid_filter_entry **ssid_filter, int *num)
++{
++	FILE *f;
++	char buf[128], *pos;
++	int line = 0;
++
++	struct ssid_filter_entry *new_ssid_filter;
++
++	if (!fname)
++		return 0;
++
++	f = fopen(fname, "r");
++	if (!f) {
++		wpa_printf(MSG_ERROR, "SSID list file '%s' not found.", fname);
++		return -1;
++	}
++
++	while (fgets(buf, sizeof(buf), f)) {
++		line++;
++
++		if (buf[0] == '#')
++			continue;
++
++		while (*pos != '\0') {
++			if (*pos == '\n') {
++				*pos = '\0';
++				break;
++			}
++			pos++;
++		}
++
++		if (buf[0] == '\0')
++			continue;
++
++		pos = buf;
++		if(strlen(pos)>32){
++			wpa_printf(MSG_ERROR, "SSID %s is too long (more than 32 characters.)",pos);
++			return -1;
++		}
++		wpa_printf(MSG_INFO, "SSID: '%s' added.", pos);
++		new_ssid_filter = os_realloc_array(*ssid_filter, *num + 1, sizeof(**ssid_filter));
++		if (new_ssid_filter == NULL) {
++			wpa_printf(MSG_ERROR, "SSID list reallocation failed");
++			fclose(f);
++			return -1;
++		}
++
++		*ssid_filter = new_ssid_filter;
++		os_memcpy((*ssid_filter)[*num].ssid, pos, sizeof pos);
++
++		(*num)++;
++	}
++
++	fclose(f);
++	return 0;
++}
+ 
+ static int hostapd_config_read_maclist(const char *fname,
+ 				       struct mac_acl_entry **acl, int *num)
+@@ -1938,6 +1994,14 @@
+ 		if (conf->mana_macacl) {
+ 			wpa_printf(MSG_DEBUG, "MANA: MAC ACLs extended to management frames");
+ 		}
++	} else if (os_strcmp(buf, "mana_ssid_filter_file") == 0) {
++		if (hostapd_config_read_ssidlist(pos,&bss->ssid_filter,&bss->num_ssid_filter)){
++			wpa_printf(MSG_ERROR, "Line %d: Failed to read SSID filter list '%s'", line, pos);
++			return 1;
++		}
++		conf->mana_ssid_filter_file = pos;
++		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",pos);
++
+ 	// MANA END
+ 	} else if (os_strcmp(buf, "dump_file") == 0) {
+ 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
+@@ -3276,6 +3340,7 @@
+ 	conf->enable_mana = 0; //default off;
+ 	conf->mana_loud = 0; //default off; 1 - advertise all networks across all devices, 0 - advertise specific networks to the device it was discovered from
+ 	conf->mana_macacl = 0; //default off; 0 - off, 1 - extend MAC ACL to management frames
++	conf->mana_ssid_filter_file = "NOT_SET";
+ 	// MANA END
+ 
+ 	while (fgets(buf, sizeof(buf), f)) {
+diff -ruN hostapd-mana/hostapd/hostapd.conf ../hostapd-mana/hostapd/hostapd.conf
+--- hostapd-mana/hostapd/hostapd.conf	2017-01-25 19:27:52.044627783 -0600
++++ ../hostapd-mana/hostapd/hostapd.conf	2017-01-25 20:15:57.528564713 -0600
+@@ -6,6 +6,8 @@
+ # 1 = enabled - perform MANA attacks 
+ enable_mana=1
+ 
++mana_ssid_filter_file=hostapd.ssid_filter
++
+ # By default, MANA will be a little stealthy and only advertise probed for networks
+ # directly to the device that probed for it.
+ # However, not all devices probe as much as they used to, and some devices will
+diff -ruN hostapd-mana/hostapd/hostapd.ssid_filter ../hostapd-mana/hostapd/hostapd.ssid_filter
+--- hostapd-mana/hostapd/hostapd.ssid_filter	1969-12-31 18:00:00.000000000 -0600
++++ ../hostapd-mana/hostapd/hostapd.ssid_filter	2017-01-25 19:26:26.324629657 -0600
+@@ -0,0 +1,8 @@
++# comment
++FreeWifi_secure
++BTWiFi-with-FON
++BTWifi-X
++BTWIFI
++Ziggo
++UPC Wi-Free
++TELENETHOMESPOT
++KPN Fon
+diff -ruN hostapd-mana/src/ap/ap_config.c ../hostapd-mana/src/ap/ap_config.c
+--- hostapd-mana/src/ap/ap_config.c	2017-01-25 19:27:52.048627783 -0600
++++ ../hostapd-mana/src/ap/ap_config.c	2017-01-25 18:44:59.688684009 -0600
+@@ -579,6 +579,20 @@
+  *
+  * Perform a binary search for given MAC address from a pre-sorted list.
+  */
++int hostapd_ssidlist_found(struct ssid_filter_entry *list, int num_entries, const char *ssid)
++{
++	int start, end;
++	start = 0;
++	end = num_entries - 1;
++	while (start <= end) {
++		if(!strcmp(list[start].ssid, ssid)){
++			return 1;
++		}
++		start = start + 1;
++	}
++	return 0;
++}
++
+ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
+ 			  const u8 *addr, int *vlan_id)
+ {
+diff -ruN hostapd-mana/src/ap/ap_config.h ../hostapd-mana/src/ap/ap_config.h
+--- hostapd-mana/src/ap/ap_config.h	2017-01-25 19:27:52.048627783 -0600
++++ ../hostapd-mana/src/ap/ap_config.h	2017-01-25 19:25:14.708631223 -0600
+@@ -26,6 +26,10 @@
+ 	int vlan_id;
+ };
+ 
++struct ssid_filter_entry {
++	char ssid[32]; // m_TODO need to use global max ssid length
++};
++
+ struct hostapd_radius_servers;
+ struct ft_remote_r0kh;
+ struct ft_remote_r1kh;
+@@ -245,6 +249,8 @@
+ 	int num_accept_mac;
+ 	struct mac_acl_entry *deny_mac;
+ 	int num_deny_mac;
++	struct ssid_filter_entry *ssid_filter;
++	int num_ssid_filter;
+ 	int wds_sta;
+ 	int isolate;
+ 	int start_disabled;
+@@ -527,6 +533,7 @@
+ 	int enable_mana;
+ 	int mana_loud;
+ 	int mana_macacl;
++	const char * mana_ssid_filter_file;
+ 	// MANA END
+ 
+ 	u16 beacon_int;
+@@ -617,6 +624,8 @@
+ void hostapd_config_free(struct hostapd_config *conf);
+ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
+ 			  const u8 *addr, int *vlan_id);
++int hostapd_ssidlist_found(struct ssid_filter_entry *list, int num_entries,
++				const char *ssid);
+ int hostapd_rate_found(int *list, int rate);
+ const u8 * hostapd_get_psk(const struct hostapd_bss_config *conf,
+ 			   const u8 *addr, const u8 *p2p_dev_addr,
+diff -ruN hostapd-mana/src/ap/beacon.c ../hostapd-mana/src/ap/beacon.c
+--- hostapd-mana/src/ap/beacon.c	2017-01-25 19:27:52.048627783 -0600
++++ ../hostapd-mana/src/ap/beacon.c	2017-01-25 20:12:13.292569615 -0600
+@@ -410,6 +410,7 @@
+ 	pos = resp->u.probe_resp.variable;
+ 	*pos++ = WLAN_EID_SSID;
+ 	// MANA START
++
+ 	if (hapd->iconf->enable_mana && ssid_len > 0) {
+ 		*pos++ = ssid_len;
+ 		os_memcpy(pos, ssid, ssid_len);
+@@ -630,6 +631,12 @@
+ 		elems.ssid_len = 0;
+ 	}
+ #endif /* CONFIG_P2P */
++	if (strcmp(hapd->iconf->mana_ssid_filter_file,"NOT_SET")){
++		if(!hostapd_ssidlist_found(hapd->conf->ssid_filter, hapd->conf->num_ssid_filter, wpa_ssid_txt(elems.ssid, elems.ssid_len))){
++			wpa_printf(MSG_DEBUG, "MANA - SSID '%s' not found in list.", wpa_ssid_txt(elems.ssid, elems.ssid_len));
++			return;
++		}
++	}
+ 
+ 	res = ssid_match(hapd, elems.ssid, elems.ssid_len,
+ 			 elems.ssid_list, elems.ssid_list_len);
