@@ -120,6 +120,67 @@ static int hostapd_acl_comp(const void *a, const void *b)
 	return os_memcmp(aa->addr, bb->addr, sizeof(macaddr));
 }
 
+// MANA Start - SSID Filter
+static int hostapd_config_read_ssidlist(const char *fname, 
+		struct ssid_filter_entry **ssid_filter, int *num)
+{
+	FILE *f;
+	char buf[128], *pos;
+	int line = 0;
+
+	struct ssid_filter_entry *new_ssid_filter;
+
+	if (!fname)
+		return 0;
+
+	f = fopen(fname, "r");
+	if (!f) {
+		wpa_printf(MSG_ERROR, "SSID list file '%s' not found.", fname);
+		return -1;
+	}
+
+	while (fgets(buf, sizeof(buf), f)) {
+		line++;
+
+		if (buf[0] == '#')
+			continue;
+
+		while (*pos != '\0') {
+			if (*pos == '\n') {
+				*pos = '\0';
+				break;
+			}
+			pos++;
+		}
+
+		if (buf[0] == '\0')
+			continue;
+
+		pos = buf;
+		if(strlen(pos) > SSID_MAX_LEN){
+			wpa_printf(MSG_ERROR, "SSID %s is too long (more than %d characters.)",pos,SSID_MAX_LEN);
+			return -1;
+		}
+
+		new_ssid_filter = os_realloc_array(*ssid_filter, *num + 1, sizeof(**ssid_filter));
+		if (new_ssid_filter == NULL) {
+			wpa_printf(MSG_ERROR, "SSID list reallocation failed");
+			fclose(f);
+			return -1;
+		}
+
+		*ssid_filter = new_ssid_filter;
+		os_memcpy((*ssid_filter)[*num].ssid, pos, sizeof(pos));
+
+		(*num)++;
+		wpa_printf(MSG_INFO, "SSID: '%s' added.", pos);
+	}
+
+	fclose(f);
+	return 0;
+}
+//MANA End
+
 static int hostapd_config_read_maclist(const char *fname,
 				       struct mac_acl_entry **acl, int *num)
 {
@@ -2092,6 +2153,15 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (conf->mana_macacl) {
 			wpa_printf(MSG_DEBUG, "MANA: MAC ACLs extended to management frames");
 		}
+	} else if (os_strcmp(buf, "mana_ssid_filter_file") == 0) {
+		if (hostapd_config_read_ssidlist(pos, &bss->ssid_filter, 
+					&bss->num_ssid_filter)) {
+			wpa_printf(MSG_ERROR, "Line %d: Failed to read SSID filter list '%s'", 
+				line, pos);
+			return 1;
+		}
+		conf->mana_ssid_filter_file = pos;
+		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",pos);
 	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
@@ -3612,6 +3682,7 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	conf->enable_mana = 0; //default off;
 	conf->mana_loud = 0; //default off; 1 - advertise all networks across all devices, 0 - advertise specific networks to the device it was discovered from
 	conf->mana_macacl = 0; //default off; 0 - off, 1 - extend MAC ACL to management frames
+	conf->mana_ssid_filter_file = "NOT_SET"; //default none
 	// MANA END
 
 	while (fgets(buf, sizeof(buf), f)) {

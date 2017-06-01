@@ -663,6 +663,21 @@ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 	return 0;
 }
 
+// MANA Start - SSID filter
+int hostapd_ssidlist_found(struct ssid_filter_entry *list, int num_entries, const char *ssid)
+{
+	int start, end;
+	start = 0;
+	end = num_entries - 1;
+	while (start <= end) {
+		if (!strcmp(list[start].ssid, ssid)) {
+			return 1;
+		}
+		start++;
+	}
+	return 0;
+}
+// MANA End
 
 int hostapd_rate_found(int *list, int rate)
 {

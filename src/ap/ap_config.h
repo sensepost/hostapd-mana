@@ -62,6 +62,10 @@ struct mac_acl_entry {
 	struct vlan_description vlan_id;
 };
 
+struct ssid_filter_entry { //MANA
+	char ssid[SSID_MAX_LEN];
+};
+
 struct hostapd_radius_servers;
 struct ft_remote_r0kh;
 struct ft_remote_r1kh;
@@ -297,6 +301,8 @@ struct hostapd_bss_config {
 	int num_accept_mac;
 	struct mac_acl_entry *deny_mac;
 	int num_deny_mac;
+	struct ssid_filter_entry *ssid_filter;
+	int num_ssid_filter;
 	int wds_sta;
 	int isolate;
 	int start_disabled;
@@ -610,6 +616,7 @@ struct hostapd_config {
 	int enable_mana;
 	int mana_loud;
 	int mana_macacl;
+	const char * mana_ssid_filter_file;
 	// MANA END
 
 	u16 beacon_int;
@@ -726,6 +733,8 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf);
 void hostapd_config_free(struct hostapd_config *conf);
 int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 			  const u8 *addr, struct vlan_description *vlan_id);
+int hostapd_ssidlist_found(struct ssid_filter_entry *list, int num_entires, //MANA
+			  const char *ssid);
 int hostapd_rate_found(int *list, int rate);
 const u8 * hostapd_get_psk(const struct hostapd_bss_config *conf,
 			   const u8 *addr, const u8 *p2p_dev_addr,

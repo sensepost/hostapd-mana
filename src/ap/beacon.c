@@ -834,6 +834,12 @@ void handle_probe_req(struct hostapd_data *hapd,
 		wpabuf_free(p2p);
 	}
 #endif /* CONFIG_P2P */
+	if (strcmp(hapd->iconf->mana_ssid_filter_file,"NOT_SET")) { //MANA
+		if (!hostapd_ssidlist_found(hapd->conf->ssid_filter, hapd->conf->num_ssid_filter, wpa_ssid_txt(elems.ssid, elems.ssid_len))) {
+			wpa_printf(MSG_DEBUG, "MANA - SSID '%s' not found in list.", wpa_ssid_txt(elems.ssid, elems.ssid_len));
+			return;
+		}
+	}
 
 	if (hapd->conf->ignore_broadcast_ssid && elems.ssid_len == 0 &&
 	    elems.ssid_list_len == 0 && !hapd->iconf->enable_mana) { //MANA
