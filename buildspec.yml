@@ -1,0 +1,22 @@
+version: 0.2
+# Ubuntu for AWS CodeBuild
+
+phases:
+  install:
+    commands:
+      - echo Entering install phase
+      - apt-get update
+      - apt-get --yes install libnl-genl-3-dev libssl-dev git build-essential
+  pre_build:
+    commands:
+      - echo Entering prebuild phase
+      - git checkout hostapd-2.6
+  build:
+    commands:
+      - echo Entering buid phase
+      - make -C hostapd
+artifacts:
+  files:
+    - hostapd/hostapd
+    - hostapd/hostapd_cli
+  discard-paths: yes
