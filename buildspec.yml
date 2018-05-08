@@ -7,6 +7,10 @@ phases:
       - echo Entering install phase
       - apt-get update
       - apt-get --yes install libnl-genl-3-dev libssl-dev git build-essential
+  pre_build:
+    commands:
+      - echo Entering prebuild phase
+      - git checkout hostapd-2.6
   build:
     commands:
       - echo Entering buid phase
