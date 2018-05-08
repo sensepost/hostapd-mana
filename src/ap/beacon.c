@@ -86,7 +86,7 @@ static u8 * hostapd_eid_bss_load(struct hostapd_data *hapd, u8 *eid, size_t len)
 }
 
 //Start MANA
-static void log_ssid(const u8 *ssid, size_t ssid_len, const u8 *mac) {
+static void log_ssid(struct hostapd_data *hapd, const u8 *ssid, size_t ssid_len, const u8 *mac) {
 	//Quick hack to output observed MACs & SSIDs
 	//TODO: Fix this so it works in loud mode, right now will only log an SSID once
 	char *mana_outfile = getenv("MANAOUTFILE");
@@ -94,8 +94,28 @@ static void log_ssid(const u8 *ssid, size_t ssid_len, const u8 *mac) {
 	if (f != NULL) {
 		int rand=0;
 		if (mac[0] & 2) //Check if locally administered aka random MAC
-			rand=1;	
+			rand=1; 
+
+#ifdef CONFIG_TAXONOMY
+		struct sta_info *sta;
+		struct hostapd_sta_info *info;
+		if ((sta = ap_get_sta(hapd, mac)) != NULL) {
+			char reply[512] = "";
+			size_t reply_len = 512;
+			retrieve_sta_taxonomy(hapd, sta, reply, reply_len);
+			fprintf(f,MACSTR ", %s, %d, %s\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand, reply);
+		} else if ((info = sta_track_get(hapd->iface, mac)) != NULL) {
+			char reply[512] = "";
+			size_t reply_len = 512;
+			retrieve_hostapd_sta_taxonomy(hapd, info, reply, reply_len);
+			fprintf(f,MACSTR ", %s, %d, %s\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand, reply);
+		} else {
+			fprintf(f,MACSTR ", %s, %d\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand);
+		}
+#endif /* CONFIG_TAXONOMY */
+#ifndef CONFIG_TAXONOMY
 		fprintf(f,MACSTR ", %s, %d\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand);
+#endif /* CONFIG_TAXONOMY */
 		fclose(f);
 	}
 }
@@ -654,7 +674,8 @@ void sta_track_expire(struct hostapd_iface *iface, int force)
 }
 
 
-static struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface,
+//static struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface, //MANA
+struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface,
 					       const u8 *addr)
 {
 	struct hostapd_sta_info *info;
@@ -865,10 +886,22 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 		if ((sta = ap_get_sta(hapd, mgmt->sa)) != NULL) {
 			taxonomy_sta_info_probe_req(hapd, sta, ie, ie_len);
+			//start mana - JUST CHECK TAXONOMY IN OUTPUT
+			char reply[512] = "";
+			size_t reply_len = 512;
+			retrieve_sta_taxonomy(hapd, sta, reply, reply_len);
+			wpa_printf(MSG_DEBUG, "MANA TAXONOMY STA '%s'", reply);
+			//END MANA
 		} else if ((info = sta_track_get(hapd->iface,
 						 mgmt->sa)) != NULL) {
 			taxonomy_hostapd_sta_info_probe_req(hapd, info,
 							    ie, ie_len);
+			//start mana - JUST CHECK TAXONOMY IN OUTPUT
+			char reply[512] = "";
+			size_t reply_len = 512;
+			retrieve_hostapd_sta_taxonomy(hapd, info, reply, reply_len);
+			wpa_printf(MSG_DEBUG, "MANA TAXONOMY STA '%s'", reply);
+			//END MANA
 		}
 	}
 #endif /* CONFIG_TAXONOMY */
@@ -893,24 +926,25 @@ void handle_probe_req(struct hostapd_data *hapd,
  	if (res == EXACT_SSID_MATCH) { //Probed for configured address
  		if (hapd->iconf->enable_mana) {
  			wpa_printf(MSG_INFO,"MANA - Directed probe request for actual/legitimate SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
+			log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
  		} 
  	} else if (res == NO_SSID_MATCH) { //Probed for unseen SSID
  		if (hapd->iconf->enable_mana) {
  			wpa_printf(MSG_INFO,"MANA - Directed probe request for foreign SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
+
  			if (hapd->iconf->mana_loud) {
- 				// Loud mode; Check if the SSID probed for is in the hash for this STA
+				log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa); //TODO: Limit these entries to one per unique MAC:SSID combination
+ 				// Loud mode; Check if the SSID probed for is in the hash
  				struct mana_ssid *d = NULL;
  				HASH_FIND_STR(mana_ssidhash, wpa_ssid_txt(elems.ssid, elems.ssid_len), d);
  				if (d == NULL) {
- 					wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) for STA " MACSTR " to the hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
+ 					wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) for STA " MACSTR " to the (Loud Mode) hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
  					d = (struct mana_ssid*)os_malloc(sizeof(struct mana_ssid));
  					os_memcpy(d->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
  					os_memcpy(d->ssid, elems.ssid, elems.ssid_len);
  					d->ssid_len = elems.ssid_len;
  					//os_memcpy(d->sta_addr, mgmt->sa, ETH_ALEN);
  					HASH_ADD_STR(mana_ssidhash, ssid_txt, d);
- 
- 					log_ssid(elems.ssid, elems.ssid_len, mgmt->sa);
  				}
  			} else { //Not loud mode, Check if the STA probing is in our hash
  				struct mana_mac *newsta = NULL;
@@ -932,8 +966,7 @@ void handle_probe_req(struct hostapd_data *hapd,
  					os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
  					newssid->ssid_len = elems.ssid_len;
  					HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
- 
- 					log_ssid(elems.ssid, elems.ssid_len, mgmt->sa);
+ 					log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
  				} else { //Seen MAC, check if SSID is new
  					// Check if the SSID probed for is in the hash for this STA
  					struct mana_ssid *newssid = NULL;
@@ -944,8 +977,7 @@ void handle_probe_req(struct hostapd_data *hapd,
  						os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
  						newssid->ssid_len = elems.ssid_len;
  						HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
- 
- 						log_ssid(elems.ssid, elems.ssid_len, mgmt->sa);
+ 						log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
  					}
  				}
  			}
@@ -963,7 +995,8 @@ void handle_probe_req(struct hostapd_data *hapd,
  	} else { //Probed for wildcard i.e. WILDCARD_SSID_MATCH
  		if (hapd->iconf->enable_mana) {
  			wpa_printf(MSG_DEBUG,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
- 			iterate = 1; //iterate through hash emitting multiple probe responses
+			iterate = 1; //iterate through hash emitting multiple probe responses
+			log_ssid(hapd, "<Broadcast>", 11, mgmt->sa); //TODO: Limit these entries to one per MAC
  		}
   	}
  //MANA END
