@@ -880,127 +880,90 @@ void handle_probe_req(struct hostapd_data *hapd,
 #endif /* CONFIG_P2P */
 
 #ifdef CONFIG_TAXONOMY
-	{
+	
 		struct sta_info *sta;
 		struct hostapd_sta_info *info;
 
 		if ((sta = ap_get_sta(hapd, mgmt->sa)) != NULL) {
 			taxonomy_sta_info_probe_req(hapd, sta, ie, ie_len);
-			//start mana - JUST CHECK TAXONOMY IN OUTPUT
+			//START MANA - JUST CHECK TAXONOMY IN OUTPUT
 			char reply[512] = "";
 			size_t reply_len = 512;
 			retrieve_sta_taxonomy(hapd, sta, reply, reply_len);
-			wpa_printf(MSG_DEBUG, "MANA TAXONOMY STA '%s'", reply);
+			wpa_printf(MSG_MSGDUMP, "MANA TAXONOMY STA '%s'", reply);
 			//END MANA
 		} else if ((info = sta_track_get(hapd->iface,
 						 mgmt->sa)) != NULL) {
 			taxonomy_hostapd_sta_info_probe_req(hapd, info,
 							    ie, ie_len);
-			//start mana - JUST CHECK TAXONOMY IN OUTPUT
+			//START MANA - JUST CHECK TAXONOMY IN OUTPUT
 			char reply[512] = "";
 			size_t reply_len = 512;
 			retrieve_hostapd_sta_taxonomy(hapd, info, reply, reply_len);
-			wpa_printf(MSG_DEBUG, "MANA TAXONOMY STA '%s'", reply);
+			wpa_printf(MSG_MSGDUMP, "MANA TAXONOMY STA '%s'", reply);
 			//END MANA
 		}
-	}
+	
 #endif /* CONFIG_TAXONOMY */
 
 	res = ssid_match(hapd, elems.ssid, elems.ssid_len,
 			 elems.ssid_list, elems.ssid_list_len);
-	//if (res == NO_SSID_MATCH) {
-		//if (!(mgmt->da[0] & 0x01)) {
-			//wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
-				   //" for foreign SSID '%s' (DA " MACSTR ")%s",
-				   //MAC2STR(mgmt->sa),
-				   //wpa_ssid_txt(elems.ssid, elems.ssid_len),
-				   //MAC2STR(mgmt->da),
-				   //elems.ssid_list ? " (SSID list)" : "");
-		//}
-		//return;
-	//}
-	// MANA START
+	//MANA START
  	// todo handle ssid_list see ssid_match for code
  	// todo change emit code below (global flag?)
-	// todo grab taxonomy info for output
- 	if (res == EXACT_SSID_MATCH) { //Probed for configured address
- 		if (hapd->iconf->enable_mana) {
- 			wpa_printf(MSG_INFO,"MANA - Directed probe request for actual/legitimate SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
-			log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
- 		} 
- 	} else if (res == NO_SSID_MATCH) { //Probed for unseen SSID
- 		if (hapd->iconf->enable_mana) {
- 			wpa_printf(MSG_INFO,"MANA - Directed probe request for foreign SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
+	if (!hapd->iconf->enable_mana && res == NO_SSID_MATCH) {
+		if (!(mgmt->da[0] & 0x01)) {
+			wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
+				   " for foreign SSID '%s' (DA " MACSTR ")%s",
+				   MAC2STR(mgmt->sa),
+				   wpa_ssid_txt(elems.ssid, elems.ssid_len),
+				   MAC2STR(mgmt->da),
+				   elems.ssid_list ? " (SSID list)" : "");
+		}
+		return;
+	}	else if (hapd->iconf->enable_mana) {
+ 		struct mana_ssid *newssid = NULL;
+ 		struct mana_mac *newsta = NULL;
+		if (!hapd->iconf->mana_loud) {
+			//Not loud mode, Check if the STA probing is in our hash
+ 			HASH_FIND(hh,mana_machash, mgmt->sa, 6, newsta);
+ 			if (newsta == NULL) { //STA MAC not seen before adding to hash
+ 				wpa_printf(MSG_DEBUG, "MANA - Adding STA " MACSTR " to the hash.", MAC2STR(mgmt->sa));
+ 				newsta = (struct mana_mac*)os_malloc(sizeof(struct mana_mac));
+ 				os_memcpy(newsta->sta_addr, mgmt->sa, ETH_ALEN);
+ 				newsta->ssids = NULL;
+ 				HASH_ADD(hh,mana_machash, sta_addr, 6, newsta);
+			}
+			//Not loud, check station's ssid hash
+ 			HASH_FIND_STR(newsta->ssids, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
+		} else {
+			//Loud mode check ssidhash
+ 			HASH_FIND_STR(mana_ssidhash, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
+		}
 
- 			if (hapd->iconf->mana_loud) {
-				log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa); //TODO: Limit these entries to one per unique MAC:SSID combination
- 				// Loud mode; Check if the SSID probed for is in the hash
- 				struct mana_ssid *d = NULL;
- 				HASH_FIND_STR(mana_ssidhash, wpa_ssid_txt(elems.ssid, elems.ssid_len), d);
- 				if (d == NULL) {
- 					wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) for STA " MACSTR " to the (Loud Mode) hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
- 					d = (struct mana_ssid*)os_malloc(sizeof(struct mana_ssid));
- 					os_memcpy(d->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
- 					os_memcpy(d->ssid, elems.ssid, elems.ssid_len);
- 					d->ssid_len = elems.ssid_len;
- 					//os_memcpy(d->sta_addr, mgmt->sa, ETH_ALEN);
- 					HASH_ADD_STR(mana_ssidhash, ssid_txt, d);
- 				}
- 			} else { //Not loud mode, Check if the STA probing is in our hash
- 				struct mana_mac *newsta = NULL;
- 				//char strmac[18];
- 				//snprintf(strmac, sizeof(strmac), MACSTR, MAC2STR(mgmt->sa));
- 				HASH_FIND(hh,mana_machash, mgmt->sa, 6, newsta);
- 
- 				if (newsta == NULL) { //MAC not seen before adding to hash
- 					wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) for STA " MACSTR " to the hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
- 					//Add STA	
- 					newsta = (struct mana_mac*)os_malloc(sizeof(struct mana_mac));
- 					os_memcpy(newsta->sta_addr, mgmt->sa, ETH_ALEN);
- 					//os_memcpy(newsta->mac_txt, strmac, sizeof(strmac));
- 					newsta->ssids = NULL;
- 					HASH_ADD(hh,mana_machash, sta_addr, 6, newsta);
- 					//Add SSID to subhash
- 					struct mana_ssid *newssid = os_malloc(sizeof(struct mana_ssid));
- 					os_memcpy(newssid->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
- 					os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
- 					newssid->ssid_len = elems.ssid_len;
- 					HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
- 					log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
- 				} else { //Seen MAC, check if SSID is new
- 					// Check if the SSID probed for is in the hash for this STA
- 					struct mana_ssid *newssid = NULL;
- 					HASH_FIND_STR(newsta->ssids, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
- 					if (newssid == NULL) { //SSID not found, add to sub hash
- 						newssid = (struct mana_ssid*)os_malloc(sizeof(struct mana_ssid));
- 						os_memcpy(newssid->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
- 						os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
- 						newssid->ssid_len = elems.ssid_len;
- 						HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
- 						log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
- 					}
- 				}
- 			}
- 		} else { //No SSID Match and no mana behave as normal
- 			if (!(mgmt->da[0] & 0x01)) {
- 				wpa_printf(MSG_DEBUG, "Probe Request from " MACSTR
-  				   " for foreign SSID '%s' (DA " MACSTR ")%s",
-  				   MAC2STR(mgmt->sa),
-  				   wpa_ssid_txt(elems.ssid, elems.ssid_len),
-  				   MAC2STR(mgmt->da),
-  				   elems.ssid_list ? " (SSID list)" : "");
- 			}
- 			return;
-  		}
- 	} else { //Probed for wildcard i.e. WILDCARD_SSID_MATCH
- 		if (hapd->iconf->enable_mana) {
- 			wpa_printf(MSG_DEBUG,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
+		if (newssid == NULL && res != WILDCARD_SSID_MATCH) {
+			//Probed for SSID not found (and not Broadcast) add SSID to hash
+ 			wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) from STA " MACSTR " to the hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
+ 			struct mana_ssid *newssid = os_malloc(sizeof(struct mana_ssid));
+ 			os_memcpy(newssid->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
+ 			os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
+ 			newssid->ssid_len = elems.ssid_len;
+			if (hapd->iconf->mana_loud)
+ 					HASH_ADD_STR(mana_ssidhash, ssid_txt, newssid);
+			else
+ 				HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
+		}
+
+		if (res ==  WILDCARD_SSID_MATCH) {
+			wpa_printf(MSG_DEBUG,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
 			iterate = 1; //iterate through hash emitting multiple probe responses
-			log_ssid(hapd, "<Broadcast>", 11, mgmt->sa); //TODO: Limit these entries to one per MAC
+			log_ssid(hapd, (const u8 *)"<Broadcast>", 11, mgmt->sa);
+		} else {
+ 			wpa_printf(MSG_INFO,"MANA - Directed probe request for SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
+			log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
  		}
-  	}
- //MANA END
-
+	}
+	//MANA END
 
 #ifdef CONFIG_INTERWORKING
 	if (hapd->conf->interworking &&
@@ -1080,18 +1043,17 @@ void handle_probe_req(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
 
-	//MANA Start
+
+	//MANA Start - this is just the same original code repeated twice, except MANA has a hash iterator around it
 	if (!iterate) { //MANA Either we're not in mana or it's not a broadcast probe
 		if (!hapd->iconf->enable_mana) //MANA if *not* mana, respond with the proper ssid
 			resp = hostapd_gen_probe_resp(hapd, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len, mgmt, elems.p2p != NULL, &resp_len);
 		else {
-			wpa_printf(MSG_INFO, "MANA - Attempting to generate response : %.*s (%d) for STA " MACSTR, elems.ssid_len, elems.ssid, elems.ssid_len, MAC2STR(mgmt->sa));
+			wpa_printf(MSG_DEBUG, "MANA - Attempting to generate response : %.*s (%d) for STA " MACSTR, elems.ssid_len, elems.ssid, elems.ssid_len, MAC2STR(mgmt->sa));
 			resp = hostapd_gen_probe_resp(hapd, elems.ssid, elems.ssid_len, mgmt, elems.p2p != NULL, &resp_len);
 		}
-		if (resp == NULL) {
-			wpa_printf(MSG_INFO, "handle_probe_req: send failed"); //MANA
+		if (resp == NULL)
 			return;
-		}
 
 		/*
 	 	* If this is a broadcast probe request, apply no ack policy to avoid
@@ -1117,77 +1079,64 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 		if (ret < 0)
 			wpa_printf(MSG_INFO, "handle_probe_req: send failed");
+
 		os_free(resp);
-	} else { //MANA iterate set go through the hash
-		struct ieee80211_mgmt *resp2;
-		size_t resp2_len;
+
+		wpa_printf(MSG_EXCESSIVE, "STA " MACSTR " sent probe request for %s "
+			   "SSID", MAC2STR(mgmt->sa),
+			   elems.ssid_len == 0 ? "broadcast" : "our");
+	} else { 
+		//MANA iterate
+		struct mana_ssid *khash;
 		struct mana_ssid *k;
-		if (hapd->iconf->mana_loud) { // MANA Loud mode, iterate through the hash
-			for ( k = mana_ssidhash; k != NULL; k = (struct mana_ssid*)(k->hh.next)) {
-				wpa_printf(MSG_DEBUG, "MANA - Attempting to generate LOUD Broadcast response : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(mgmt->sa));
-				resp2 = (struct ieee80211_mgmt*)hostapd_gen_probe_resp(hapd, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
-				if (resp2 == NULL) {
-					wpa_printf(MSG_ERROR, "MANA - Could not generate SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
-				} else {
-					// MANA this needs to be moved into a function to avoid code repeats, but I worry it'll make managing patches against upstream harder
-					noack = !!(res == WILDCARD_SSID_MATCH && is_broadcast_ether_addr(mgmt->da));
+		struct mana_mac *newsta = NULL;
 
-					csa_offs_len = 0;
-					if (hapd->csa_in_progress) {
-						if (hapd->cs_c_off_proberesp)
-							csa_offs[csa_offs_len++] = hapd->cs_c_off_proberesp;
-
-						if (hapd->cs_c_off_ecsa_proberesp)
-							csa_offs[csa_offs_len++] = hapd->cs_c_off_ecsa_proberesp;
-					}
-					if (hostapd_drv_send_mlme_csa(hapd, resp2, resp2_len, noack, 
-									csa_offs_len ? csa_offs : NULL,
-									csa_offs_len) < 0) {
-						wpa_printf(MSG_ERROR, "MANA - Failed sending probe response for SSID %s (%zu)", k->ssid_txt, k->ssid_len);
-					} else
-						wpa_printf(MSG_DEBUG, "MANA - Successfully generated SSID response for %s (len %zu) to station : " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(resp2->da)); 
-					os_free(resp2);
-				}
-			}
-		} else { // MANA Not loud mode, only send for one mac
-			struct mana_mac *newsta = NULL;
-			char strmac[18];
-			snprintf(strmac, sizeof(strmac), MACSTR, MAC2STR(mgmt->sa));
+		// Select appropriate hash to iterate
+		if (hapd->iconf->mana_loud)
+			khash = mana_ssidhash;
+		else {
+			// Find specific MAC's SSID hash
 			HASH_FIND(hh, mana_machash, mgmt->sa, 6, newsta);
-			if (newsta != NULL) { 
-				for ( k = newsta->ssids; k != NULL; k = (struct mana_ssid*)(k->hh.next)) {
-					wpa_printf(MSG_INFO, "MANA - Attempting to generate Broadcast response : %s (%zu) for STA %s", k->ssid_txt, k->ssid_len, strmac);
-					resp2 = (struct ieee80211_mgmt*)hostapd_gen_probe_resp(hapd, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp2_len);
-					if (resp2 == NULL) {
-						wpa_printf(MSG_ERROR, "MANA - Could not generate SSID response for %s (%zu)", k->ssid_txt, k->ssid_len);
-					} else {
-						noack = !!(res == WILDCARD_SSID_MATCH && is_broadcast_ether_addr(mgmt->da));
-
-						csa_offs_len = 0;
-						if (hapd->csa_in_progress) {
-							if (hapd->cs_c_off_proberesp)
-								csa_offs[csa_offs_len++] = hapd->cs_c_off_proberesp;
-
-							if (hapd->cs_c_off_ecsa_proberesp)
-								csa_offs[csa_offs_len++] = hapd->cs_c_off_ecsa_proberesp;
-						}
-						if (hostapd_drv_send_mlme_csa(hapd, resp2, resp2_len, noack,
-										csa_offs_len ? csa_offs : NULL,
-										csa_offs_len) < 0) {
-							wpa_printf(MSG_ERROR, "MANA - Failed sending probe response for SSID %s (%zu)", k->ssid_txt, k->ssid_len);
-						} else
-							wpa_printf(MSG_DEBUG, "MANA - Successfully generated SSID response for %s (len %zu) to station : " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(resp2->da)); 
-						os_free(resp2);
-					}
-				}
-			}
+			khash = newsta->ssids;
 		}
-	}
-	// MANA END
+		for ( k = khash; k != NULL; k = (struct mana_ssid*)(k->hh.next)) {
+			wpa_printf(MSG_DEBUG, "MANA: Generating Broadcast response : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(mgmt->sa));
+			resp = hostapd_gen_probe_resp(hapd, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp_len);
+			if (resp == NULL)
+				return;
 
-	wpa_printf(MSG_EXCESSIVE, "STA " MACSTR " sent probe request for %s "
-		   "SSID", MAC2STR(mgmt->sa),
-		   elems.ssid_len == 0 ? "broadcast" : "our");
+			/*
+	 		* If this is a broadcast probe request, apply no ack policy to avoid
+	 		* excessive retries.
+	 		*/
+			noack = !!(res == WILDCARD_SSID_MATCH &&
+		   		is_broadcast_ether_addr(mgmt->da));
+
+			csa_offs_len = 0;
+			if (hapd->csa_in_progress) {
+				if (hapd->cs_c_off_proberesp)
+					csa_offs[csa_offs_len++] =
+						hapd->cs_c_off_proberesp;
+
+				if (hapd->cs_c_off_ecsa_proberesp)
+					csa_offs[csa_offs_len++] =
+						hapd->cs_c_off_ecsa_proberesp;
+			}
+
+			ret = hostapd_drv_send_mlme_csa(hapd, resp, resp_len, noack,
+							csa_offs_len ? csa_offs : NULL,
+							csa_offs_len);
+
+			if (ret < 0)
+				wpa_printf(MSG_ERROR, "handle_probe_req: send failed");
+
+			os_free(resp);
+
+			wpa_printf(MSG_EXCESSIVE, "MANA: STA " MACSTR " sent probe request for %s "
+			   	"SSID", MAC2STR(mgmt->sa), k->ssid);
+		} //for
+	} //MANA iterate END
+
 }
 
 static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
