@@ -1773,6 +1773,11 @@ static void openssl_tls_cert_event(struct tls_connection *conn,
 
 static int tls_verify_cb(int preverify_ok, X509_STORE_CTX *x509_ctx)
 {
+  //MANA
+  #ifdef EAP_SERVER_UNAUTH_TLS
+    return 1;
+  #endif
+  //END MANA
 	char buf[256];
 	X509 *err_cert;
 	int err, depth;
