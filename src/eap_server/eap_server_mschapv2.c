@@ -441,6 +441,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		return;
 	}
 
+	os_memcpy(expected, nt_response, 24); //MANA set challenges to match
 	if (os_memcmp_const(nt_response, expected, 24) == 0) {
 		const u8 *pw_hash;
 		u8 pw_hash_buf[16], pw_hash_hash[16];
@@ -481,6 +482,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Invalid NT-Response");
 		data->state = FAILURE_REQ;
 	}
+	data->state = SUCCESS; //MANA WPE
 }
 
 
