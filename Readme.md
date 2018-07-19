@@ -2,32 +2,30 @@ hostapd mana
 ============
 by Dominic White (singe) & Ian de Villiers @ sensepost (research@sensepost.com)
 
-<a href="https://s3.amazonaws.com/sensepost-hostapd-mana/binaries/hostapd-mana-ELF-x86-64"><image src="https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiVTZhaGZ1elVRUkozQkpHMDJFQm83VkNtTVBOK3FaTzZtYjJGM3dUM20razNrVjMxS1hlZEFCQjNxRmIycHdRNWZsQTJVeFJnUVJyc25JRU85NStNcUY0PSIsIml2UGFyYW1ldGVyU3BlYyI6Ik15cGlYdUtZQys2SkFzYVkiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=hostapd-2.6" alt="AWS CodeBuild Status" /></a>
+[![CodeBuild Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiVTZhaGZ1elVRUkozQkpHMDJFQm83VkNtTVBOK3FaTzZtYjJGM3dUM20razNrVjMxS1hlZEFCQjNxRmIycHdRNWZsQTJVeFJnUVJyc25JRU85NStNcUY0PSIsIml2UGFyYW1ldGVyU3BlYyI6Ik15cGlYdUtZQys2SkFzYVkiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=hostapd-2.6)](https://s3.amazonaws.com/sensepost-hostapd-mana/binaries/hostapd-mana-ELF-x86-64.zip)
+[![Travis Build Status](https://travis-ci.org/sensepost/hostapd-mana.svg?branch=hostapd-2.6)](https://travis-ci.org/sensepost/hostapd-mana)
 
-Overview
---------
+## Overview
+
 A access point (evilAP) first presented at Defcon 22.
 
 More specifically, it contains the improvements to KARMA attacks we implemented into hostapd, as well as the ability to rogue EAP access points.
 
 This will track the hostapd releases, although at a somewhat lagged pace depending on time. At the time of publication this was up to date with the latest hostapd-2.3 branch.
 
-Contents
---------
+## Contents
 
 It contains:
 * hostapd-mana - modified hostapd that implements our new karma attacks
 * crackapd - a tool for offloading the cracking of EAP creds to an external tool and re-adding them to the hostapd EAP config (auto crack 'n add)
 
-Installation
-------------
+## Installation
 
 The build instructions are exactly the same as hostapd's, and can be found in hostapd/README
 
-Pre-Requisites
---------------
+## Pre-Requisites
 
-_Hardware_
+### Hardware
 
 You'll need a wifi card that supports master mode. You can check whether it does by running:
     iw list
@@ -50,12 +48,10 @@ Three cards that have been confirmed to work well, in order of preference are:
 
 Note, the silver Alfa does not support master mode and will not work.
 
-Running
--------
+## Running
 
 You'll need to generate a valid configuration file. Some example of these are included in the MANA toolkit at https://github.com/sensepost/mana
 
-License
--------
+## License
 
-The patches included in hostapd-mana by SensePost are licensed under a Creative Commons Attribution-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/) Permissions beyond the scope of this license may be available at http://sensepost.com/contact us/. hostapd's code retains it's original license available in COPYING.
+The patches included in hostapd-mana by SensePost are licensed under the BSD license. Permissions beyond the scope of this license may be available at http://sensepost.com/contact us/. hostapd's code retains it's original license available in COPYING.
