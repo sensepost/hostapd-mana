@@ -1,13 +1,12 @@
 hostapd-mana
 ============
-by Dominic White (singe) & Ian de Villiers @ sensepost (research@sensepost.com)
 
 [![CodeBuild Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiVTZhaGZ1elVRUkozQkpHMDJFQm83VkNtTVBOK3FaTzZtYjJGM3dUM20razNrVjMxS1hlZEFCQjNxRmIycHdRNWZsQTJVeFJnUVJyc25JRU85NStNcUY0PSIsIml2UGFyYW1ldGVyU3BlYyI6Ik15cGlYdUtZQys2SkFzYVkiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=hostapd-2.6)](https://s3.amazonaws.com/sensepost-hostapd-mana/binaries/hostapd-mana-ELF-x86-64.zip)
 [![Travis Build Status](https://travis-ci.org/sensepost/hostapd-mana.svg?branch=hostapd-2.6)](https://travis-ci.org/sensepost/hostapd-mana)
 
 ## Overview
 
-A feature fool rogue access point first presented at [Defcon 22](https://www.youtube.com/watch?v=i2-jReLBSVk).
+A featureful rogue access point first presented at [Defcon 22](https://www.youtube.com/watch?v=i2-jReLBSVk) by Dominic White ([@singe](https://twitter.com/singe)) & Ian de Villiers @ sensepost (research@sensepost.com)
 
 ## Documentation
 
