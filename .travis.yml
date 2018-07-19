@@ -2,5 +2,9 @@ language: c
 compiler:
     - clang
     - gcc
-install: apt-get --yes install libnl-genl-3-dev libssl-dev git build-essential
 script: make -C hostapd
+addons:
+  apt:
+    packages:
+    - libnl-genl-3-dev
+    - libssl-dev
