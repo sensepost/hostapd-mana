@@ -471,7 +471,7 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 	/* hardware or low-level driver will setup seq_ctrl and timestamp */
 	resp->u.probe_resp.capab_info =
-		host_to_le16(hostapd_own_capab_info(hapd)); //MANA - FOLLOW
+		host_to_le16(hostapd_own_capab_info(hapd));
 
 	pos = resp->u.probe_resp.variable;
 	*pos++ = WLAN_EID_SSID;
@@ -921,7 +921,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 				   elems.ssid_list ? " (SSID list)" : "");
 		}
 		return;
-	}	else if (hapd->iconf->enable_mana) {
+	} else if (hapd->iconf->enable_mana) {
  		struct mana_ssid *newssid = NULL;
  		struct mana_mac *newsta = NULL;
 		if (!hapd->iconf->mana_loud) {
@@ -949,7 +949,7 @@ void handle_probe_req(struct hostapd_data *hapd,
  			os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
  			newssid->ssid_len = elems.ssid_len;
 			if (hapd->iconf->mana_loud)
- 					HASH_ADD_STR(mana_ssidhash, ssid_txt, newssid);
+ 				HASH_ADD_STR(mana_ssidhash, ssid_txt, newssid);
 			else
  				HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
 		}
@@ -1536,7 +1536,7 @@ int ieee802_11_set_beacon(struct hostapd_data *hapd)
 	//wpa_printf(MSG_INFO, "ZZZZ : Sending Hidden AP: %s", params2.ssid);
 	//res = hostapd_drv_set_ap(hapd, &params2);
 	//hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
-	//  MANA - End Beacon Stuffs here
+	//  MANA - End Beacon Stuff here
 	if (res)
 		wpa_printf(MSG_ERROR, "Failed to set beacon parameters");
 	else
