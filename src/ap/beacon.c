@@ -1098,7 +1098,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 			// Find specific MAC's SSID hash
 			HASH_FIND(hh, mana_machash, mgmt->sa, 6, newsta);
 			if (newsta == NULL)
-				return
+				return;
 			khash = newsta->ssids;
 		}
 		for ( k = khash; k != NULL; k = (struct mana_ssid*)(k->hh.next)) {
