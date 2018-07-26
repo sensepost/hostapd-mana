@@ -934,33 +934,36 @@ void handle_probe_req(struct hostapd_data *hapd,
  				newsta->ssids = NULL;
  				HASH_ADD(hh,mana_machash, sta_addr, 6, newsta);
 			}
-			//Not loud, check station's ssid hash
- 			HASH_FIND_STR(newsta->ssids, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
+		}
+		if (res != WILDCARD_SSID_MATCH) {
+			//Directed probe, not Broadcast, check the SSID
+			if (hapd->iconf->mana_loud) {
+				//Loud mode check ssidhash
+				HASH_FIND_STR(mana_ssidhash, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
+			} else {
+				//Not loud, check station's ssid hash
+				HASH_FIND_STR(newsta->ssids, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
+			}
+
+			if (newssid == NULL) {
+				//Probed for SSID not found (and not Broadcast) add SSID to hash
+				wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) from STA " MACSTR " to the hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
+				struct mana_ssid *newssid = os_malloc(sizeof(struct mana_ssid));
+				os_memcpy(newssid->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
+				os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
+				newssid->ssid_len = elems.ssid_len;
+				if (hapd->iconf->mana_loud)
+					HASH_ADD_STR(mana_ssidhash, ssid_txt, newssid);
+				else
+					HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
+			}
+ 			wpa_printf(MSG_INFO,"MANA - Directed probe request for SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
+			log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
 		} else {
-			//Loud mode check ssidhash
- 			HASH_FIND_STR(mana_ssidhash, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
-		}
-
-		if (newssid == NULL && res != WILDCARD_SSID_MATCH) {
-			//Probed for SSID not found (and not Broadcast) add SSID to hash
- 			wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) from STA " MACSTR " to the hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
- 			struct mana_ssid *newssid = os_malloc(sizeof(struct mana_ssid));
- 			os_memcpy(newssid->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
- 			os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
- 			newssid->ssid_len = elems.ssid_len;
-			if (hapd->iconf->mana_loud)
- 				HASH_ADD_STR(mana_ssidhash, ssid_txt, newssid);
-			else
- 				HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
-		}
-
-		if (res ==  WILDCARD_SSID_MATCH) {
+			//Broadcast probe
 			wpa_printf(MSG_DEBUG,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
 			iterate = 1; //iterate through hash emitting multiple probe responses
 			log_ssid(hapd, (const u8 *)"<Broadcast>", 11, mgmt->sa);
-		} else {
- 			wpa_printf(MSG_INFO,"MANA - Directed probe request for SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
-			log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
  		}
 	}
 	//MANA END
