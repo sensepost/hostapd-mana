@@ -30,8 +30,9 @@
 #include "hs20.h"
 #include "dfs.h"
 #include "taxonomy.h"
-
 // MANA START
+#include "common/mana.h" //MANA
+
 struct mana_mac *mana_machash = NULL;
 struct mana_ssid *mana_ssidhash = NULL;
 // MANA END
@@ -86,11 +87,12 @@ static u8 * hostapd_eid_bss_load(struct hostapd_data *hapd, u8 *eid, size_t len)
 }
 
 //Start MANA
+//Log output of observed MACs & SSIDs
 static void log_ssid(struct hostapd_data *hapd, const u8 *ssid, size_t ssid_len, const u8 *mac) {
-	//Quick hack to output observed MACs & SSIDs
-	//TODO: Fix this so it works in loud mode, right now will only log an SSID once
-	char *mana_outfile = getenv("MANAOUTFILE");
-	FILE *f = fopen(mana_outfile, "a");
+	if (os_strcmp("NOT_SET", hapd->iconf->mana_outfile) == 0) {
+		return; // File not set, so don't log
+	}
+	FILE *f = fopen(hapd->iconf->mana_outfile, "a");
 	if (f != NULL) {
 		int rand=0;
 		if (mac[0] & 2) //Check if locally administered aka random MAC
@@ -117,7 +119,8 @@ static void log_ssid(struct hostapd_data *hapd, const u8 *ssid, size_t ssid_len,
 		fprintf(f,MACSTR ", %s, %d\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand);
 #endif /* CONFIG_TAXONOMY */
 		fclose(f);
-	}
+	} else
+		wpa_printf(MSG_ERROR, "MANA: Error writing to activity file %s", hapd->iconf->mana_outfile);
 }
 //End MANA
 
@@ -855,7 +858,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 		wpabuf_free(p2p);
 	}
 #endif /* CONFIG_P2P */
-	if (strcmp(hapd->iconf->mana_ssid_filter_file,"NOT_SET") && elems.ssid_len != 0) { //MANA
+	if (os_strcmp(hapd->iconf->mana_ssid_filter_file,"NOT_SET") && elems.ssid_len != 0) { //MANA
 		if (!hostapd_ssidlist_found(hapd->conf->ssid_filter, hapd->conf->num_ssid_filter, wpa_ssid_txt(elems.ssid, elems.ssid_len))) {
 			wpa_printf(MSG_DEBUG, "MANA - SSID '%s' not found in list.", wpa_ssid_txt(elems.ssid, elems.ssid_len));
 			return;

@@ -301,8 +301,8 @@ struct hostapd_bss_config {
 	int num_accept_mac;
 	struct mac_acl_entry *deny_mac;
 	int num_deny_mac;
-	struct ssid_filter_entry *ssid_filter;
-	int num_ssid_filter;
+	struct ssid_filter_entry *ssid_filter; //MANA
+	int num_ssid_filter; //MANA
 	int wds_sta;
 	int isolate;
 	int start_disabled;
@@ -616,8 +616,10 @@ struct hostapd_config {
 	int enable_mana;
 	int mana_loud;
 	int mana_macacl;
-	const char * mana_ssid_filter_file;
+	char * mana_outfile;
+	char * mana_ssid_filter_file;
 	int mana_wpe;
+	char * mana_credout;
 	// MANA END
 
 	u16 beacon_int;

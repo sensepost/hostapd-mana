@@ -2153,21 +2153,45 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (conf->mana_macacl) {
 			wpa_printf(MSG_DEBUG, "MANA: MAC ACLs extended to management frames");
 		}
+	} else if (os_strcmp(buf, "mana_outfile") == 0) {
+		char *tmp = malloc(strlen(pos));
+		strcpy(tmp,pos);
+		FILE *f = fopen(pos, "a");
+		if (!f) {
+			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open activity file '%s'", line, pos);
+			return 1;
+		}
+		fclose(f);
+		conf->mana_outfile = tmp;
+		wpa_printf(MSG_INFO, "MANA: Observed activity will be written to. File %s set.",tmp);
 	} else if (os_strcmp(buf, "mana_ssid_filter_file") == 0) {
+		char *tmp1 = malloc(strlen(pos));
+		strcpy(tmp1,pos);
 		if (hostapd_config_read_ssidlist(pos, &bss->ssid_filter, 
 					&bss->num_ssid_filter)) {
 			wpa_printf(MSG_ERROR, "Line %d: Failed to read SSID filter list '%s'", 
 				line, pos);
 			return 1;
 		}
-		conf->mana_ssid_filter_file = pos;
-		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",pos);
+		conf->mana_ssid_filter_file = tmp1;
+		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",tmp1);
 	} else if (os_strcmp(buf, "mana_wpe") == 0) {
 		int val = atoi(pos);
 		conf->mana_wpe = (val != 0);
 		if (conf->mana_wpe) {
 			wpa_printf(MSG_DEBUG, "MANA: WPE EAP mode enabled");
 		}
+	} else if (os_strcmp(buf, "mana_credout") == 0) {
+		char *tmp2 = malloc(strlen(pos));
+		strcpy(tmp2,pos);
+		FILE *f = fopen(pos, "a");
+		if (!f) {
+			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open credential out file '%s'", line, pos);
+			return 1;
+		}
+		fclose(f);
+		conf->mana_credout = tmp2;
+		wpa_printf(MSG_INFO, "MANA: Captured credentials will be written to. File %s set.",conf->mana_credout);
 	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
@@ -3631,10 +3655,6 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ftm_responder = atoi(pos);
 	} else if (os_strcmp(buf, "ftm_initiator") == 0) {
 		bss->ftm_initiator = atoi(pos);
-	} else if (os_strcmp(buf, "ennode") == 0) { //MANA
-		setenv("MANANODE", pos, 1);
-	} else if (os_strcmp(buf, "mana_outfile") == 0) { //MANA
-		setenv("MANAOUTFILE", pos, 1);
 	} else {
 		wpa_printf(MSG_ERROR,
 			   "Line %d: unknown configuration item '%s'",
@@ -3688,8 +3708,10 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	conf->enable_mana = 0; //default off;
 	conf->mana_loud = 0; //default off; 1 - advertise all networks across all devices, 0 - advertise specific networks to the device it was discovered from
 	conf->mana_macacl = 0; //default off; 0 - off, 1 - extend MAC ACL to management frames
+	conf->mana_outfile = "NOT_SET"; //default none
 	conf->mana_ssid_filter_file = "NOT_SET"; //default none
 	conf->mana_wpe = 0; //default off; 1 - dump credentials captured during EAP exchanges 0 - function as normal
+	conf->mana_credout = "NOT_SET"; //default non
 	// MANA END
 
 	while (fgets(buf, sizeof(buf), f)) {
