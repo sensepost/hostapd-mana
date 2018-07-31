@@ -155,7 +155,7 @@ static int hostapd_ctrl_iface_mana_change_ssid (struct hostapd_data *hapd,
 	// Not sure if the +1 is needed here or not
 	os_memcpy(hapd->conf->ssid.ssid, ssid, strlen(ssid) + 1);
 	ieee802_11_set_beacon(hapd);
-	wpa_printf(MSG_DEBUG, "CTRL_IFACE MANA Default SSID Changed");
+	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE DEFAULT SSID CHANGED");
 	return 0;
 }
 
@@ -195,6 +195,17 @@ static int hostapd_ctrl_iface_mana_macacl_enable_disable (struct hostapd_data *h
 	return 0;
 }
 
+static int hostapd_ctrl_iface_mana_wpe_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE WPE MODE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE WPE MODE DISABLED");
+	}
+	hapd->iconf->mana_wpe = status;
+
+	return 0;
+}
 // MANA END
 
 #ifdef CONFIG_IEEE80211W

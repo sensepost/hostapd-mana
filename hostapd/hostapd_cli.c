@@ -381,7 +381,7 @@ static int hostapd_cli_cmd_mana_loud_enable(struct wpa_ctrl *ctrl, int argc, cha
 }
 static int hostapd_cli_cmd_mana_get_mode(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
-	return wpa_ctrl_command(ctrl, "MANA_MODE");
+	return wpa_ctrl_command(ctrl, "MANA_MODE"); //GET_LOUD_MODE mana_loud
 }
 static int hostapd_cli_cmd_mana_macacl_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
@@ -394,6 +394,18 @@ static int hostapd_cli_cmd_mana_macacl_enable(struct wpa_ctrl *ctrl, int argc, c
 static int hostapd_cli_cmd_mana_get_aclmode(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "MANA_ACLMODE");
+}
+static int hostapd_cli_cmd_mana_wpe_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "WPE_DISABLE");
+}
+static int hostapd_cli_cmd_mana_wpe_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "WPE_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_wpe(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "WPE_MODE"); 
 }
 // END MANA
 
@@ -1429,15 +1441,18 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
  	{ "?", hostapd_cli_cmd_help, NULL, NULL }, //One of digininja's original changes :)
  	{ "mana_change_ssid", hostapd_cli_cmd_mana_change_ssid, NULL, "= change the default SSID for when mana is off" },
  	{ "mana_get_ssid", hostapd_cli_cmd_mana_get_ssid, NULL, "= get the default SSID for when mana is off" },
- 	{ "mana_get_state", hostapd_cli_cmd_mana_get_state, NULL, "= get the state of mana" },
+ 	{ "mana_get_state", hostapd_cli_cmd_mana_get_state, NULL, "= get whether mana is enabled or not" },
  	{ "mana_disable", hostapd_cli_cmd_mana_disable, NULL, "= disable mana" },
  	{ "mana_enable", hostapd_cli_cmd_mana_enable, NULL, "= enable mana" },
  	{ "mana_loud_off", hostapd_cli_cmd_mana_loud_disable, NULL, "= disable mana's loud mode" },
  	{ "mana_loud_on", hostapd_cli_cmd_mana_loud_enable, NULL, "= enable mana's loud mode" },
- 	{ "mana_loud_state", hostapd_cli_cmd_mana_get_mode, NULL, "= check mana's loud mode" },
+ 	{ "mana_loud_state",  hostapd_cli_cmd_mana_get_mode, NULL, "= check mana's loud mode" },
  	{ "mana_macacl_off", hostapd_cli_cmd_mana_macacl_disable, NULL, "= disable MAC ACLs at management frame level" },
  	{ "mana_macacl_on", hostapd_cli_cmd_mana_macacl_enable, NULL, "= enable MAC ACLs at management frame level" },
  	{ "mana_macacl_state", hostapd_cli_cmd_mana_get_aclmode, NULL, "= check mana's MAC ACL mode" },
+ 	{ "mana_wpe_off", hostapd_cli_cmd_mana_wpe_disable, NULL, "= disable mana's wpe mode" },
+ 	{ "mana_wpe_on", hostapd_cli_cmd_mana_wpe_enable, NULL, "= enable mana's wpe mode" },
+ 	{ "mana_wpe_state", hostapd_cli_cmd_mana_get_wpe, NULL, "= check mana's wpe mode" },
  // END MANA
 
 	{ NULL, NULL, NULL, NULL }

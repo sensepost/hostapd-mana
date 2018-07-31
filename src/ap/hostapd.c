@@ -45,6 +45,7 @@
 #include "ndisc_snoop.h"
 #include "neighbor_db.h"
 #include "rrm.h"
+#include "common/mana.h" //MANA
 
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
@@ -178,6 +179,7 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 
 	oldconf = hapd->iconf;
 	iface->conf = newconf;
+	mana.conf = newconf; //MANA
 
 	for (j = 0; j < iface->num_bss; j++) {
 		hapd = iface->bss[j];
@@ -2110,6 +2112,7 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 	if (conf == NULL)
 		goto fail;
 	hapd_iface->conf = conf;
+	mana.conf = conf; //MANA
 
 	hapd_iface->num_bss = conf->num_bss;
 	hapd_iface->bss = os_calloc(conf->num_bss,

@@ -13,6 +13,7 @@
 #include "crypto/random.h"
 #include "eap_i.h"
 #include <stdlib.h>
+#include "common/mana.h" //MANA
 
 struct eap_mschapv2_hdr {
 	u8 op_code; /* MSCHAPV2_OP_* */

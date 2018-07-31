@@ -2162,6 +2162,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		conf->mana_ssid_filter_file = pos;
 		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",pos);
+	} else if (os_strcmp(buf, "mana_wpe") == 0) {
+		int val = atoi(pos);
+		conf->mana_wpe = (val != 0);
+		if (conf->mana_wpe) {
+			wpa_printf(MSG_DEBUG, "MANA: WPE EAP mode enabled");
+		}
 	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
@@ -3683,6 +3689,7 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	conf->mana_loud = 0; //default off; 1 - advertise all networks across all devices, 0 - advertise specific networks to the device it was discovered from
 	conf->mana_macacl = 0; //default off; 0 - off, 1 - extend MAC ACL to management frames
 	conf->mana_ssid_filter_file = "NOT_SET"; //default none
+	conf->mana_wpe = 0; //default off; 1 - dump credentials captured during EAP exchanges 0 - function as normal
 	// MANA END
 
 	while (fgets(buf, sizeof(buf), f)) {

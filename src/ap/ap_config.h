@@ -617,6 +617,7 @@ struct hostapd_config {
 	int mana_loud;
 	int mana_macacl;
 	const char * mana_ssid_filter_file;
+	int mana_wpe;
 	// MANA END
 
 	u16 beacon_int;
