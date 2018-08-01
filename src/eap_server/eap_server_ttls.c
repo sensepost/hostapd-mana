@@ -16,6 +16,7 @@
 #include "eap_server/eap_tls_common.h"
 #include "eap_common/chap.h"
 #include "eap_common/eap_ttls.h"
+#include "common/mana.h" //MANA
 
 
 #define EAP_TTLS_VERSION 0
@@ -538,18 +539,18 @@ static void eap_ttls_process_phase2_pap(struct eap_sm *sm,
 		//return;
 	}
 
+//MANA Start
+	if (mana.conf->mana_wpe) {
+		// thanks gcp
+		eap_server_pap_rx_callback(sm, "TTLS-PAP",
+				sm->identity, sm->identity_len,
+				user_password, user_password_len);
+	}
+//MANA End
 	if (sm->user->password_len != user_password_len ||
 	    os_memcmp_const(sm->user->password, user_password,
 			    user_password_len) != 0) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/PAP: Invalid user password: %s", user_password);
-		//thanks gcp
-		char *ennode = getenv("MANANODE");
-		FILE *f = fopen(ennode, "a");
-		if (f != NULL) {
-			const char *hdr = "PAP";
-			fprintf(f, "%s|%*.*s|%s\n", hdr, 0, sm->identity_len, sm->identity, user_password);
-			fclose(f);
-		}
 		//eap_ttls_state(data, FAILURE);
 		//return;
 	}
@@ -607,39 +608,18 @@ static void eap_ttls_process_phase2_chap(struct eap_sm *sm,
 	}
 	os_free(chal);
 
+//MANA Start
+	if (mana.conf->mana_wpe) {
+		// First byte of password is the ID, rest is the hash
+		eap_server_chap_rx_callback(sm, "TTLS-CHAP",
+				sm->identity, sm->identity_len,
+				password+1, challenge, password[0]);
+	}
+//MANA End
+
 	/* MD5(Ident + Password + Challenge) */
 	chap_md5(password[0], sm->user->password, sm->user->password_len,
 		 challenge, challenge_len, hash);
-
-	wpa_hexdump(MSG_DEBUG, "MANA EAP-TTLS-CHAP: Challenge Hash", hash, CHAP_MD5_LEN);
-	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-CHAP) : Username:%s", sm->identity);
-	printf("MANA (EAP-TTLS-CHAP) : ");
-	int x;
-	for (x=0;x<CHAP_MD5_LEN;x++)
-                printf("%02x:",hash[x]);
-        printf("%02x\n",hash[CHAP_MD5_LEN-1]);
-
-        wpa_printf(MSG_INFO, "MANA (EAP-TTLS-CHAP) : Response");
-        printf("MANA (EAP-TTLS-CHAP) : ");
-        for (x=0;x<password_len;x++)
-                printf("%02x:",password[x]);
-        printf("%02x\n",password[password_len]);
-
-	char *ennode = getenv("MANANODE");
-	FILE *f = fopen(ennode, "a");
-	if (f != NULL) {
-		const char *hdr = "CHAP";
-		fprintf(f, "%s|%s|", hdr, sm->identity);
-		for (x = 0; x < CHAP_MD5_LEN; x++) {
-			fprintf(f, "%02x:", hash[x]);
-		}
-		fprintf(f, "%02x|", hash[CHAP_MD5_LEN-1]);
-		for (x = 0; x < password_len; x++) {
-			fprintf(f, "%02x:", password[x]);
-		}
-		fprintf(f, "%02x\n", password[password_len]);
-		fclose(f);
-	}
 
 	if (os_memcmp_const(hash, password + 1, EAP_TTLS_CHAP_PASSWORD_LEN) ==
 	    0) {
@@ -689,19 +669,23 @@ static void eap_ttls_process_phase2_mschap(struct eap_sm *sm,
 		return;
 	}
 
-#ifdef CONFIG_TESTING_OPTIONS
-	eap_server_mschap_rx_callback(sm, "TTLS-MSCHAP",
-				      sm->identity, sm->identity_len,
-				      challenge, response + 2 + 24);
-#endif /* CONFIG_TESTING_OPTIONS */
+//MANA Start
+//#ifdef CONFIG_TESTING_OPTIONS
+	if (mana.conf->mana_wpe) {
+		eap_server_mschap_rx_callback(sm, "TTLS-MSCHAP",
+					      sm->identity, sm->identity_len,
+					      challenge, response + 2 + 24);
+	}
+//#endif /* CONFIG_TESTING_OPTIONS */
+//MANA End
 
 	if (os_memcmp_const(challenge, chal, EAP_TTLS_MSCHAP_CHALLENGE_LEN)
 	    != 0 ||
 	    response[0] != chal[EAP_TTLS_MSCHAP_CHALLENGE_LEN]) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAP: Challenge mismatch");
-		//os_free(chal);
-		//eap_ttls_state(data, FAILURE);
-		//return;
+		os_free(chal);
+		eap_ttls_state(data, FAILURE);
+		return;
 	}
 	os_free(chal);
 
@@ -710,36 +694,6 @@ static void eap_ttls_process_phase2_mschap(struct eap_sm *sm,
 	else
 		nt_challenge_response(challenge, sm->user->password,
 				      sm->user->password_len, nt_response);
-
-	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAP) : Username:%s", sm->identity);
-	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAP) : Challenge");
-	printf("MANA (EAP-TTLS-MSCHAP) : ");
-	int x;
-	for (x=0;x<challenge_len;x++)
-                printf("%02x:",challenge[x]);
-        printf("%02x\n",challenge[challenge_len]);
-
-        wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAP) : Response");
-        printf("MANA (EAP-TTLS-MSCHAP) : ");
-        for (x=0;x<23;x++)
-                printf("%02x:",nt_response[x]);
-        printf("%02x\n",nt_response[23]);
-
-	char *ennode = getenv("MANANODE");
-	FILE *f = fopen(ennode, "a");
-	if (f != NULL) {
-		const char *hdr = "CHAP";
-		fprintf(f, "%s|%s|", hdr, sm->identity);
-		for (x = 0; x < challenge_len; x++) {
-			fprintf(f, "%02x:", challenge[x]);
-		}
-		fprintf(f, "%02x|", challenge[challenge_len]);
-		for (x = 0; x < 23; x++) {
-			fprintf(f, "%02x:", nt_response[x]);
-		}
-		fprintf(f, "%02x\n", nt_response[23]);
-		fclose(f);
-	}
 
 	if (os_memcmp_const(nt_response, response + 2 + 24, 24) == 0) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAP: Correct response");
@@ -763,7 +717,7 @@ static void eap_ttls_process_phase2_mschapv2(struct eap_sm *sm,
 					     u8 *response, size_t response_len)
 {
 	u8 *chal, *username, nt_response[24], *rx_resp, *peer_challenge,
-		*auth_challenge, challenge_hash1[8];
+		*auth_challenge;
 	size_t username_len, i;
 
 	if (challenge == NULL || response == NULL ||
@@ -848,40 +802,9 @@ static void eap_ttls_process_phase2_mschapv2(struct eap_sm *sm,
 	}
 
 	rx_resp = response + 2 + EAP_TTLS_MSCHAPV2_CHALLENGE_LEN + 8;
-	//MANA START
- 	challenge_hash(peer_challenge, auth_challenge, username, username_len, challenge_hash1);
- 	wpa_hexdump(MSG_DEBUG, "EAP-TTLS-MSCHAPV2: Challenge Hash", challenge_hash1, 8);
- 	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAPV2) : Username:%s", username);
- 	wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAPV2) : Challenge");
- 	printf("MANA (EAP-TTLS-MSCHAPV2) : ");
- 	int x;
- 	for (x=0;x<7;x++)
-                 printf("%02x:",challenge_hash1[x]);
-         printf("%02x\n",challenge_hash1[7]);
- 
-         wpa_printf(MSG_INFO, "MANA (EAP-TTLS-MSCHAPV2) : Response");
-         printf("MANA (EAP-TTLS-MSCHAPV2) : ");
-         for (x=0;x<23;x++)
-                 printf("%02x:",nt_response[x]);
-         printf("%02x\n",nt_response[23]);
- 
- 	char *ennode = getenv("MANANODE");
- 	FILE *f = fopen(ennode, "a");
- 	if (f != NULL) {
- 		const char *hdr = "CHAP";
- 		fprintf(f, "%s|%s|", hdr, username);
- 		for (x = 0; x < 7; x++) {
- 			fprintf(f, "%02x:", challenge_hash1[x]);
- 		}
- 		fprintf(f, "%02x|", challenge_hash1[7]);
- 		for (x = 0; x < 23; x++) {
- 			fprintf(f, "%02x:", nt_response[x]);
- 		}
- 		fprintf(f, "%02x\n", nt_response[23]);
- 		fclose(f);
- 	}
-	//MANA END
-#ifdef CONFIG_TESTING_OPTIONS
+//MANA Start
+//#ifdef CONFIG_TESTING_OPTIONS
+	if (mana.conf->mana_wpe)
 	{
 		u8 challenge2[8];
 
@@ -892,7 +815,8 @@ static void eap_ttls_process_phase2_mschapv2(struct eap_sm *sm,
 						      challenge2, rx_resp);
 		}
 	}
-#endif /* CONFIG_TESTING_OPTIONS */
+//#endif /* CONFIG_TESTING_OPTIONS */
+//MANA End
 	if (os_memcmp_const(nt_response, rx_resp, 24) == 0) {
 		wpa_printf(MSG_DEBUG, "EAP-TTLS/MSCHAPV2: Correct "
 			   "NT-Response");

