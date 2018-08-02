@@ -620,6 +620,7 @@ struct hostapd_config {
 	char * mana_ssid_filter_file;
 	int mana_wpe;
 	char * mana_credout;
+	int mana_eapsuccess;
 	// MANA END
 
 	u16 beacon_int;

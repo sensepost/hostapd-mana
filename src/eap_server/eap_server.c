@@ -164,29 +164,21 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 		 int phase2)
 {
 	struct eap_user *user;
-	struct eap_user *user2;
 	char ident = 't';
 
 	wpa_printf(MSG_INFO, "MANA EAP Identity Phase %d: %.*s", phase2, (int)identity_len, identity);
 
 	if (sm == NULL || sm->eapol_cb == NULL ||
-	    sm->eapol_cb->get_eap_user == NULL) {
+	    sm->eapol_cb->get_eap_user == NULL)
 		return -1;
-	}
 
 	eap_user_free(sm->user);
 	sm->user = NULL;
+
 	user = os_zalloc(sizeof(*user));
-	if (user == NULL) {
+	if (user == NULL)
 	    return -1;
-	}
-	user2 = os_zalloc(sizeof(*user2));
-	if (user2 == NULL) {
-		return -1;
-	}
-	if (sm->eapol_cb->get_eap_user(sm->eapol_ctx, identity, identity_len, phase2, user2) != 0) {
-		user2 = NULL;
-	}
+
 	if(phase2) {
 		identity = (const u8 *)&ident;
 		identity_len = 1;
@@ -196,14 +188,9 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 		eap_user_free(user);
 		return -1;
 	}
-	if (user2 != NULL) {
-		user->password = user2->password;
-		user->password_len = user2->password_len;
-	}
 
 	sm->user = user;
 	sm->user_eap_method_index = 0;
-
 
 	return 0;
 }

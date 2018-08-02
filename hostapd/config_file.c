@@ -2192,6 +2192,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		fclose(f);
 		conf->mana_credout = tmp2;
 		wpa_printf(MSG_INFO, "MANA: Captured credentials will be written to. File %s set.",conf->mana_credout);
+	} else if (os_strcmp(buf, "mana_eapsuccess") == 0) {
+		int val = atoi(pos);
+		conf->mana_eapsuccess = (val != 0);
+		if (conf->mana_eapsuccess) {
+			wpa_printf(MSG_DEBUG, "MANA: EAP success mode enabled");
+		}
 	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
@@ -3712,6 +3718,7 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	conf->mana_ssid_filter_file = "NOT_SET"; //default none
 	conf->mana_wpe = 0; //default off; 1 - dump credentials captured during EAP exchanges 0 - function as normal
 	conf->mana_credout = "NOT_SET"; //default non
+	conf->mana_eapsuccess = 0; //default off; 1 - allow clients to connect even with incorrect creds 0 - function as normal
 	// MANA END
 
 	while (fgets(buf, sizeof(buf), f)) {
