@@ -167,7 +167,7 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 	struct eap_user *user2;
 	char ident = 't';
 
-	wpa_printf(MSG_INFO, "MANA (EAP) : identity: %.*s", identity_len, identity);
+	wpa_printf(MSG_INFO, "MANA EAP Identity Phase %d: %.*s", phase2, (int)identity_len, identity);
 
 	if (sm == NULL || sm->eapol_cb == NULL ||
 	    sm->eapol_cb->get_eap_user == NULL) {
@@ -2055,13 +2055,13 @@ void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 				     challenge, sizeof(challenge), ':');
 		wpa_snprintf_hex_sep(hex_sep_response, sizeof(hex_sep_response), response, 24,
 				     ':');
-		wpa_printf(MSG_INFO, "[MANA %s ASLEAP user=%s] asleap -C %s -R %s",
+		wpa_printf(MSG_INFO, "MANA EAP %s ASLEAP user=%s | asleap -C %s -R %s",
 			   source, user, hex_sep_challenge, hex_sep_response);
 		wpa_snprintf_hex(hex_challenge, sizeof(hex_challenge), challenge, sizeof(challenge));
 		wpa_snprintf_hex(hex_response, sizeof(hex_response), response, 24);
-		wpa_printf(MSG_INFO, "[MANA %s JTR] %s:$NETNTLM$%s$%s:::::::",
+		wpa_printf(MSG_INFO, "MANA EAP %s JTR | %s:$NETNTLM$%s$%s:::::::",
 			   source, user, hex_challenge, hex_response);
-		wpa_printf(MSG_INFO, "[MANA %s HASHCAT] %s::::%s:%s",
+		wpa_printf(MSG_INFO, "MANA EAP %s HASHCAT | %s::::%s:%s",
 			   source, user, hex_response, hex_challenge);
 
 		if (os_strcmp("NOT_SET",mana.conf->mana_credout)!=0) {
@@ -2095,9 +2095,9 @@ void eap_server_chap_rx_callback(struct eap_sm *sm, const char *source,
 		wpa_snprintf_hex(hex_hash, 34, hash, 16);
 		wpa_snprintf_hex(hex_salt, 34, salt, 16);
 		wpa_snprintf_hex(hex_id, 3, &id, 1);
-		wpa_printf(MSG_INFO, "[MANA %s JTR user=%s] $chap$%s*%s*%s",
+		wpa_printf(MSG_INFO, "MANA EAP %s JTR user=%s | $chap$%s*%s*%s",
 			   source, user, hex_id, hex_salt, hex_hash);
-		wpa_printf(MSG_INFO, "[MANA %s HASHCAT user=%s] %s:%s:%s",
+		wpa_printf(MSG_INFO, "MANA EAP %s HASHCAT user=%s | %s:%s:%s",
 			   source, user, hex_hash, hex_salt, hex_id);
 
 		if (os_strcmp("NOT_SET",mana.conf->mana_credout)!=0) {
@@ -2125,7 +2125,7 @@ void eap_server_pap_rx_callback(struct eap_sm *sm, const char *source,
 		else
 			user[0] = '\0';
 		os_memcpy(passwd,password,password_len);
-		wpa_printf(MSG_INFO, "[MANA %s] %s:%s",
+		wpa_printf(MSG_INFO, "MANA EAP %s | %s:%s",
 			   source, user, password);
 
 		if (os_strcmp("NOT_SET",mana.conf->mana_credout)!=0) {

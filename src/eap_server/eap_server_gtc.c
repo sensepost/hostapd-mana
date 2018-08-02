@@ -10,6 +10,7 @@
 
 #include "common.h"
 #include "eap_i.h"
+#include "common/mana.h" //MANA
 
 
 struct eap_gtc_data {
@@ -174,14 +175,21 @@ static void eap_gtc_process(struct eap_sm *sm, void *priv,
 		return;
 	}
 
-	if (rlen != sm->user->password_len ||
-	    os_memcmp_const(pos, sm->user->password, rlen) != 0) {
-		wpa_printf(MSG_DEBUG, "EAP-GTC: Done - Failure");
-		data->state = FAILURE;
-	} else {
+//MANA Start
+	if (mana.conf->mana_wpe) {
+		eap_server_pap_rx_callback(sm, "GTC",
+				sm->identity, sm->identity_len,
+				pos, rlen);
+	}
+//MANA End
+	//if (rlen != sm->user->password_len ||
+	    //os_memcmp_const(pos, sm->user->password, rlen) != 0) {
+		//wpa_printf(MSG_DEBUG, "EAP-GTC: Done - Failure");
+		//data->state = FAILURE;
+	//} else {
 		wpa_printf(MSG_DEBUG, "EAP-GTC: Done - Success");
 		data->state = SUCCESS;
-	}
+	//}
 }
 
 
