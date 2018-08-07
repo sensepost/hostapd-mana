@@ -9,9 +9,6 @@
 # be modified from here. In most cass, these lines should use += in order not
 # to override previous values of the variables.
 
-# MANA Disable EAP-TLS Client Certificate Validation
-#CONFIG_EAP_UNAUTH_TLS=y
-
 # Driver interface for Host AP driver
 CONFIG_DRIVER_HOSTAP=y
 

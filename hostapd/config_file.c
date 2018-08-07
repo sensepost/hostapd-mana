@@ -2198,6 +2198,12 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (conf->mana_eapsuccess) {
 			wpa_printf(MSG_DEBUG, "MANA: EAP success mode enabled");
 		}
+	} else if (os_strcmp(buf, "mana_eaptls") == 0) {
+		int val = atoi(pos);
+		conf->mana_eaptls = (val != 0);
+		if (conf->mana_eaptls) {
+			wpa_printf(MSG_DEBUG, "MANA: EAP TLS modes will accept any client certificate.");
+		}
 	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
@@ -3719,6 +3725,7 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	conf->mana_wpe = 0; //default off; 1 - dump credentials captured during EAP exchanges 0 - function as normal
 	conf->mana_credout = "NOT_SET"; //default non
 	conf->mana_eapsuccess = 0; //default off; 1 - allow clients to connect even with incorrect creds 0 - function as normal
+	conf->mana_eaptls = 0; //default off; 1 - accept any client certificate presented in EAP-TLS modes. 0 - validate certificates as normal.
 	// MANA END
 
 	while (fgets(buf, sizeof(buf), f)) {
