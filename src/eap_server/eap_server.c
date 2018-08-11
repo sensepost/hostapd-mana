@@ -164,9 +164,6 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 		 int phase2)
 {
 	struct eap_user *user;
-	char ident = 't';
-
-	wpa_printf(MSG_INFO, "MANA EAP Identity Phase %d: %.*s", phase2, (int)identity_len, identity);
 
 	if (sm == NULL || sm->eapol_cb == NULL ||
 	    sm->eapol_cb->get_eap_user == NULL)
@@ -179,10 +176,45 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 	if (user == NULL)
 	    return -1;
 
-	if(phase2) {
-		identity = (const u8 *)&ident;
-		identity_len = 1;
+	//MANA START
+	if (mana.conf->enable_sycophant && os_strcmp("NOT_SET",mana.conf->sycophant_dir) != 0) {
+		char sup_state[2] = "*";
+		FILE* sycophantState;
+		char* sycophantStateFile;
+		os_strlcpy(sycophantStateFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
+		strcat(sycophantStateFile,"SYCOPHANT_STATE");
+		sycophantState = fopen(sycophantStateFile,"rb");
+		if (sycophantState != NULL) {
+			fread(sup_state,1,1,sycophantState);
+			fclose(sycophantState);
+		}
+		if (os_strcmp(sup_state,"I") == 0) {
+			FILE* sycophantID;
+			char* sycophantIDFile;
+			os_strlcpy(sycophantIDFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
+			if (phase2)
+				strcat(sycophantIDFile,"SYCOPHANT_P2ID");
+			else
+				strcat(sycophantIDFile,"SYCOPHANT_P1ID");
+			sycophantID = fopen(sycophantIDFile, "wb");
+
+			if (sycophantID != NULL) {
+				fwrite(identity,identity_len,1,sycophantID);
+				fclose(sycophantID);
+			} else
+				wpa_printf(MSG_ERROR,"SYCOPHANT: Unable to open Sycophant Stage %d Identity File %s",phase2,sycophantIDFile);
+		}
 	}
+	if (mana.conf->mana_wpe || mana.conf->enable_sycophant) {
+		wpa_printf(MSG_INFO, "MANA EAP Identity Phase %d: %.*s", phase2, (int)identity_len, identity);
+		if (phase2) {
+			char ident = 't'; // This must match the entry in the hostapd.eap_user RADIUS config file
+			identity = (const u8 *)&ident;
+			identity_len = 1;
+		}
+	}
+	//MANA END
+
 	if (sm->eapol_cb->get_eap_user(sm->eapol_ctx, identity,
 				       identity_len, phase2, user) != 0) {
 		eap_user_free(user);

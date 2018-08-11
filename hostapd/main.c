@@ -455,11 +455,12 @@ static void show_version(void)
 		//"and contributors\n");
  		"and contributors\n"
  		"--------------------------------------------------\n"
- 		"MANA (ManInTheMiddle And Network Attack)\n"
- 		"See https://github.com/sensepost/hostapd-mana for more\n"
- 		"By singe (dominic@sensepost.com) & ian (ian@sensepost.com)\n"
+ 		"MANA https://github.com/sensepost/hostapd-mana\n"
+ 		"By @singe (dominic@sensepost.com)\n"
+		"Original MANA EAP by Ian (ian@sensepost.com)\n"
  		"Original karma patches by Robin Wood - robin@digininja.org\n"
- 		"Original EAP patches by Brad Antoniewicz @brad_anton\n");
+ 		"Original EAP patches by Brad Antoniewicz @brad_anton\n"
+		"Sycophant by Michael Kruger @_cablethief");
 }
 
 

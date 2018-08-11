@@ -622,6 +622,8 @@ struct hostapd_config {
 	char * mana_credout;
 	int mana_eapsuccess;
 	int mana_eaptls;
+	int enable_sycophant;
+	char * sycophant_dir;
 	// MANA END
 
 	u16 beacon_int;

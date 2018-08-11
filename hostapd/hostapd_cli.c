@@ -431,6 +431,18 @@ static int hostapd_cli_cmd_mana_get_eaptls(struct wpa_ctrl *ctrl, int argc, char
 {
 	return wpa_ctrl_command(ctrl, "MANA_EAPTLS_STATE");
 }
+static int hostapd_cli_cmd_sycophant_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SYCOPHANT_DISABLE");
+}
+static int hostapd_cli_cmd_sycophant_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SYCOPHANT_ENABLE");
+}
+static int hostapd_cli_cmd_sycophant_get_state(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SYCOPHANT_STATE");
+}
 // END MANA
 
 
@@ -1483,6 +1495,9 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	{ "mana_eaptls_off", hostapd_cli_cmd_mana_eaptls_disable, NULL, "= disable mana's eaptls mode" },
 	{ "mana_eaptls_on", hostapd_cli_cmd_mana_eaptls_enable, NULL, "= enable mana's eaptls mode" },
 	{ "mana_eaptls_state", hostapd_cli_cmd_mana_get_eaptls, NULL, "= check mana's eaptls mode" },
+	{ "sycophant_get_state", hostapd_cli_cmd_sycophant_get_state, NULL, "= get whether sycophant is enabled or not" },
+	{ "sycophant_disable", hostapd_cli_cmd_sycophant_disable, NULL, "= disable sycophant" },
+	{ "sycophant_enable", hostapd_cli_cmd_sycophant_enable, NULL, "= enable sycophant" },
  // END MANA
 
 	{ NULL, NULL, NULL, NULL }

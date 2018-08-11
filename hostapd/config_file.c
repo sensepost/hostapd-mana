@@ -2204,6 +2204,21 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		if (conf->mana_eaptls) {
 			wpa_printf(MSG_DEBUG, "MANA: EAP TLS modes will accept any client certificate.");
 		}
+	} else if (os_strcmp(buf, "enable_sycophant") == 0) {
+		int val = atoi(pos);
+		conf->enable_sycophant = (val != 0);
+		if (conf->enable_sycophant) {
+			wpa_printf(MSG_DEBUG, "SYCOPHANT: Enabled");
+		}
+	} else if (os_strcmp(buf, "sycophant_dir") == 0) {
+		char *tmp = malloc(strlen(pos));
+		strcpy(tmp,pos);
+		if (access(pos, W_OK) != 0) {
+			wpa_printf(MSG_ERROR, "SYCOPHANT: Line %d: Failed to access sycophant directory '%s'", line, pos);
+			return 1;
+		}
+		conf->sycophant_dir = tmp;
+		wpa_printf(MSG_INFO, "MANA: Sycohpant state directory set to %s.",tmp);
 	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
@@ -3723,9 +3738,11 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	conf->mana_outfile = "NOT_SET"; //default none
 	conf->mana_ssid_filter_file = "NOT_SET"; //default none
 	conf->mana_wpe = 0; //default off; 1 - dump credentials captured during EAP exchanges 0 - function as normal
-	conf->mana_credout = "NOT_SET"; //default non
+	conf->mana_credout = "NOT_SET"; //default none
 	conf->mana_eapsuccess = 0; //default off; 1 - allow clients to connect even with incorrect creds 0 - function as normal
 	conf->mana_eaptls = 0; //default off; 1 - accept any client certificate presented in EAP-TLS modes. 0 - validate certificates as normal.
+	conf->enable_sycophant = 0; //default off; 1 - relay inner MSCHAPv2 authentication with wpa_sycophant. 0 - No relaying
+	conf->sycophant_dir = "NOT_SET"; //default none
 	// MANA END
 
 	while (fgets(buf, sizeof(buf), f)) {

@@ -247,6 +247,24 @@ static int hostapd_ctrl_iface_mana_get_eaptlsmode (struct hostapd_data *hapd)
 	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE EAPTLS MODE STATUS QUERY");
 	return hapd->iconf->mana_eaptls;
 }
+
+static int hostapd_ctrl_iface_sycophant_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "SYCOPHANT CTRL_IFACE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "SYCOPHANT CTRL_IFACE DISABLED");
+	}
+	hapd->iconf->enable_sycophant = status;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_sycophant_get_state (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "SYCOPHANT CTRL_IFACE STATUS QUERY");
+	return hapd->iconf->enable_sycophant;
+}
 // MANA END
 
 #ifdef CONFIG_IEEE80211W
@@ -2772,6 +2790,20 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		} else {
 			os_memcpy(reply, "MANA EAPTLS MODE DISABLED\n", 26);
 			reply_len = 26;
+		}
+	} else if (os_strcmp(buf, "SYCOPHANT_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_sycophant_enable_disable(hapd, 0))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "SYCOPHANT_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_sycophant_enable_disable(hapd, 1))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "SYCOPHANT_STATE") == 0) {
+		if (hostapd_ctrl_iface_sycophant_get_state(hapd)) {
+			os_memcpy(reply, "SYCOPHANT ENABLED\n", 18);
+			reply_len = 18;
+		} else {
+			os_memcpy(reply, "SYCOPHANT DISABLED\n", 19);
+			reply_len = 19;
 		}
  	// END MANA
 	} else {
