@@ -287,7 +287,8 @@ static int hostapd_config_read_maclist(const char *fname,
 			}
 		} else 
 			hwaddr_aton("ff:ff:ff:ff:ff:ff", mask); //No mask specified to add a "no change" mask
-		int i;
+
+		i = 0;
 		for (i=0; i<ETH_ALEN; i++) {
 			transform[i] = addr[i] & mask[i]; //We need to store it transformed for the binary search used in hostapd_maclist_found to get a properly sorted list
 		}
