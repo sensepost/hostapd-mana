@@ -121,7 +121,7 @@ static int hostapd_acl_comp(const void *a, const void *b)
 }
 
 // MANA Start - SSID Filter
-static int hostapd_config_read_ssidlist(const char *fname, 
+static int hostapd_config_read_ssidlist(const char *fname,
 		struct ssid_filter_entry **ssid_filter, int *num)
 {
 	FILE *f;
@@ -285,12 +285,12 @@ static int hostapd_config_read_maclist(const char *fname,
 				fclose(f);
 				return -1;
 			}
-			int i;
-			for (i=0; i<ETH_ALEN; i++) {
-				transform[i] = addr[i] & mask[i]; //We need to store it transformed for the binary search used in hostapd_maclist_found to get a properly sorted list
-			}
 		} else 
 			hwaddr_aton("ff:ff:ff:ff:ff:ff", mask); //No mask specified to add a "no change" mask
+		int i;
+		for (i=0; i<ETH_ALEN; i++) {
+			transform[i] = addr[i] & mask[i]; //We need to store it transformed for the binary search used in hostapd_maclist_found to get a properly sorted list
+		}
 		//MANA End
 
 		newacl = os_realloc_array(*acl, *num + 1, sizeof(**acl));
@@ -2167,9 +2167,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "mana_ssid_filter_file") == 0) {
 		char *tmp1 = malloc(strlen(pos));
 		strcpy(tmp1,pos);
-		if (hostapd_config_read_ssidlist(pos, &bss->ssid_filter, 
+		if (hostapd_config_read_ssidlist(pos, &bss->ssid_filter,
 					&bss->num_ssid_filter)) {
-			wpa_printf(MSG_ERROR, "Line %d: Failed to read SSID filter list '%s'", 
+			wpa_printf(MSG_ERROR, "Line %d: Failed to read SSID filter list '%s'",
 				line, pos);
 			return 1;
 		}
