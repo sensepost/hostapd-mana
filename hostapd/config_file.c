@@ -170,7 +170,7 @@ static int hostapd_config_read_ssidlist(const char *fname,
 		}
 
 		*ssid_filter = new_ssid_filter;
-		os_memcpy((*ssid_filter)[*num].ssid, pos, sizeof(pos));
+		os_memcpy((*ssid_filter)[*num].ssid, pos, strnlen(pos, SSID_MAX_LEN));
 
 		(*num)++;
 		wpa_printf(MSG_INFO, "SSID: '%s' added.", pos);
