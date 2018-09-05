@@ -10,7 +10,7 @@ phases:
   pre_build:
     commands:
       - echo Entering prebuild phase
-      - git checkout hostapd-2.6
+      - git checkout master
   build:
     commands:
       - echo Entering buid phase
