@@ -988,6 +988,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	// as per https://github.com/hashcat/hashcat-utils/blob/master/src/cap2hccapx.c#L611
 	// I did use some simpler memcpy's but it lead to weird segfaults in seemingly
 	// unrelated functions. This, while long, explains the contents better.
+	int i;
 	if (mic_len == 24) {
 		fwrite(&key192->type,1,1,hccapx);
 		fwrite(key192->key_info,2,1,hccapx);
@@ -997,7 +998,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 		fwrite(key192->key_iv,16,1,hccapx);
 		fwrite(key192->key_rsc,WPA_KEY_RSC_LEN,1,hccapx);
 		fwrite(key192->key_id,8,1,hccapx);
-		for (int i=0;i<16;i++) //hccapx truncates to 16
+		for (i=0;i<16;i++) //hccapx truncates to 16
 			fwrite("\x00",1,1,hccapx);
 		fwrite(key192->key_data_length,2,1,hccapx);
 		fwrite(key192+1,WPA_GET_BE16(key192->key_data_length),1,hccapx);
@@ -1010,13 +1011,13 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 		fwrite(key->key_iv,16,1,hccapx);
 		fwrite(key->key_rsc,WPA_KEY_RSC_LEN,1,hccapx);
 		fwrite(key->key_id,8,1,hccapx);
-		for (int i=0;i<16;i++)
+		for (i=0;i<16;i++)
 			fwrite("\x00",1,1,hccapx);
 		fwrite(key->key_data_length,2,1,hccapx);
 		fwrite(key+1,WPA_GET_BE16(key->key_data_length),1,hccapx);
 	}
 	// Padding
-	for (int i=0;i<(256 - sizeof(*hdr) - ntohs(hdr->length) - (mic_len == 24 ? 8 : 0));i++) {
+	for (i=0;i<(256 - sizeof(*hdr) - ntohs(hdr->length) - (mic_len == 24 ? 8 : 0));i++) {
 		fwrite("\x00",1,1,hccapx);
 	}
 	fclose(hccapx);
