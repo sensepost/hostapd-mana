@@ -2192,7 +2192,18 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		fclose(f);
 		conf->mana_credout = tmp2;
-		wpa_printf(MSG_INFO, "MANA: Captured credentials will be written to. File %s set.",conf->mana_credout);
+		wpa_printf(MSG_INFO, "MANA: Captured credentials will be written to file '%s'.",conf->mana_credout);
+	} else if (os_strcmp(buf, "mana_wpaout") == 0) {
+		char *tmp2 = malloc(strlen(pos));
+		strcpy(tmp2,pos);
+		FILE *f = fopen(pos, "a");
+		if (!f) {
+			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open WPA/2 handshake out file '%s'", line, pos);
+			return 1;
+		}
+		fclose(f);
+		conf->mana_wpaout = tmp2;
+		wpa_printf(MSG_INFO, "MANA: Captured WPA/2 handshakes will be written to file '%s'.",conf->mana_wpaout);
 	} else if (os_strcmp(buf, "mana_eapsuccess") == 0) {
 		int val = atoi(pos);
 		conf->mana_eapsuccess = (val != 0);
@@ -3740,6 +3751,7 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	conf->mana_ssid_filter_file = "NOT_SET"; //default none
 	conf->mana_wpe = 0; //default off; 1 - dump credentials captured during EAP exchanges 0 - function as normal
 	conf->mana_credout = "NOT_SET"; //default none
+	conf->mana_wpaout = "NOT_SET"; //default none
 	conf->mana_eapsuccess = 0; //default off; 1 - allow clients to connect even with incorrect creds 0 - function as normal
 	conf->mana_eaptls = 0; //default off; 1 - accept any client certificate presented in EAP-TLS modes. 0 - validate certificates as normal.
 	conf->enable_sycophant = 0; //default off; 1 - relay inner MSCHAPv2 authentication with wpa_sycophant. 0 - No relaying

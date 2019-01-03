@@ -620,6 +620,7 @@ struct hostapd_config {
 	char * mana_ssid_filter_file;
 	int mana_wpe;
 	char * mana_credout;
+	char * mana_wpaout;
 	int mana_eapsuccess;
 	int mana_eaptls;
 	int enable_sycophant;

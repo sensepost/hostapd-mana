@@ -25,6 +25,7 @@
 #include "pmksa_cache_auth.h"
 #include "wpa_auth_i.h"
 #include "wpa_auth_ie.h"
+#include "common/mana.h" //MANA
 
 #define STATE_MACHINE_DATA struct wpa_state_machine
 #define STATE_MACHINE_DEBUG_PREFIX "WPA"
@@ -968,59 +969,62 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	wpa_printf(MSG_DEBUG, "MANA EAPOL Data Length: %lu", data_len);
 	wpa_hexdump(MSG_DEBUG, "MANA EAPOL Data: ", data, data_len);
 	*/
-	
-	FILE* hccapx;
-	hccapx = fopen("/tmp/test.hccapx","ab");
-	fwrite("\x48\x43\x50\x58",4,1,hccapx); //Signature
-	fwrite("\x04\x00\x00\x00",4,1,hccapx); //Version
-	fwrite("\x00",1,1,hccapx); //Message Pair (M1+M2)
-	fwrite(&wpa_auth->conf.ssid_len,1,1,hccapx);
-	fwrite(wpa_auth->conf.ssid,32,1,hccapx);
-	fwrite(&key->type,1,1,hccapx);
-	fwrite(mic_len == 24 ? key192->key_mic : key->key_mic,16,1,hccapx); //hashcat truncates to 16
-	fwrite(sm->wpa_auth->addr,ETH_ALEN,1,hccapx);
-	fwrite(sm->ANonce,WPA_NONCE_LEN,1,hccapx);
-	fwrite(sm->addr,ETH_ALEN,1,hccapx);
-	fwrite(key->key_nonce,WPA_NONCE_LEN,1,hccapx);
-	fwrite(&data_len,2,1,hccapx);
-	fwrite(hdr,sizeof(*hdr),1,hccapx);
-	// Now follows a ridiculous amount of code to handle simply blanking the MIC
-	// as per https://github.com/hashcat/hashcat-utils/blob/master/src/cap2hccapx.c#L611
-	// I did use some simpler memcpy's but it lead to weird segfaults in seemingly
-	// unrelated functions. This, while long, explains the contents better.
-	int i;
-	if (mic_len == 24) {
-		fwrite(&key192->type,1,1,hccapx);
-		fwrite(key192->key_info,2,1,hccapx);
-		fwrite(key192->key_length,2,1,hccapx);
-		fwrite(key192->replay_counter,WPA_REPLAY_COUNTER_LEN,1,hccapx);
-		fwrite(key192->key_nonce,WPA_NONCE_LEN,1,hccapx);
-		fwrite(key192->key_iv,16,1,hccapx);
-		fwrite(key192->key_rsc,WPA_KEY_RSC_LEN,1,hccapx);
-		fwrite(key192->key_id,8,1,hccapx);
-		for (i=0;i<16;i++) //hccapx truncates to 16
-			fwrite("\x00",1,1,hccapx);
-		fwrite(key192->key_data_length,2,1,hccapx);
-		fwrite(key192+1,WPA_GET_BE16(key192->key_data_length),1,hccapx);
-	} else {
-		fwrite(&key->type,1,1,hccapx);
-		fwrite(key->key_info,2,1,hccapx);
-		fwrite(key->key_length,2,1,hccapx);
-		fwrite(key->replay_counter,WPA_REPLAY_COUNTER_LEN,1,hccapx);
-		fwrite(key->key_nonce,WPA_NONCE_LEN,1,hccapx);
-		fwrite(key->key_iv,16,1,hccapx);
-		fwrite(key->key_rsc,WPA_KEY_RSC_LEN,1,hccapx);
-		fwrite(key->key_id,8,1,hccapx);
-		for (i=0;i<16;i++)
-			fwrite("\x00",1,1,hccapx);
-		fwrite(key->key_data_length,2,1,hccapx);
-		fwrite(key+1,WPA_GET_BE16(key->key_data_length),1,hccapx);
+
+	if (os_strcmp("NOT_SET",mana.conf->mana_wpaout)!=0) {
+		FILE *hccapx = fopen(mana.conf->mana_wpaout, "ab");
+		if (hccapx != NULL) {
+			fwrite("\x48\x43\x50\x58",4,1,hccapx); //Signature
+			fwrite("\x04\x00\x00\x00",4,1,hccapx); //Version
+			fwrite("\x00",1,1,hccapx); //Message Pair (M1+M2)
+			fwrite(&wpa_auth->conf.ssid_len,1,1,hccapx);
+			fwrite(wpa_auth->conf.ssid,32,1,hccapx);
+			fwrite(&key->type,1,1,hccapx);
+			fwrite(mic_len == 24 ? key192->key_mic : key->key_mic,16,1,hccapx); //hashcat truncates to 16
+			fwrite(sm->wpa_auth->addr,ETH_ALEN,1,hccapx);
+			fwrite(sm->ANonce,WPA_NONCE_LEN,1,hccapx);
+			fwrite(sm->addr,ETH_ALEN,1,hccapx);
+			fwrite(key->key_nonce,WPA_NONCE_LEN,1,hccapx);
+			fwrite(&data_len,2,1,hccapx);
+			fwrite(hdr,sizeof(*hdr),1,hccapx);
+			// Now follows a ridiculous amount of code to handle simply blanking the MIC
+			// as per https://github.com/hashcat/hashcat-utils/blob/master/src/cap2hccapx.c#L611
+			// I did use some simpler memcpy's but it lead to weird segfaults in seemingly
+			// unrelated functions. This, while long, explains the contents better.
+			int i;
+			if (mic_len == 24) {
+				fwrite(&key192->type,1,1,hccapx);
+				fwrite(key192->key_info,2,1,hccapx);
+				fwrite(key192->key_length,2,1,hccapx);
+				fwrite(key192->replay_counter,WPA_REPLAY_COUNTER_LEN,1,hccapx);
+				fwrite(key192->key_nonce,WPA_NONCE_LEN,1,hccapx);
+				fwrite(key192->key_iv,16,1,hccapx);
+				fwrite(key192->key_rsc,WPA_KEY_RSC_LEN,1,hccapx);
+				fwrite(key192->key_id,8,1,hccapx);
+				for (i=0;i<16;i++) //hccapx truncates to 16
+					fwrite("\x00",1,1,hccapx);
+				fwrite(key192->key_data_length,2,1,hccapx);
+				fwrite(key192+1,WPA_GET_BE16(key192->key_data_length),1,hccapx);
+			} else {
+				fwrite(&key->type,1,1,hccapx);
+				fwrite(key->key_info,2,1,hccapx);
+				fwrite(key->key_length,2,1,hccapx);
+				fwrite(key->replay_counter,WPA_REPLAY_COUNTER_LEN,1,hccapx);
+				fwrite(key->key_nonce,WPA_NONCE_LEN,1,hccapx);
+				fwrite(key->key_iv,16,1,hccapx);
+				fwrite(key->key_rsc,WPA_KEY_RSC_LEN,1,hccapx);
+				fwrite(key->key_id,8,1,hccapx);
+				for (i=0;i<16;i++)
+					fwrite("\x00",1,1,hccapx);
+				fwrite(key->key_data_length,2,1,hccapx);
+				fwrite(key+1,WPA_GET_BE16(key->key_data_length),1,hccapx);
+			}
+			// Padding
+			for (i=0;i<(256 - sizeof(*hdr) - ntohs(hdr->length) - (mic_len == 24 ? 8 : 0));i++) {
+				fwrite("\x00",1,1,hccapx);
+			}
+			fclose(hccapx);
+		}
 	}
-	// Padding
-	for (i=0;i<(256 - sizeof(*hdr) - ntohs(hdr->length) - (mic_len == 24 ? 8 : 0));i++) {
-		fwrite("\x00",1,1,hccapx);
-	}
-	fclose(hccapx);
 	//MANA End
 	
 	/* FIX: verify that the EAPOL-Key frame was encrypted if pairwise keys
