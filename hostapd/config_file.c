@@ -2139,6 +2139,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "enable_mana") == 0) {
 		int val = atoi(pos);
 		conf->enable_mana = (val != 0);
+		if (conf->mana_wpaout) {
+			wpa_printf(MSG_ERROR, "MANA: For now, you can't use mana mode with WPA/2 handshake capture. See the Wiki.");
+			return 1;
+		}
 		if (conf->enable_mana) {
 			wpa_printf(MSG_DEBUG, "MANA: Enabled");
 		}

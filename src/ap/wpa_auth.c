@@ -1023,6 +1023,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 				fwrite("\x00",1,1,hccapx);
 			}
 			fclose(hccapx);
+			wpa_printf(MSG_INFO, "MANA: Captured a WPA/2 handshake from: " MACSTR, MAC2STR(sm->addr));
 		}
 	}
 	//MANA End
