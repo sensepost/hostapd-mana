@@ -162,18 +162,18 @@ static inline unsigned int wpa_swap_32(unsigned int v)
 #endif /* __BYTE_ORDER */
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-#define le_to_host16(n) ((__force u16) (le16) (n))
-#define host_to_le16(n) ((__force le16) (u16) (n))
-#define be_to_host16(n) bswap_16((__force u16) (be16) (n))
-#define host_to_be16(n) ((__force be16) bswap_16((n)))
-#define le_to_host32(n) ((__force u32) (le32) (n))
-#define host_to_le32(n) ((__force le32) (u32) (n))
-#define be_to_host32(n) bswap_32((__force u32) (be32) (n))
-#define host_to_be32(n) ((__force be32) bswap_32((n)))
-#define le_to_host64(n) ((__force u64) (le64) (n))
-#define host_to_le64(n) ((__force le64) (u64) (n))
-#define be_to_host64(n) bswap_64((__force u64) (be64) (n))
-#define host_to_be64(n) ((__force be64) bswap_64((n)))
+#define le_to_host16(n) ((__wpa_force u16) (le16) (n))
+#define host_to_le16(n) ((__wpa_force le16) (u16) (n))
+#define be_to_host16(n) bswap_16((__wpa_force u16) (be16) (n))
+#define host_to_be16(n) ((__wpa_force be16) bswap_16((n)))
+#define le_to_host32(n) ((__wpa_force u32) (le32) (n))
+#define host_to_le32(n) ((__wpa_force le32) (u32) (n))
+#define be_to_host32(n) bswap_32((__wpa_force u32) (be32) (n))
+#define host_to_be32(n) ((__wpa_force be32) bswap_32((n)))
+#define le_to_host64(n) ((__wpa_force u64) (le64) (n))
+#define host_to_le64(n) ((__wpa_force le64) (u64) (n))
+#define be_to_host64(n) bswap_64((__wpa_force u64) (be64) (n))
+#define host_to_be64(n) ((__wpa_force be64) bswap_64((n)))
 #elif __BYTE_ORDER == __BIG_ENDIAN
 #define le_to_host16(n) bswap_16(n)
 #define host_to_le16(n) bswap_16(n)
@@ -418,20 +418,20 @@ void perror(const char *s);
  * (http://kernel.org/pub/linux/kernel/people/josh/sparse/)
  */
 #ifdef __CHECKER__
-#define __force __attribute__((force))
+#define __wpa_force __attribute__((force))
 #undef __bitwise
-#define __bitwise __attribute__((bitwise))
+#define __wpa_bitwise __attribute__((bitwise))
 #else
-#define __force
-#define __bitwise
+#define __wpa_force
+#define __wpa_bitwise
 #endif
 
-typedef u16 __bitwise be16;
-typedef u16 __bitwise le16;
-typedef u32 __bitwise be32;
-typedef u32 __bitwise le32;
-typedef u64 __bitwise be64;
-typedef u64 __bitwise le64;
+typedef u16 __wpa_bitwise be16;
+typedef u16 __wpa_bitwise le16;
+typedef u32 __wpa_bitwise be32;
+typedef u32 __wpa_bitwise le32;
+typedef u64 __wpa_bitwise be64;
+typedef u64 __wpa_bitwise le64;
 
 #ifndef __must_check
 #if __GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 4)
