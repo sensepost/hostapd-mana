@@ -15,7 +15,8 @@ deploy:
   provider: releases
   api_key:
     secure: tovt5ba30w+KQhPprbtR5CZVCaiyc1CvzvD/bbbpem+/2Pa/qGM0xCOsEltmYjz6zm+Nc/i3p/Zv89PR2ed5UAeftRvfR9k9r6EAgGimb4nOJ9VFusEx0W2or85ws8Owdh2gWo8Z25XNCd64f0z9lVkoPg7pG828F5pPiff0if5/56Z3KTQLhSGFzaze2AMROotEN3bwSNptQAmnU+W2WswdmqkbxuRaOtosJHPv8AZbG3l9575Rs3F+uCCLD50BC19xZFAwN8xNV4yTD+sqPxV0jtJ4se5bf1ok1CIoA6vB5LkhNo+W6rTc1I4nep64QIIry2nT5Yhj6d+XB4c1U1Dmi49R75SSWGyyFAvv5Y2Hr4+lWG+3/mI6MXCVGah3DkO/xegaeup8i1MXaDWZWpe4tyNiTIEKj/+lvpjrLUZ7fRPXMnyRpaO2HWL+oJgOlemN6kCdcxdLYUaRej3ZBPawGyoqxD2fcF0VyCV3nY2GNmEttcUtUFX4yn/g0If14NSUES8cnWBN0CVyKO80u/0Y7gwL6WJekOiPWvLk9Su5WyXggWpTkJlwSalGsfhkU/NFs2j5v+qoKtr1KBJkOgODXMm5ZCA5cDdGKij8wxer8gvbJIbW5lqjWSVUNKM2JiYqlJndA1WCCZNDxKoIoGEEHnAq9lXXjMq7KEuL780=
-  file: 'hostapd-mana.tar.gz'
+  file: 
+    - hostapd-mana.tar.gz
   on:
     repo: Cablethief/hostapd-mana
   overwrite: true
