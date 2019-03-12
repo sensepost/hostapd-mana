@@ -19,4 +19,5 @@ deploy:
     repo: Cablethief/hostapd-mana
   on:
     tags: false
+  name: Unstable
 
