@@ -1,7 +1,5 @@
 language: c
-compiler:
-- clang
-- gcc
+compiler: gcc
 script: 
 - make -C hostapd
 - tar -zcf hostapd-mana.tar.gz hostapd/hostapd hostapd/hostapd_cli
