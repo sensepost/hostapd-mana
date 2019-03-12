@@ -21,4 +21,5 @@ deploy:
   overwrite: true
   prerelease: true
   name: Nightly
+  skip_cleanup: true
 
