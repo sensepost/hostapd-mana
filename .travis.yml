@@ -20,6 +20,5 @@ deploy:
     repo: Cablethief/hostapd-mana
   overwrite: true
   on:
-    tags: false
-  name: Unstable
+    tags: true
 
