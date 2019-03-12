@@ -224,6 +224,77 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 
 	wpabuf_put_u8(req, 'S');
 	wpabuf_put_u8(req, '=');
+	//MANA SYCOPHANT START
+	// Over HERE MICHAEL!!!
+
+	if (mana.conf->enable_sycophant && os_strcmp("NOT_SET",mana.conf->sycophant_dir) != 0) {
+		char sup_state[2] = "*";
+		FILE* sycophantState;
+		char sycophantStateFile[sizeof(mana.conf->sycophant_dir)+16];
+		os_strlcpy(sycophantStateFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
+		strcat(sycophantStateFile,"SYCOPHANT_STATE");
+		wpa_printf(MSG_DEBUG, "SYCOPHANT: Checking Sycophant State File.");
+
+		while (os_strcmp(sup_state,"V") != 0) {
+			sycophantState = fopen(sycophantStateFile,"rb");
+			if (sycophantState == NULL) {
+				wpa_printf (MSG_ERROR,"SYCOPHANT: Unable to open state file %s, not relaying",sycophantStateFile);
+				break;
+			} else {
+				fread(sup_state,1,1,sycophantState);
+				if (strcmp(sup_state,"Z") == 0) {
+					wpa_printf(MSG_DEBUG, "SYCOPHANT: State file is Z bailing!"); // Maybe check for C?
+					fclose(sycophantState);
+					break;
+				}
+				fclose(sycophantState);
+				usleep(10000); //Prevent thrashing
+			}
+		}
+
+		if (strcmp(sup_state,"V") == 0) {
+			wpa_printf(MSG_DEBUG, "SYCOPHANT: State file says we have a Success Validation.");
+			FILE* validateIn;
+			char validateInFile[sizeof(mana.conf->sycophant_dir)+9];
+			os_strlcpy(validateInFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
+			strcat(validateInFile,"VALIDATE");
+			validateIn = fopen(validateInFile, "rb");
+			if (validateIn == NULL) {
+				wpa_printf(MSG_ERROR, "SYCOPHANT: Could not open Validation file %s",validateInFile);
+			} else {
+				fseek(validateIn, 0, SEEK_END);
+				if (ftell(validateIn) > 0) {
+					rewind(validateIn);
+					u8 line [sizeof(data->auth_response)];
+					fread(line, sizeof(data->auth_response), 1, validateIn);
+					wpa_hexdump(MSG_DEBUG, "SYCOPHANT: Incoming MSCHAPv2 validate", line, sizeof(data->auth_response));
+					memcpy(data->auth_response, line, sizeof(data->auth_response));
+					fclose(validateIn);
+					// Blank file
+					validateIn = fopen(validateInFile, "wb");
+
+					// Disable relaying anymore
+					char sup_state[2] = "*";
+					FILE* sycophantState;
+					char sycophantStateFile[sizeof(mana.conf->sycophant_dir)+16];
+					os_strlcpy(sycophantStateFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
+					strcat(sycophantStateFile,"SYCOPHANT_STATE");
+					sycophantState = fopen(sycophantStateFile,"wb");
+					if (sycophantState != NULL) {
+						sup_state[0] = 'Z';
+						fwrite(sup_state,1,1,sycophantState);
+						fclose(sycophantState);
+					}
+				} else {
+					usleep(1000); // Prevent thrashing
+				}
+				fclose(validateIn);
+			}
+			// TODO: find replace for all these random youtube vids
+			// https://www.youtube.com/watch?v=QUNJ5TRRYqg
+		}
+	}
+
 	wpa_snprintf_hex_uppercase(
 		wpabuf_put(req, sizeof(data->auth_response) * 2),
 		sizeof(data->auth_response) * 2 + 1,
@@ -232,6 +303,8 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 	wpabuf_put_u8(req, 'M');
 	wpabuf_put_u8(req, '=');
 	wpabuf_put_data(req, message, os_strlen(message));
+	//MANA SYCOPHANT END
+
 
 	wpa_hexdump_ascii(MSG_MSGDUMP, "EAP-MSCHAPV2: Success Request Message",
 			  msg, ms_len - sizeof(*ms));
