@@ -3,14 +3,12 @@ compiler:
 - clang
 - gcc
 script: make -C hostapd
+script: tar -zcf hostapd-mana.tar.gz hostapd/hostapd hostapd/hostapd_cli
 addons:
   apt:
     packages:
     - libnl-genl-3-dev
     - libssl-dev
-
-before_deploy: "tar -zcf hostapd-mana.tar.gz hostapd/hostapd hostapd/hostapd_cli"
-
 deploy:
   provider: releases
   api_key:
@@ -20,6 +18,6 @@ deploy:
   on:
     repo: Cablethief/hostapd-mana
   overwrite: true
-  on:
-    tags: true
+  prerelease: true
+  name: Nightly
 
