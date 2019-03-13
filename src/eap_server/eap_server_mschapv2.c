@@ -272,23 +272,17 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 					fclose(validateIn);
 					// Blank file
 					validateIn = fopen(validateInFile, "wb");
-
-					// Disable relaying anymore
-					char sup_state[2] = "*";
-					FILE* sycophantState;
-					char sycophantStateFile[sizeof(mana.conf->sycophant_dir)+16];
-					os_strlcpy(sycophantStateFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
-					strcat(sycophantStateFile,"SYCOPHANT_STATE");
-					sycophantState = fopen(sycophantStateFile,"wb");
-					if (sycophantState != NULL) {
-						sup_state[0] = 'Z';
-						fwrite(sup_state,1,1,sycophantState);
-						fclose(sycophantState);
-					}
 				} else {
 					usleep(1000); // Prevent thrashing
 				}
 				fclose(validateIn);
+				// Disable relaying anymore
+				sycophantState = fopen(sycophantStateFile,"wb");
+				if (sycophantState != NULL) {
+					sup_state[0] = 'Z';
+					fwrite(sup_state,1,1,sycophantState);
+					fclose(sycophantState);
+				}
 			}
 			// TODO: find replace for all these random youtube vids
 			// https://www.youtube.com/watch?v=QUNJ5TRRYqg
