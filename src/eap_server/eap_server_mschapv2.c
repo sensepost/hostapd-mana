@@ -243,7 +243,7 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 			} else {
 				fread(sup_state,1,1,sycophantState);
 				if (strcmp(sup_state,"Z") == 0) {
-					wpa_printf(MSG_DEBUG, "SYCOPHANT: State file is Z bailing!"); // Maybe check for C?
+					wpa_printf(MSG_INFO, "SYCOPHANT: State file is Z bailing!"); // Maybe check for C?
 					fclose(sycophantState);
 					break;
 				}
@@ -266,9 +266,10 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 				if (ftell(validateIn) > 0) {
 					rewind(validateIn);
 					u8 line [sizeof(data->auth_response)];
+					wpa_hexdump(MSG_INFO, "SYCOPHANT: ORIG validate Response", data->auth_response, sizeof(data->auth_response));
 					fread(line, sizeof(data->auth_response), 1, validateIn);
-					wpa_hexdump(MSG_INFO, "SYCOPHANT: Incoming MSCHAPv2 validate", line, sizeof(data->auth_response));
 					memcpy(data->auth_response, line, sizeof(data->auth_response));
+					wpa_hexdump(MSG_INFO, "SYCOPHANT: Incoming MSCHAPv2 validate", data->auth_response, sizeof(data->auth_response));
 					fclose(validateIn);
 					// Blank file
 					validateIn = fopen(validateInFile, "wb");
