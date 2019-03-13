@@ -253,7 +253,7 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 		}
 
 		if (strcmp(sup_state,"V") == 0) {
-			wpa_printf(MSG_DEBUG, "SYCOPHANT: State file says we have a Success Validation.");
+			wpa_printf(MSG_INFO, "SYCOPHANT: State file says we have a Success Validation.");
 			FILE* validateIn;
 			char validateInFile[sizeof(mana.conf->sycophant_dir)+9];
 			os_strlcpy(validateInFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
@@ -267,7 +267,7 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 					rewind(validateIn);
 					u8 line [sizeof(data->auth_response)];
 					fread(line, sizeof(data->auth_response), 1, validateIn);
-					wpa_hexdump(MSG_DEBUG, "SYCOPHANT: Incoming MSCHAPv2 validate", line, sizeof(data->auth_response));
+					wpa_hexdump(MSG_INFO, "SYCOPHANT: Incoming MSCHAPv2 validate", line, sizeof(data->auth_response));
 					memcpy(data->auth_response, line, sizeof(data->auth_response));
 					fclose(validateIn);
 					// Blank file
