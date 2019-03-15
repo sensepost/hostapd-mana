@@ -199,6 +199,7 @@ static struct wpabuf * eap_mschapv2_build_challenge(
 static struct wpabuf * eap_mschapv2_build_success_req(
 	struct eap_sm *sm, struct eap_mschapv2_data *data, u8 id)
 {
+	wpa_printf(MSG_INFO, "SYCOPHANT: eap_mschapv2_build_success_req.");
 	struct wpabuf *req;
 	struct eap_mschapv2_hdr *ms;
 	u8 *msg;
@@ -252,6 +253,8 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 			}
 		}
 
+		wpa_printf(MSG_INFO, "SYCOPHANT: THE STATE IS V");
+
 		if (strcmp(sup_state,"V") == 0) {
 			wpa_printf(MSG_INFO, "SYCOPHANT: State file says we have a Success Validation.");
 			FILE* validateIn;
@@ -260,22 +263,24 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 			strcat(validateInFile,"VALIDATE");
 			validateIn = fopen(validateInFile, "rb");
 			if (validateIn == NULL) {
-				wpa_printf(MSG_ERROR, "SYCOPHANT: Could not open Validation file %s",validateInFile);
+				wpa_printf(MSG_INFO, "SYCOPHANT: WHERE IS VALIDATE FILE!");
 			} else {
-				fseek(validateIn, 0, SEEK_END);
-				if (ftell(validateIn) > 0) {
-					rewind(validateIn);
-					u8 line [sizeof(data->auth_response)];
-					wpa_hexdump(MSG_INFO, "SYCOPHANT: ORIG validate Response", data->auth_response, sizeof(data->auth_response));
-					fread(line, sizeof(data->auth_response), 1, validateIn);
-					memcpy(data->auth_response, line, sizeof(data->auth_response));
-					wpa_hexdump(MSG_INFO, "SYCOPHANT: Incoming MSCHAPv2 validate", data->auth_response, sizeof(data->auth_response));
-					fclose(validateIn);
-					// Blank file
-					validateIn = fopen(validateInFile, "wb");
-				} else {
-					usleep(1000); // Prevent thrashing
-				}
+				wpa_printf(MSG_INFO, "SYCOPHANT: THERE IS VALIDATE FILE!");
+			}
+			if (validateIn == NULL) {
+				wpa_printf(MSG_INFO, "SYCOPHANT: Could not open Validation file %s",validateInFile);
+			} else {
+
+				rewind(validateIn);
+				u8 line [sizeof(data->auth_response)];
+				wpa_hexdump(MSG_INFO, "SYCOPHANT: ORIG validate Response", data->auth_response, sizeof(data->auth_response));
+				fread(line, sizeof(data->auth_response), 1, validateIn);
+				memcpy(data->auth_response, line, sizeof(data->auth_response));
+				wpa_hexdump(MSG_INFO, "SYCOPHANT: Incoming MSCHAPv2 validate", data->auth_response, sizeof(data->auth_response));
+				fclose(validateIn);
+				// Blank file
+				validateIn = fopen(validateInFile, "wb");
+
 				fclose(validateIn);
 				// Disable relaying anymore
 				sycophantState = fopen(sycophantStateFile,"wb");
@@ -303,7 +308,10 @@ static struct wpabuf * eap_mschapv2_build_success_req(
 
 	wpa_hexdump_ascii(MSG_MSGDUMP, "EAP-MSCHAPV2: Success Request Message",
 			  msg, ms_len - sizeof(*ms));
-
+	// if (mana.conf->mana_eapsuccess) { //MANA
+	// 	data->state = SUCCESS_REQ; //MANA WPE
+	// 	wpa_printf(MSG_INFO, "EAP-MSCHAPV2: SUCCESS?");
+	// }
 	return req;
 }
 
@@ -348,12 +356,16 @@ static struct wpabuf * eap_mschapv2_buildReq(struct eap_sm *sm, void *priv,
 
 	switch (data->state) {
 	case CHALLENGE:
+		wpa_printf(MSG_INFO, "SYCOPHANT: case CHALLENGE.");
 		return eap_mschapv2_build_challenge(sm, data, id);
 	case SUCCESS_REQ:
+		wpa_printf(MSG_INFO, "SYCOPHANT: case SUCCESS_REQ.");
 		return eap_mschapv2_build_success_req(sm, data, id);
 	case FAILURE_REQ:
+		wpa_printf(MSG_INFO, "SYCOPHANT: case FAILURE_REQ.");
 		return eap_mschapv2_build_failure_req(sm, data, id);
 	default:
+		wpa_printf(MSG_INFO, "SYCOPHANT: case default.");
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Unknown state %d in "
 			   "buildReq", data->state);
 		break;
@@ -550,7 +562,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 
 	if (username_len != user_len ||
 	    os_memcmp(username, user, username_len) != 0) {
-		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Mismatch in user names");
+		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Mismatch in user names");
 		wpa_hexdump_ascii(MSG_DEBUG, "EAP-MSCHAPV2: Expected user "
 				  "name", username, username_len);
 		wpa_hexdump_ascii(MSG_DEBUG, "EAP-MSCHAPV2: Received user "
@@ -577,6 +589,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 					   expected);
 	}
 	if (res) {
+		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: res failure");
 		data->state = FAILURE;
 		return;
 	}
@@ -603,6 +616,8 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 					     sm->user->password_len,
 					     pw_hash_buf) < 0) {
 				data->state = FAILURE;
+				wpa_printf(MSG_INFO, "EAP-MSCHAPV2: FAILURE!");
+
 				return;
 			}
 			pw_hash = pw_hash_buf;
@@ -615,6 +630,8 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 		    get_master_key(pw_hash_hash, nt_response,
 				   data->master_key)) {
 			data->state = FAILURE;
+			wpa_printf(MSG_INFO, "EAP-MSCHAPV2: FAILURE!!");
+
 			return;
 		}
 		data->master_key_valid = 1;
@@ -625,9 +642,11 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 			    expected, 24);
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Invalid NT-Response");
 		data->state = FAILURE_REQ;
+		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: FAILURE!!!");
 	}
 	if (mana.conf->mana_eapsuccess) { //MANA
-		data->state = SUCCESS; //MANA WPE
+		data->state = SUCCESS_REQ; //MANA WPE
+		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: SUCCESS?");
 	}
 }
 
@@ -648,11 +667,11 @@ static void eap_mschapv2_process_success_resp(struct eap_sm *sm,
 	resp = (struct eap_mschapv2_hdr *) pos;
 
 	if (resp->op_code == MSCHAPV2_OP_SUCCESS) {
-		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Received Success Response"
+		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Received Success Response"
 			   " - authentication completed successfully");
 		data->state = SUCCESS;
 	} else {
-		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Did not receive Success "
+		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Did not receive Success "
 			   "Response - peer rejected authentication");
 		data->state = FAILURE;
 	}
@@ -696,12 +715,15 @@ static void eap_mschapv2_process(struct eap_sm *sm, void *priv,
 
 	switch (data->state) {
 	case CHALLENGE:
+		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: CHALLENGE");
 		eap_mschapv2_process_response(sm, data, respData);
 		break;
 	case SUCCESS_REQ:
+		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: SUCCESS_REQ");
 		eap_mschapv2_process_success_resp(sm, data, respData);
 		break;
 	case FAILURE_REQ:
+		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: FAILURE_REQ");
 		eap_mschapv2_process_failure_resp(sm, data, respData);
 		break;
 	default:
