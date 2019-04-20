@@ -196,7 +196,15 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 				strcat(sycophantIDFile,"SYCOPHANT_P2ID");
 			else
 				strcat(sycophantIDFile,"SYCOPHANT_P1ID");
-			sycophantID = fopen(sycophantIDFile, "wb");
+			// sycophantID = fopen(sycophantIDFile, "wb");
+			while (1) {
+				sycophantID = fopen(sycophantIDFile, "wb");
+				if (sycophantID == NULL) 
+					usleep(1000);
+				else 
+					break;
+			}
+
 
 			if (sycophantID != NULL) {
 				fwrite(identity,identity_len,1,sycophantID);
@@ -2075,6 +2083,7 @@ void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 				     challenge, sizeof(challenge), ':');
 		wpa_snprintf_hex_sep(hex_sep_response, sizeof(hex_sep_response), response, 24,
 				     ':');
+		wpa_hexdump(MSG_INFO, "SYCOPHANT: ORIG MANA challenge", challenge, sizeof(challenge));
 		wpa_printf(MSG_INFO, "MANA EAP %s ASLEAP user=%s | asleap -C %s -R %s",
 			   source, user, hex_sep_challenge, hex_sep_response);
 		wpa_snprintf_hex(hex_challenge, sizeof(hex_challenge), challenge, sizeof(challenge));
