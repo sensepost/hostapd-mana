@@ -2159,27 +2159,25 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "MANA: MAC ACLs extended to management frames");
 		}
 	} else if (os_strcmp(buf, "mana_outfile") == 0) {
-		char *tmp = malloc(strlen(pos));
-		strcpy(tmp,pos);
-		FILE *f = fopen(pos, "a");
+		os_free(conf->mana_outfile);
+		conf->mana_outfile = os_strdup(pos);
+		FILE *f = fopen(conf->mana_outfile, "a");
 		if (!f) {
-			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open activity file '%s'", line, pos);
+			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open activity file '%s'", line, conf->mana_outfile);
 			return 1;
 		}
 		fclose(f);
-		conf->mana_outfile = tmp;
-		wpa_printf(MSG_INFO, "MANA: Observed activity will be written to. File %s set.",tmp);
+		wpa_printf(MSG_INFO, "MANA: Observed activity will be written to. File %s set.",conf->mana_outfile);
 	} else if (os_strcmp(buf, "mana_ssid_filter_file") == 0) {
-		char *tmp1 = malloc(strlen(pos));
-		strcpy(tmp1,pos);
-		if (hostapd_config_read_ssidlist(pos, &bss->ssid_filter,
+		os_free(conf->mana_ssid_filter_file);
+		conf->mana_ssid_filter_file = os_strdup(pos);
+		if (hostapd_config_read_ssidlist(conf->mana_ssid_filter_file, &bss->ssid_filter,
 					&bss->num_ssid_filter)) {
 			wpa_printf(MSG_ERROR, "Line %d: Failed to read SSID filter list '%s'",
-				line, pos);
+				line, conf->mana_ssid_filter_file);
 			return 1;
 		}
-		conf->mana_ssid_filter_file = tmp1;
-		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",tmp1);
+		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",conf->mana_ssid_filter_file);
 	} else if (os_strcmp(buf, "mana_wpe") == 0) {
 		int val = atoi(pos);
 		conf->mana_wpe = (val != 0);
@@ -2187,26 +2185,24 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "MANA: WPE EAP mode enabled");
 		}
 	} else if (os_strcmp(buf, "mana_credout") == 0) {
-		char *tmp2 = malloc(strlen(pos));
-		strcpy(tmp2,pos);
-		FILE *f = fopen(pos, "a");
+		os_free(conf->mana_credout);
+		conf->mana_credout = os_strdup(pos);
+		FILE *f = fopen(conf->mana_credout, "a");
 		if (!f) {
-			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open credential out file '%s'", line, pos);
+			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open credential out file '%s'", line, conf->mana_credout);
 			return 1;
 		}
 		fclose(f);
-		conf->mana_credout = tmp2;
 		wpa_printf(MSG_INFO, "MANA: Captured credentials will be written to file '%s'.",conf->mana_credout);
 	} else if (os_strcmp(buf, "mana_wpaout") == 0) {
-		char *tmp2 = malloc(strlen(pos));
-		strcpy(tmp2,pos);
-		FILE *f = fopen(pos, "a");
+		os_free(conf->mana_wpaout);
+		conf->mana_wpaout = os_strdup(pos);
+		FILE *f = fopen(conf->mana_wpaout, "a");
 		if (!f) {
-			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open WPA/2 handshake out file '%s'", line, pos);
+			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open WPA/2 handshake out file '%s'", line, conf->mana_wpaout);
 			return 1;
 		}
 		fclose(f);
-		conf->mana_wpaout = tmp2;
 		wpa_printf(MSG_INFO, "MANA: Captured WPA/2 handshakes will be written to file '%s'.",conf->mana_wpaout);
 	} else if (os_strcmp(buf, "mana_eapsuccess") == 0) {
 		int val = atoi(pos);
@@ -2227,14 +2223,13 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "SYCOPHANT: Enabled");
 		}
 	} else if (os_strcmp(buf, "sycophant_dir") == 0) {
-		char *tmp = malloc(strlen(pos));
-		strcpy(tmp,pos);
-		if (access(pos, W_OK) != 0) {
-			wpa_printf(MSG_ERROR, "SYCOPHANT: Line %d: Failed to access sycophant directory '%s'", line, pos);
+		os_free(conf->sycophant_dir);
+		conf->sycophant_dir = os_strdup(pos);
+		if (access(conf->sycophant_dir, W_OK) != 0) {
+			wpa_printf(MSG_ERROR, "SYCOPHANT: Line %d: Failed to access sycophant directory '%s'", line, conf->sycophant_dir);
 			return 1;
 		}
-		conf->sycophant_dir = tmp;
-		wpa_printf(MSG_INFO, "MANA: Sycohpant state directory set to %s.",tmp);
+		wpa_printf(MSG_INFO, "MANA: Sycohpant state directory set to %s.", conf->sycophant_dir);
 	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
