@@ -31,7 +31,7 @@ export BINDIR ?= /usr/local/bin/
 
 ifdef CONFIG_OPENSSL
 LIBS += -Wl,-rpath=../openssl/local/lib
-LDFLAGS += -lpthread
+LIBS += -lpthread
 endif
 
 ifndef CONFIG_NO_GITVER
