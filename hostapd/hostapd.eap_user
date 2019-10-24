@@ -56,48 +56,54 @@
 # line.
 
 # Phase 1 users
-"user"		MD5	"password"
-"test user"	MD5	"secret"
-"example user"	TLS
-"DOMAIN\user"	MSCHAPV2	"password"
-"gtc user"	GTC	"password"
-"pax user"	PAX	"unknown"
-"pax.user@example.com"	PAX	0123456789abcdef0123456789abcdef
-"psk user"	PSK	"unknown"
-"psk.user@example.com"	PSK	0123456789abcdef0123456789abcdef
-"sake.user@example.com"	SAKE	0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-"ttls"		TTLS
-"not anonymous"	PEAP
+#"user"		MD5	"password"
+#"test user"	MD5	"secret"
+#"example user"	TLS
+#"DOMAIN\user"	MSCHAPV2	"password"
+#"gtc user"	GTC	"password"
+#"pax user"	PAX	"unknown"
+#"pax.user@example.com"	PAX	0123456789abcdef0123456789abcdef
+#"psk user"	PSK	"unknown"
+#"psk.user@example.com"	PSK	0123456789abcdef0123456789abcdef
+#"sake.user@example.com"	SAKE	0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+#"ttls"		TTLS
+#"not anonymous"	PEAP
 # Default to EAP-SIM and EAP-AKA based on fixed identity prefixes
-"0"*		AKA,TTLS,TLS,PEAP,SIM
-"1"*		SIM,TTLS,TLS,PEAP,AKA
-"2"*		AKA,TTLS,TLS,PEAP,SIM
-"3"*		SIM,TTLS,TLS,PEAP,AKA
-"4"*		AKA,TTLS,TLS,PEAP,SIM
-"5"*		SIM,TTLS,TLS,PEAP,AKA
-"6"*		AKA'
-"7"*		AKA'
-"8"*		AKA'
+#"0"*		AKA,TTLS,TLS,PEAP,SIM
+#"1"*		SIM,TTLS,TLS,PEAP,AKA
+#"2"*		AKA,TTLS,TLS,PEAP,SIM
+#"3"*		SIM,TTLS,TLS,PEAP,AKA
+#"4"*		AKA,TTLS,TLS,PEAP,SIM
+#"5"*		SIM,TTLS,TLS,PEAP,AKA
+#"6"*		AKA'
+#"7"*		AKA'
+#"8"*		AKA'
 
 # Wildcard for all other identities
-*		PEAP,TTLS,TLS,SIM,AKA
+#*		PEAP,TTLS,TLS,SIM,AKA
 
 # Phase 2 (tunnelled within EAP-PEAP or EAP-TTLS) users
-"t-md5"		MD5	"password"	[2]
-"DOMAIN\t-mschapv2"	MSCHAPV2	"password"	[2]
-"t-gtc"		GTC	"password"	[2]
-"not anonymous"	MSCHAPV2	"password"	[2]
-"user"		MD5,GTC,MSCHAPV2	"password"	[2]
-"test user"	MSCHAPV2	hash:000102030405060708090a0b0c0d0e0f	[2]
-"ttls-user"	TTLS-PAP,TTLS-CHAP,TTLS-MSCHAP,TTLS-MSCHAPV2	"password"	[2]
+#"t-md5"		MD5	"password"	[2]
+#"DOMAIN\t-mschapv2"	MSCHAPV2	"password"	[2]
+#"t-gtc"		GTC	"password"	[2]
+#"not anonymous"	MSCHAPV2	"password"	[2]
+#"user"		MD5,GTC,MSCHAPV2	"password"	[2]
+#"test user"	MSCHAPV2	hash:000102030405060708090a0b0c0d0e0f	[2]
+#"ttls-user"	TTLS-PAP,TTLS-CHAP,TTLS-MSCHAP,TTLS-MSCHAPV2	"password"	[2]
 
 # Default to EAP-SIM and EAP-AKA based on fixed identity prefixes in phase 2
-"0"*		AKA	[2]
-"1"*		SIM	[2]
-"2"*		AKA	[2]
-"3"*		SIM	[2]
-"4"*		AKA	[2]
-"5"*		SIM	[2]
-"6"*		AKA'	[2]
-"7"*		AKA'	[2]
-"8"*		AKA'	[2]
+#"0"*		AKA	[2]
+#"1"*		SIM	[2]
+#"2"*		AKA	[2]
+#"3"*		SIM	[2]
+#"4"*		AKA	[2]
+#"5"*		SIM	[2]
+#"6"*		AKA'	[2]
+#"7"*		AKA'	[2]
+#"8"*		AKA'	[2]
+
+# WPE/MANA - DO NOT REMOVE - These are in here for EAP interception
+*		PEAP,TTLS,TLS,SIM,AKA
+"t"		PEAP,TTLS-PAP,TTLS-CHAP,TTLS-MSCHAP,MSCHAPV2,MD5,GTC,TTLS,TTLS-MSCHAPV2 [2]
+"t"		[2]
+"t"		PEAP,TTLS-PAP,TTLS-CHAP,TTLS-MSCHAP,MSCHAPV2,MD5,GTC,TTLS,TTLS-MSCHAPV2

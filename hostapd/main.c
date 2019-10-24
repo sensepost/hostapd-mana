@@ -454,11 +454,19 @@ static int hostapd_global_run(struct hapd_interfaces *ifaces, int daemonize,
 static void show_version(void)
 {
 	fprintf(stderr,
-		"hostapd v" VERSION_STR "\n"
+		"hostapd-mana v" VERSION_STR "\n"
 		"User space daemon for IEEE 802.11 AP management,\n"
 		"IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator\n"
 		"Copyright (c) 2002-2019, Jouni Malinen <j@w1.fi> "
-		"and contributors\n");
+		//"and contributors\n");
+ 		"and contributors\n"
+ 		"--------------------------------------------------\n"
+ 		"MANA Rogue AP https://github.com/sensepost/hostapd-mana\n"
+ 		"By @singe (dominic@sensepost.com)\n"
+ 		"Original karma patches by Robin Wood - robin@digininja.org\n"
+ 		"Original EAP patches by Brad Antoniewicz @brad_anton\n"
+		"Original MANA EAP by Ian (ian@sensepost.com)\n"
+		"Sycophant by Michael Kruger @_cablethief");
 }
 
 

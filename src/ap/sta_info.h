@@ -283,6 +283,8 @@ struct sta_info {
 	unsigned int airtime_weight;
 	struct os_reltime backlogged_until;
 #endif /* CONFIG_AIRTIME_POLICY */
+
+	struct hostapd_ssid *ssid_probe_mana; //MANA
 };
 
 

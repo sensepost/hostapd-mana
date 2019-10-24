@@ -61,7 +61,6 @@
 #include "config_file.h"
 #include "ctrl_iface.h"
 
-
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
 
 #ifdef CONFIG_CTRL_IFACE_UDP
@@ -129,6 +128,149 @@ static int hostapd_ctrl_iface_new_sta(struct hostapd_data *hapd,
 	return 0;
 }
 
+// MANA START
+static int hostapd_ctrl_iface_mana_change_ssid (struct hostapd_data *hapd,
+					     const char *ssid) {
+	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE CHANGE SSID %s", ssid);
+
+	if (strlen(ssid) > SSID_MAX_LEN || strlen(ssid) == 0) {
+		return -1;
+	}
+
+	hapd->conf->ssid.ssid_len = strlen(ssid);
+	// Not sure if the +1 is needed here or not
+	os_memcpy(hapd->conf->ssid.ssid, ssid, strlen(ssid) + 1);
+	ieee802_11_set_beacon(hapd);
+	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE DEFAULT SSID CHANGED");
+	return 0;
+}
+
+static int hostapd_ctrl_iface_mana_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE DISABLED");
+	}
+	hapd->iconf->enable_mana = status;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_mana_get_state (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE STATUS QUERY");
+	return hapd->iconf->enable_mana;
+}
+
+static int hostapd_ctrl_iface_mana_loud_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE LOUD MODE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE LOUD MODE DISABLED");
+	}
+	hapd->iconf->mana_loud = status;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_mana_get_mode (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE LOUD MODE STATUS QUERY");
+	return hapd->iconf->mana_loud;
+}
+
+static int hostapd_ctrl_iface_mana_macacl_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE MACACL MODE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE MACACL MODE DISABLED");
+	}
+	hapd->iconf->mana_macacl = status;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_mana_get_aclmode (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE MAC ACL STATUS QUERY");
+	return hapd->iconf->mana_macacl;
+}
+
+static int hostapd_ctrl_iface_mana_wpe_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE WPE MODE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE WPE MODE DISABLED");
+	}
+	hapd->iconf->mana_wpe = status;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_mana_get_wpemode (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE WPE MODE STATUS QUERY");
+	return hapd->iconf->mana_wpe;
+}
+
+static int hostapd_ctrl_iface_mana_eapsuccess_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE EAPSUCCESS MODE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE EAPSUCCESS MODE DISABLED");
+	}
+	hapd->iconf->mana_eapsuccess = status;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_mana_get_eapsuccessmode (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE EAPSUCCESS MODE STATUS QUERY");
+	return hapd->iconf->mana_eapsuccess;
+}
+
+static int hostapd_ctrl_iface_mana_eaptls_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE EAPTLS MODE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE EAPTLS MODE DISABLED");
+	}
+	hapd->iconf->mana_eaptls = status;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_mana_get_eaptlsmode (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE EAPTLS MODE STATUS QUERY");
+	return hapd->iconf->mana_eaptls;
+}
+
+static int hostapd_ctrl_iface_sycophant_enable_disable (struct hostapd_data *hapd, int status)
+{
+	if (status) {
+		wpa_printf(MSG_DEBUG, "SYCOPHANT CTRL_IFACE ENABLED");
+	} else {
+		wpa_printf(MSG_DEBUG, "SYCOPHANT CTRL_IFACE DISABLED");
+	}
+	hapd->iconf->enable_sycophant = status;
+
+	return 0;
+}
+
+static int hostapd_ctrl_iface_sycophant_get_state (struct hostapd_data *hapd)
+{
+	wpa_printf(MSG_DEBUG, "SYCOPHANT CTRL_IFACE STATUS QUERY");
+	return hapd->iconf->enable_sycophant;
+}
+// MANA END
 
 #ifdef CONFIG_IEEE80211W
 #ifdef NEED_AP_MLME
@@ -225,7 +367,6 @@ static int hostapd_ctrl_iface_wps_check_pin(
 
 	return ret;
 }
-
 
 #ifdef CONFIG_WPS_NFC
 static int hostapd_ctrl_iface_wps_nfc_tag_read(struct hostapd_data *hapd,
@@ -2885,6 +3026,7 @@ static int hostapd_ctrl_iface_acl_add_mac(struct mac_acl_entry **acl, int *num,
 					  const char *cmd)
 {
 	u8 addr[ETH_ALEN];
+	u8 mask[ETH_ALEN]; //MANA
 	struct vlan_description vlan_id;
 	int ret = 0, vlanid = 0;
 	const char *pos;
@@ -2896,8 +3038,11 @@ static int hostapd_ctrl_iface_acl_add_mac(struct mac_acl_entry **acl, int *num,
 	if (pos)
 		vlanid = atoi(pos + 8);
 
+	hwaddr_aton("ff:ff:ff:ff:ff:ff", mask); //MANA no netmask via cli because I'm lazy
+
 	if (!hostapd_maclist_found(*acl, *num, addr, &vlan_id)) {
-		ret = hostapd_add_acl_maclist(acl, num, vlanid, addr);
+		//ret = hostapd_add_acl_maclist(acl, num, vlanid, addr);
+		ret = hostapd_add_acl_maclist(acl, num, vlanid, addr, mask); //MANA
 		if (ret != -1 && *acl)
 			qsort(*acl, *num, sizeof(**acl), hostapd_acl_comp);
 	}
@@ -3373,6 +3518,122 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "GET_CAPABILITY ", 15) == 0) {
 		reply_len = hostapd_ctrl_iface_get_capability(
 			hapd, buf + 15, reply, reply_size);
+	// MANA
+	} else if (os_strcmp(buf, "MANA_GET_SSID") == 0) {
+		wpa_printf(MSG_DEBUG, "MANA CTRL_IFACE GET SSID");
+		size_t len;
+
+		// +2 for the new line and the null byte terminator
+		len = hapd->conf->ssid.ssid_len + 2;
+		os_snprintf(reply, len, "%s\n", hapd->conf->ssid.ssid);
+		reply_len = len;
+
+	} else if (os_strncmp(buf, "MANA_CHANGE_SSID ", 18) == 0) {
+		if (hostapd_ctrl_iface_mana_change_ssid (hapd, buf + 18)) {
+			reply_len = -1;
+		} else {
+			os_memcpy(reply, "CHANGED\n", 8);
+			reply_len = 8;
+		}
+	} else if (os_strcmp(buf, "MANA_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_enable_disable(hapd, 0))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "MANA_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_enable_disable(hapd, 1))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "MANA_STATE") == 0) {
+		if (hostapd_ctrl_iface_mana_get_state(hapd)) {
+			os_memcpy(reply, "MANA ENABLED\n", 14);
+			reply_len = 14;
+		} else {
+			os_memcpy(reply, "MANA DISABLED\n", 15);
+			reply_len = 15;
+		}
+	} else if (os_strcmp(buf, "LOUD_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_loud_enable_disable(hapd, 1))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "LOUD_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_loud_enable_disable(hapd, 0))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "MANA_MODE") == 0) {
+		if (hostapd_ctrl_iface_mana_get_mode(hapd)) {
+			os_memcpy(reply, "MANA LOUD MODE ENABLED\n", 23);
+			reply_len = 23;
+		} else {
+			os_memcpy(reply, "MANA LOUD MODE DISABLED\n", 24);
+			reply_len = 24;
+		}
+	} else if (os_strcmp(buf, "MANAACL_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_macacl_enable_disable(hapd, 1))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "MANAACL_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_macacl_enable_disable(hapd, 0))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "MANA_ACLMODE") == 0) {
+		if (hostapd_ctrl_iface_mana_get_aclmode(hapd)) {
+			os_memcpy(reply, "MANA ACL MODE ENABLED\n", 22);
+			reply_len = 22;
+		} else {
+			os_memcpy(reply, "MANA ACL MODE DISABLED\n", 23);
+			reply_len = 23;
+		}
+	} else if (os_strcmp(buf, "WPE_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_wpe_enable_disable(hapd, 1))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "WPE_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_wpe_enable_disable(hapd, 0))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "WPE_MODE") == 0) {
+		if (hostapd_ctrl_iface_mana_get_wpemode(hapd)) {
+			os_memcpy(reply, "MANA WPE MODE ENABLED\n", 22);
+			reply_len = 22;
+		} else {
+			os_memcpy(reply, "MANA WPE MODE DISABLED\n", 23);
+			reply_len = 23;
+		}
+	} else if (os_strcmp(buf, "EAPSUCCESS_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_eapsuccess_enable_disable(hapd, 1))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "EAPSUCCESS_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_eapsuccess_enable_disable(hapd, 0))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "EAPSUCCESS_MODE") == 0) {
+		if (hostapd_ctrl_iface_mana_get_eapsuccessmode(hapd)) {
+			os_memcpy(reply, "MANA EAPSUCCESS MODE ENABLED\n", 29);
+			reply_len = 29;
+		} else {
+			os_memcpy(reply, "MANA EAPSUCCESS MODE DISABLED\n", 30);
+			reply_len = 30;
+		}
+	} else if (os_strcmp(buf, "MANA_EAPTLS_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_eaptls_enable_disable(hapd, 1))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "MANA_EAPTLS_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_mana_eaptls_enable_disable(hapd, 0))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "MANA_EAPTLS_MODE") == 0) {
+		if (hostapd_ctrl_iface_mana_get_eaptlsmode(hapd)) {
+			os_memcpy(reply, "MANA EAPTLS MODE ENABLED\n", 25);
+			reply_len = 25;
+		} else {
+			os_memcpy(reply, "MANA EAPTLS MODE DISABLED\n", 26);
+			reply_len = 26;
+		}
+	} else if (os_strcmp(buf, "SYCOPHANT_DISABLE") == 0) {
+		if (hostapd_ctrl_iface_sycophant_enable_disable(hapd, 0))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "SYCOPHANT_ENABLE") == 0) {
+		if (hostapd_ctrl_iface_sycophant_enable_disable(hapd, 1))
+			reply_len = -1;
+	} else if (os_strcmp(buf, "SYCOPHANT_STATE") == 0) {
+		if (hostapd_ctrl_iface_sycophant_get_state(hapd)) {
+			os_memcpy(reply, "SYCOPHANT ENABLED\n", 18);
+			reply_len = 18;
+		} else {
+			os_memcpy(reply, "SYCOPHANT DISABLED\n", 19);
+			reply_len = 19;
+		}
+	// END MANA
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;

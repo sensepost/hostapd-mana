@@ -163,6 +163,15 @@ void eap_server_clear_identity(struct eap_sm *sm);
 void eap_server_mschap_rx_callback(struct eap_sm *sm, const char *source,
 				   const u8 *username, size_t username_len,
 				   const u8 *challenge, const u8 *response);
+//MANA Start
+void eap_server_chap_rx_callback(struct eap_sm *sm, const char *source,
+				   const u8 *username, size_t username_len,
+				   const u8 *hash, const u8 *salt,
+				   u8 id);
+void eap_server_pap_rx_callback(struct eap_sm *sm, const char *source,
+				   const u8 *username, size_t username_len,
+				   const u8 *password, size_t password_len);
+//MANA End
 void eap_erp_update_identity(struct eap_sm *sm, const u8 *eap, size_t len);
 void eap_user_free(struct eap_user *user);
 

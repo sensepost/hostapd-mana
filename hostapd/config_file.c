@@ -23,6 +23,7 @@
 #include "ap/ap_config.h"
 #include "config_file.h"
 
+#include <stdlib.h>
 
 #ifndef CONFIG_NO_VLAN
 static int hostapd_config_read_vlan_file(struct hostapd_bss_config *bss,
@@ -123,9 +124,70 @@ int hostapd_acl_comp(const void *a, const void *b)
 	return os_memcmp(aa->addr, bb->addr, sizeof(macaddr));
 }
 
+// MANA Start - SSID Filter
+static int hostapd_config_read_ssidlist(const char *fname,
+		struct ssid_filter_entry **ssid_filter, int *num)
+{
+	FILE *f;
+	char buf[128], *pos;
+	int line = 0;
+
+	struct ssid_filter_entry *new_ssid_filter;
+
+	if (!fname)
+		return 0;
+
+	f = fopen(fname, "r");
+	if (!f) {
+		wpa_printf(MSG_ERROR, "SSID list file '%s' not found.", fname);
+		return -1;
+	}
+
+	while (fgets(buf, sizeof(buf), f)) {
+		line++;
+
+		if (buf[0] == '#')
+			continue;
+
+		while (*pos != '\0') {
+			if (*pos == '\n') {
+				*pos = '\0';
+				break;
+			}
+			pos++;
+		}
+
+		if (buf[0] == '\0')
+			continue;
+
+		pos = buf;
+		if(strlen(pos) > SSID_MAX_LEN){
+			wpa_printf(MSG_ERROR, "SSID %s is too long (more than %d characters.)",pos,SSID_MAX_LEN);
+			return -1;
+		}
+
+		new_ssid_filter = os_realloc_array(*ssid_filter, *num + 1, sizeof(**ssid_filter));
+		if (new_ssid_filter == NULL) {
+			wpa_printf(MSG_ERROR, "SSID list reallocation failed");
+			fclose(f);
+			return -1;
+		}
+
+		*ssid_filter = new_ssid_filter;
+		os_memcpy((*ssid_filter)[*num].ssid, pos, strnlen(pos, SSID_MAX_LEN));
+
+		(*num)++;
+		wpa_printf(MSG_INFO, "SSID: '%s' added.", pos);
+	}
+
+	fclose(f);
+	return 0;
+}
+//MANA End
 
 int hostapd_add_acl_maclist(struct mac_acl_entry **acl, int *num,
-			    int vlan_id, const u8 *addr)
+			    int vlan_id, const u8 *addr, const u8 *mask) //MANA
+			    //int vlan_id, const u8 *addr)
 {
 	struct mac_acl_entry *newacl;
 
@@ -136,7 +198,9 @@ int hostapd_add_acl_maclist(struct mac_acl_entry **acl, int *num,
 	}
 
 	*acl = newacl;
-	os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
+	//os_memcpy((*acl)[*num].addr, addr, ETH_ALEN);
+	os_memcpy((*acl)[*num].addr, addr, ETH_ALEN); //MANA addr is the transformed addr
+	os_memcpy((*acl)[*num].mask, mask, ETH_ALEN); //MANA
 	os_memset(&(*acl)[*num].vlan_id, 0, sizeof((*acl)[*num].vlan_id));
 	(*acl)[*num].vlan_id.untagged = vlan_id;
 	(*acl)[*num].vlan_id.notempty = !!vlan_id;
@@ -170,6 +234,9 @@ static int hostapd_config_read_maclist(const char *fname,
 	int line = 0;
 	u8 addr[ETH_ALEN];
 	int vlan_id;
+	char *lastpos; //MANA
+	u8 mask[ETH_ALEN], transform[ETH_ALEN]; //MANA
+	int vlanflag = 0; //MANA
 
 	f = fopen(fname, "r");
 	if (!f) {
@@ -194,6 +261,7 @@ static int hostapd_config_read_maclist(const char *fname,
 		}
 		if (buf[0] == '\0')
 			continue;
+		lastpos = pos; //MANA
 		pos = buf;
 		if (buf[0] == '-') {
 			rem = 1;
@@ -217,10 +285,49 @@ static int hostapd_config_read_maclist(const char *fname,
 			pos++;
 		while (*pos == ' ' || *pos == '\t')
 			pos++;
-		if (*pos != '\0')
-			vlan_id = atoi(pos);
+		if (*pos != '\0') {
+			if (*(pos+2) != ':') { //MANA
+				vlan_id = atoi(pos);
+				vlanflag = 1;
+			}
+		}
 
-		if (hostapd_add_acl_maclist(acl, num, vlan_id, addr) < 0) {
+		//MANA Start - parse MAC mask
+		lastpos = pos;
+		while (*pos != '\0') {
+			if (*pos == '\n') {
+				*pos = '\0';
+				break;
+			}
+			pos++;
+		}
+		pos = lastpos;
+
+		if (vlanflag) {
+			while (*pos != '\0' && *pos != ' ' && *pos != '\t')
+				pos++;
+			while (*pos == ' ' || *pos == '\t')
+				pos++;
+		}
+
+		if (*pos != '\0') {
+			if (hwaddr_aton(pos, mask)) {
+				wpa_printf(MSG_ERROR, "Invalid MAC mask '%s' at "
+					   "line %d in '%s'", pos, line, fname);
+				fclose(f);
+				return -1;
+			}
+		} else 
+			hwaddr_aton("ff:ff:ff:ff:ff:ff", mask); //No mask specified so add a "no change" mask
+
+		int i = 0;
+		for (i=0; i<ETH_ALEN; i++) {
+			transform[i] = addr[i] & mask[i]; //We need to store it transformed for the binary search used in hostapd_maclist_found to get a properly sorted list
+		}
+		//MANA End
+
+		//if (hostapd_add_acl_maclist(acl, num, vlan_id, addr) < 0) {
+		if (hostapd_add_acl_maclist(acl, num, vlan_id, transform, mask) < 0) { //MANA
 			fclose(f);
 			return -1;
 		}
@@ -2409,6 +2516,102 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->logger_syslog = atoi(pos);
 	} else if (os_strcmp(buf, "logger_stdout") == 0) {
 		bss->logger_stdout = atoi(pos);
+	// MANA START
+	} else if (os_strcmp(buf, "enable_mana") == 0) {
+		int val = atoi(pos);
+		conf->enable_mana = (val != 0);
+		if (os_strcmp(conf->mana_wpaout,"NOT_SET") != 0) {
+			wpa_printf(MSG_ERROR, "MANA: For now, you can't use mana mode with WPA/2 handshake capture. See the Wiki.");
+			return 1;
+		}
+		if (conf->enable_mana) {
+			wpa_printf(MSG_DEBUG, "MANA: Enabled");
+		}
+	} else if (os_strcmp(buf, "mana_loud") == 0) {
+		int val = atoi(pos);
+		conf->mana_loud = (val != 0);
+		if (conf->mana_loud) {
+			wpa_printf(MSG_DEBUG, "MANA: Loud mode enabled");
+		}
+	} else if (os_strcmp(buf, "mana_macacl") == 0) {
+		int val = atoi(pos);
+		conf->mana_macacl = (val != 0);
+		if (conf->mana_macacl) {
+			wpa_printf(MSG_DEBUG, "MANA: MAC ACLs extended to management frames");
+		}
+	} else if (os_strcmp(buf, "mana_outfile") == 0) {
+		os_free(conf->mana_outfile);
+		conf->mana_outfile = os_strdup(pos);
+		FILE *f = fopen(conf->mana_outfile, "a");
+		if (!f) {
+			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open activity file '%s'", line, conf->mana_outfile);
+			return 1;
+		}
+		fclose(f);
+		wpa_printf(MSG_INFO, "MANA: Observed activity will be written to. File %s set.",conf->mana_outfile);
+	} else if (os_strcmp(buf, "mana_ssid_filter_file") == 0) {
+		os_free(conf->mana_ssid_filter_file);
+		conf->mana_ssid_filter_file = os_strdup(pos);
+		if (hostapd_config_read_ssidlist(conf->mana_ssid_filter_file, &bss->ssid_filter,
+					&bss->num_ssid_filter)) {
+			wpa_printf(MSG_ERROR, "Line %d: Failed to read SSID filter list '%s'",
+				line, conf->mana_ssid_filter_file);
+			return 1;
+		}
+		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",conf->mana_ssid_filter_file);
+	} else if (os_strcmp(buf, "mana_wpe") == 0) {
+		int val = atoi(pos);
+		conf->mana_wpe = (val != 0);
+		if (conf->mana_wpe) {
+			wpa_printf(MSG_DEBUG, "MANA: WPE EAP mode enabled");
+		}
+	} else if (os_strcmp(buf, "mana_credout") == 0) {
+		os_free(conf->mana_credout);
+		conf->mana_credout = os_strdup(pos);
+		FILE *f = fopen(conf->mana_credout, "a");
+		if (!f) {
+			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open credential out file '%s'", line, conf->mana_credout);
+			return 1;
+		}
+		fclose(f);
+		wpa_printf(MSG_INFO, "MANA: Captured credentials will be written to file '%s'.",conf->mana_credout);
+	} else if (os_strcmp(buf, "mana_wpaout") == 0) {
+		os_free(conf->mana_wpaout);
+		conf->mana_wpaout = os_strdup(pos);
+		FILE *f = fopen(conf->mana_wpaout, "a");
+		if (!f) {
+			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open WPA/2 handshake out file '%s'", line, conf->mana_wpaout);
+			return 1;
+		}
+		fclose(f);
+		wpa_printf(MSG_INFO, "MANA: Captured WPA/2 handshakes will be written to file '%s'.",conf->mana_wpaout);
+	} else if (os_strcmp(buf, "mana_eapsuccess") == 0) {
+		int val = atoi(pos);
+		conf->mana_eapsuccess = (val != 0);
+		if (conf->mana_eapsuccess) {
+			wpa_printf(MSG_DEBUG, "MANA: EAP success mode enabled");
+		}
+	} else if (os_strcmp(buf, "mana_eaptls") == 0) {
+		int val = atoi(pos);
+		conf->mana_eaptls = (val != 0);
+		if (conf->mana_eaptls) {
+			wpa_printf(MSG_DEBUG, "MANA: EAP TLS modes will accept any client certificate.");
+		}
+	} else if (os_strcmp(buf, "enable_sycophant") == 0) {
+		int val = atoi(pos);
+		conf->enable_sycophant = (val != 0);
+		if (conf->enable_sycophant) {
+			wpa_printf(MSG_DEBUG, "SYCOPHANT: Enabled");
+		}
+	} else if (os_strcmp(buf, "sycophant_dir") == 0) {
+		os_free(conf->sycophant_dir);
+		conf->sycophant_dir = os_strdup(pos);
+		if (access(conf->sycophant_dir, W_OK) != 0) {
+			wpa_printf(MSG_ERROR, "SYCOPHANT: Line %d: Failed to access sycophant directory '%s'", line, conf->sycophant_dir);
+			return 1;
+		}
+		wpa_printf(MSG_INFO, "MANA: Sycohpant state directory set to %s.", conf->sycophant_dir);
+	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
 			   line);
@@ -4554,6 +4757,21 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	}
 
 	conf->last_bss = conf->bss[0];
+
+	// MANA START
+	conf->enable_mana = 0; //default off;
+	conf->mana_loud = 0; //default off; 1 - advertise all networks across all devices, 0 - advertise specific networks to the device it was discovered from
+	conf->mana_macacl = 0; //default off; 0 - off, 1 - extend MAC ACL to management frames
+	conf->mana_outfile = "NOT_SET"; //default none
+	conf->mana_ssid_filter_file = "NOT_SET"; //default none
+	conf->mana_wpe = 0; //default off; 1 - dump credentials captured during EAP exchanges 0 - function as normal
+	conf->mana_credout = "NOT_SET"; //default none
+	conf->mana_wpaout = "NOT_SET"; //default none
+	conf->mana_eapsuccess = 0; //default off; 1 - allow clients to connect even with incorrect creds 0 - function as normal
+	conf->mana_eaptls = 0; //default off; 1 - accept any client certificate presented in EAP-TLS modes. 0 - validate certificates as normal.
+	conf->enable_sycophant = 0; //default off; 1 - relay inner MSCHAPv2 authentication with wpa_sycophant. 0 - No relaying
+	conf->sycophant_dir = "NOT_SET"; //default none
+	// MANA END
 
 	while (fgets(buf, sizeof(buf), f)) {
 		struct hostapd_bss_config *bss;

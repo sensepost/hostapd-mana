@@ -20,5 +20,7 @@ void taxonomy_sta_info_assoc_req(const struct hostapd_data *hapd,
 				 const u8 *ie, size_t ie_len);
 int retrieve_sta_taxonomy(const struct hostapd_data *hapd,
 			  struct sta_info *sta, char *buf, size_t buflen);
+int retrieve_hostapd_sta_taxonomy(const struct hostapd_data *hapd, //MANA
+                          struct hostapd_sta_info *info, char *buf, size_t buflen); //MANA
 
 #endif /* TAXONOMY_H */
