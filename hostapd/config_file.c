@@ -2185,7 +2185,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "MANA: WPE EAP mode enabled");
 		}
 	} else if (os_strcmp(buf, "mana_credout") == 0) {
-		os_free(conf->mana_credout);
+		/* os_free(conf->mana_credout); */
 		conf->mana_credout = os_strdup(pos);
 		FILE *f = fopen(conf->mana_credout, "a");
 		if (!f) {
@@ -2223,7 +2223,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "SYCOPHANT: Enabled");
 		}
 	} else if (os_strcmp(buf, "sycophant_dir") == 0) {
-		os_free(conf->sycophant_dir);
+		/* os_free(conf->sycophant_dir); */
 		conf->sycophant_dir = os_strdup(pos);
 		if (access(conf->sycophant_dir, W_OK) != 0) {
 			wpa_printf(MSG_ERROR, "SYCOPHANT: Line %d: Failed to access sycophant directory '%s'", line, conf->sycophant_dir);
