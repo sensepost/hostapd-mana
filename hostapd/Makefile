@@ -29,6 +29,11 @@ export BINDIR ?= /usr/local/bin/
 
 -include .config
 
+ifdef CONFIG_OPENSSL
+LIBS += -Wl,-rpath=../openssl/local/lib
+LIBS += -lpthread
+endif
+
 ifndef CONFIG_NO_GITVER
 # Add VERSION_STR postfix for builds from a git repository
 ifeq ($(wildcard ../.git),../.git)
