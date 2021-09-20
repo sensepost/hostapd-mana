@@ -50,6 +50,6 @@ struct mana_mac {
 	struct mana_ssid *ssids;
 	UT_hash_handle hh;
 };
-struct mana_mac *mana_machash;
-struct mana_ssid *mana_ssidhash;
+extern struct mana_mac *mana_machash;
+extern struct mana_ssid *mana_ssidhash;
 // MANA END
