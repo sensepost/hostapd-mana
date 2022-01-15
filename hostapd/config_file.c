@@ -2227,7 +2227,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "SYCOPHANT: Enabled");
 		}
 	} else if (os_strcmp(buf, "sycophant_dir") == 0) {
-		char *tmp = malloc(strlen(pos));
+		char *tmp = malloc(strlen(pos)+1);
 		strcpy(tmp,pos);
 		if (access(pos, W_OK) != 0) {
 			wpa_printf(MSG_ERROR, "SYCOPHANT: Line %d: Failed to access sycophant directory '%s'", line, pos);
@@ -2235,6 +2235,23 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		conf->sycophant_dir = tmp;
 		wpa_printf(MSG_INFO, "MANA: Sycohpant state directory set to %s.",tmp);
+                size_t dirlen = strlen(conf->sycophant_dir);
+
+                conf->sycophant_state_file = malloc(dirlen + 16);
+		snprintf(conf->sycophant_state_file, dirlen+16, "%sSYCOPHANT_STATE",  tmp);
+
+                conf->sycophant_challenge_file = malloc(dirlen + 10);
+                snprintf(conf->sycophant_challenge_file, dirlen + 10, "%sCHALLENGE", tmp);
+
+                conf->sycophant_response_file = malloc(dirlen + 9);
+                snprintf(conf->sycophant_response_file, dirlen + 9, "%sRESPONSE", tmp);
+
+                for (size_t id=1; id<=2; ++id)
+		{
+			conf->sycophant_id_file[id-1] = malloc(dirlen + 15);
+        	        snprintf(conf->sycophant_id_file[id-1], dirlen + 15, "%sSYCOPHANT_P%dID",  tmp, id);
+		}
+
 	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
