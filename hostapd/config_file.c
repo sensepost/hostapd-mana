@@ -2159,8 +2159,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "MANA: MAC ACLs extended to management frames");
 		}
 	} else if (os_strcmp(buf, "mana_outfile") == 0) {
-		char *tmp = malloc(strlen(pos));
-		strcpy(tmp,pos);
+		char *tmp = strdup(pos);
 		FILE *f = fopen(pos, "a");
 		if (!f) {
 			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open activity file '%s'", line, pos);
@@ -2170,8 +2169,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->mana_outfile = tmp;
 		wpa_printf(MSG_INFO, "MANA: Observed activity will be written to. File %s set.",tmp);
 	} else if (os_strcmp(buf, "mana_ssid_filter_file") == 0) {
-		char *tmp1 = malloc(strlen(pos));
-		strcpy(tmp1,pos);
+		char *tmp1 = strdup(pos);
 		if (hostapd_config_read_ssidlist(pos, &bss->ssid_filter,
 					&bss->num_ssid_filter)) {
 			wpa_printf(MSG_ERROR, "Line %d: Failed to read SSID filter list '%s'",
@@ -2187,8 +2185,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "MANA: WPE EAP mode enabled");
 		}
 	} else if (os_strcmp(buf, "mana_credout") == 0) {
-		char *tmp2 = malloc(strlen(pos));
-		strcpy(tmp2,pos);
+		char *tmp2 = strdup(pos);
 		FILE *f = fopen(pos, "a");
 		if (!f) {
 			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open credential out file '%s'", line, pos);
@@ -2198,8 +2195,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->mana_credout = tmp2;
 		wpa_printf(MSG_INFO, "MANA: Captured credentials will be written to file '%s'.",conf->mana_credout);
 	} else if (os_strcmp(buf, "mana_wpaout") == 0) {
-		char *tmp2 = malloc(strlen(pos));
-		strcpy(tmp2,pos);
+		char *tmp2 = strdup(pos);
 		FILE *f = fopen(pos, "a");
 		if (!f) {
 			wpa_printf(MSG_ERROR, "MANA: Line %d: Failed to open WPA/2 handshake out file '%s'", line, pos);
@@ -2227,8 +2223,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "SYCOPHANT: Enabled");
 		}
 	} else if (os_strcmp(buf, "sycophant_dir") == 0) {
-		char *tmp = malloc(strlen(pos));
-		strcpy(tmp,pos);
+		char *tmp = strdup(pos);
 		if (access(pos, W_OK) != 0) {
 			wpa_printf(MSG_ERROR, "SYCOPHANT: Line %d: Failed to access sycophant directory '%s'", line, pos);
 			return 1;
