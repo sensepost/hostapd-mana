@@ -19,6 +19,7 @@
 #include "radius/radius_client.h"
 #include "ap/wpa_auth.h"
 #include "ap/ap_config.h"
+#include "ap/beacon.h"
 #include "config_file.h"
 
 #include <stdlib.h>
@@ -2178,6 +2179,26 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		conf->mana_ssid_filter_file = tmp1;
 		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",tmp1);
+	} else if (os_strcmp(buf, "mana_ssid_preload_file")) {
+		struct ssid_filter_entry *ssid_list_ = NULL;
+		int ssid_num_ = 0;
+		if (hostapd_config_read_ssidlist(pos, &ssid_list_, &ssid_num_)) {
+			wpa_printf(MSG_ERROR, "Line %d: Failed to read SSID preload list '%s'",
+				line, pos);
+			return 1;
+		}
+		extern struct mana_ssid *mana_ssidhash;
+		for (int i = 0; i < ssid_num_; i++) {
+			const char *ssid = ssid_list_[i].ssid;
+			size_t ssid_len = strlen(ssid_list_[i].ssid);
+			struct mana_ssid *newssid = os_malloc(sizeof(struct mana_ssid));
+			os_memcpy(newssid->ssid_txt, wpa_ssid_txt(ssid, ssid_len), ssid_len + 1);
+			os_memcpy(newssid->ssid, ssid, ssid_len);
+			newssid->ssid_len = ssid_len;
+			HASH_ADD_STR(mana_ssidhash, ssid_txt, newssid);
+			wpa_printf(MSG_INFO, "MANA: Preload SSID: %s", ssid);
+		}
+		wpa_printf(MSG_INFO, "MANA: Preload %d SSID(s).", ssid_num_);
 	} else if (os_strcmp(buf, "mana_wpe") == 0) {
 		int val = atoi(pos);
 		conf->mana_wpe = (val != 0);
