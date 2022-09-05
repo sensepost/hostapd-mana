@@ -2179,7 +2179,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		conf->mana_ssid_filter_file = tmp1;
 		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",tmp1);
-	} else if (os_strcmp(buf, "mana_ssid_preload_file")) {
+	} else if (os_strcmp(buf, "mana_ssid_preload_file") == 0) {
 		struct ssid_filter_entry *ssid_list_ = NULL;
 		int ssid_num_ = 0;
 		if (hostapd_config_read_ssidlist(pos, &ssid_list_, &ssid_num_)) {
