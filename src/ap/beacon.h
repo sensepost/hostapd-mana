@@ -11,6 +11,9 @@
 #define BEACON_H
 
 struct ieee80211_mgmt;
+struct hostapd_iface;
+struct hostapd_info;
+struct hostapd_sta_info;
 
 void handle_probe_req(struct hostapd_data *hapd,
 		      const struct ieee80211_mgmt *mgmt, size_t len,

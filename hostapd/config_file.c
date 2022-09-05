@@ -2189,10 +2189,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		extern struct mana_ssid *mana_ssidhash;
 		for (int i = 0; i < ssid_num_; i++) {
-			const char *ssid = ssid_list_[i].ssid;
+			char *ssid = ssid_list_[i].ssid;
 			size_t ssid_len = strlen(ssid_list_[i].ssid);
 			struct mana_ssid *newssid = os_malloc(sizeof(struct mana_ssid));
-			os_memcpy(newssid->ssid_txt, wpa_ssid_txt(ssid, ssid_len), ssid_len + 1);
+			os_memcpy(newssid->ssid_txt, wpa_ssid_txt((const u8 *)ssid, ssid_len), ssid_len + 1);
 			os_memcpy(newssid->ssid, ssid, ssid_len);
 			newssid->ssid_len = ssid_len;
 			HASH_ADD_STR(mana_ssidhash, ssid_txt, newssid);
