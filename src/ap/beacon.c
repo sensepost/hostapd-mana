@@ -859,8 +859,8 @@ void handle_probe_req(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_P2P */
 	if (os_strcmp(hapd->iconf->mana_ssid_filter_file,"NOT_SET") && elems.ssid_len != 0) { //MANA
-		if (!hostapd_ssidlist_found(hapd->conf->ssid_filter, hapd->conf->num_ssid_filter, wpa_ssid_txt(elems.ssid, elems.ssid_len))) {
-			wpa_printf(MSG_DEBUG, "MANA - SSID '%s' not found in list.", wpa_ssid_txt(elems.ssid, elems.ssid_len));
+		if (hostapd_ssidlist_found(hapd->conf->ssid_filter, hapd->conf->num_ssid_filter, wpa_ssid_txt(elems.ssid, elems.ssid_len)) != hapd->iconf->mana_ssid_filter_type) {
+			wpa_printf(MSG_DEBUG, "MANA - SSID '%s' has been denied.", wpa_ssid_txt(elems.ssid, elems.ssid_len));
 			return;
 		}
 	}
