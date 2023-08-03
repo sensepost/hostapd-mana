@@ -20,7 +20,7 @@
 #	Queue for work items
 #	Lock for locking
 #	Thread for threading
-import Queue
+import queue
 import os.path
 import os
 from threading import Lock
@@ -33,7 +33,7 @@ LOCK = Lock()
 def PrintResult(verbose, message):
 	if (verbose > 0):
 		LOCK.acquire()
-		print message
+		print (message)
 		LOCK.release()
 
 def WriteResult(s_file, s_string):
@@ -115,7 +115,7 @@ if __name__ == '__main__':
 	WORDLST="/usr/share/wordlists/rockyou.txt"
 
 	# Global Variables.  These are calculated... :P
-	WRKQUEUE = Queue.Queue()
+	WRKQUEUE = queue.Queue()
 
 	# Print a nice header...
 	PrintResult(VERBOSE, "MANA - CrackApd - crackapd.py")
