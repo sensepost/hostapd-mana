@@ -13,7 +13,7 @@
 CONFIG_DRIVER_HOSTAP=y
 
 # Driver interface for wired authenticator
-#CONFIG_DRIVER_WIRED=y
+CONFIG_DRIVER_WIRED=y
 
 # Driver interface for drivers using the nl80211 kernel interface
 CONFIG_DRIVER_NL80211=y
@@ -42,7 +42,7 @@ CONFIG_DRIVER_NL80211=y
 #LIBS_c += -L/usr/local/lib
 
 # Driver interface for no driver (e.g., RADIUS server only)
-#CONFIG_DRIVER_NONE=y
+CONFIG_DRIVER_NONE=y
 
 # IEEE 802.11F/IAPP
 CONFIG_IAPP=y
