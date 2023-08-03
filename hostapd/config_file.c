@@ -2159,7 +2159,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "MANA: MAC ACLs extended to management frames");
 		}
 	} else if (os_strcmp(buf, "mana_outfile") == 0) {
-		char *tmp = malloc(strlen(pos));
+		char *tmp = malloc(strlen(pos)+1);
 		strcpy(tmp,pos);
 		FILE *f = fopen(pos, "a");
 		if (!f) {
@@ -2170,7 +2170,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->mana_outfile = tmp;
 		wpa_printf(MSG_INFO, "MANA: Observed activity will be written to. File %s set.",tmp);
 	} else if (os_strcmp(buf, "mana_ssid_filter_file") == 0) {
-		char *tmp1 = malloc(strlen(pos));
+		char *tmp1 = malloc(strlen(pos)+1);
 		strcpy(tmp1,pos);
 		if (hostapd_config_read_ssidlist(pos, &bss->ssid_filter,
 					&bss->num_ssid_filter)) {
@@ -2192,7 +2192,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "MANA: WPE EAP mode enabled");
 		}
 	} else if (os_strcmp(buf, "mana_credout") == 0) {
-		char *tmp2 = malloc(strlen(pos));
+		char *tmp2 = malloc(strlen(pos)+1);
 		strcpy(tmp2,pos);
 		FILE *f = fopen(pos, "a");
 		if (!f) {
@@ -2203,7 +2203,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		conf->mana_credout = tmp2;
 		wpa_printf(MSG_INFO, "MANA: Captured credentials will be written to file '%s'.",conf->mana_credout);
 	} else if (os_strcmp(buf, "mana_wpaout") == 0) {
-		char *tmp2 = malloc(strlen(pos));
+		char *tmp2 = malloc(strlen(pos)+1);
 		strcpy(tmp2,pos);
 		FILE *f = fopen(pos, "a");
 		if (!f) {
@@ -2232,7 +2232,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "SYCOPHANT: Enabled");
 		}
 	} else if (os_strcmp(buf, "sycophant_dir") == 0) {
-		char *tmp = malloc(strlen(pos));
+		char *tmp = malloc(strlen(pos)+1);
 		strcpy(tmp,pos);
 		if (access(pos, W_OK) != 0) {
 			wpa_printf(MSG_ERROR, "SYCOPHANT: Line %d: Failed to access sycophant directory '%s'", line, pos);
@@ -2240,6 +2240,23 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		conf->sycophant_dir = tmp;
 		wpa_printf(MSG_INFO, "MANA: Sycohpant state directory set to %s.",tmp);
+                size_t dirlen = strlen(conf->sycophant_dir);
+
+                conf->sycophant_state_file = malloc(dirlen + 16);
+		snprintf(conf->sycophant_state_file, dirlen+16, "%sSYCOPHANT_STATE",  tmp);
+
+                conf->sycophant_challenge_file = malloc(dirlen + 10);
+                snprintf(conf->sycophant_challenge_file, dirlen + 10, "%sCHALLENGE", tmp);
+
+                conf->sycophant_response_file = malloc(dirlen + 9);
+                snprintf(conf->sycophant_response_file, dirlen + 9, "%sRESPONSE", tmp);
+
+                for (int id=1; id<=2; ++id)
+		{
+			conf->sycophant_id_file[id-1] = malloc(dirlen + 15);
+        	        snprintf(conf->sycophant_id_file[id-1], dirlen + 15, "%sSYCOPHANT_P%dID",  tmp, id);
+		}
+
 	// MANA END
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",

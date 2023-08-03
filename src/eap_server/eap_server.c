@@ -180,22 +180,20 @@ int eap_user_get(struct eap_sm *sm, const u8 *identity, size_t identity_len,
 	if (mana.conf->enable_sycophant && os_strcmp("NOT_SET",mana.conf->sycophant_dir) != 0) {
 		char sup_state[2] = "*";
 		FILE* sycophantState;
-		char sycophantStateFile[sizeof(mana.conf->sycophant_dir)+16];
-		os_strlcpy(sycophantStateFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
-		strcat(sycophantStateFile,"SYCOPHANT_STATE");
-		sycophantState = fopen(sycophantStateFile,"rb");
+
+		sycophantState = fopen(mana.conf->sycophant_state_file,"rb");
 		if (sycophantState != NULL) {
 			fread(sup_state,1,1,sycophantState);
 			fclose(sycophantState);
 		}
 		if (os_strcmp(sup_state,"I") == 0) {
 			FILE* sycophantID;
-			char sycophantIDFile[sizeof(mana.conf->sycophant_dir)+15];
-			os_strlcpy(sycophantIDFile,mana.conf->sycophant_dir,sizeof(mana.conf->sycophant_dir));
+                        const char *sycophantIDFile;
 			if (phase2)
-				strcat(sycophantIDFile,"SYCOPHANT_P2ID");
+                                sycophantIDFile = mana.conf->sycophant_id_file[1];
 			else
-				strcat(sycophantIDFile,"SYCOPHANT_P1ID");
+                                sycophantIDFile = mana.conf->sycophant_id_file[0];
+
 			sycophantID = fopen(sycophantIDFile, "wb");
 
 			if (sycophantID != NULL) {
