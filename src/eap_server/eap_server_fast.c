@@ -1043,8 +1043,7 @@ static void eap_fast_process_phase2_response(struct eap_sm *sm,
 
 	switch (data->state) {
 	case PHASE2_ID:
-		//if (eap_user_get(sm, sm->identity, sm->identity_len, 1) != 0) {
-		if (eap_user_get(sm, sm->identity, sm->identity_len, 0) != 0) {
+		if (eap_user_get(sm, sm->identity, sm->identity_len, 1) != 0) {
 			wpa_hexdump_ascii(MSG_DEBUG, "EAP-FAST: Phase2 "
 					  "Identity not found in the user "
 					  "database",
