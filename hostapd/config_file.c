@@ -2180,6 +2180,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		}
 		conf->mana_ssid_filter_file = tmp1;
 		wpa_printf(MSG_INFO, "MANA: SSID Filter enabled. File %s set.",tmp1);
+	} else if(os_strcmp(buf, "mana_ssid_filter_type") == 0){
+		if (atoi(pos))
+			conf->mana_ssid_filter_type = 1;
+		else
+			conf->mana_ssid_filter_type = 0;
 	} else if (os_strcmp(buf, "mana_wpe") == 0) {
 		int val = atoi(pos);
 		conf->mana_wpe = (val != 0);
@@ -3753,6 +3758,7 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	conf->mana_macacl = 0; //default off; 0 - off, 1 - extend MAC ACL to management frames
 	conf->mana_outfile = "NOT_SET"; //default none
 	conf->mana_ssid_filter_file = "NOT_SET"; //default none
+	conf->mana_ssid_filter_type = 1; //default 1; ssid list is a white list
 	conf->mana_wpe = 0; //default off; 1 - dump credentials captured during EAP exchanges 0 - function as normal
 	conf->mana_credout = "NOT_SET"; //default none
 	conf->mana_wpaout = "NOT_SET"; //default none
