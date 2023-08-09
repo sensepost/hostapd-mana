@@ -1018,18 +1018,32 @@ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 			  const u8 *addr, struct vlan_description *vlan_id)
 {
 	int start, end, middle, res;
+	u8 mac1[ETH_ALEN], mac2[ETH_ALEN]; //MANA
+	int i; //MANA
 
 	start = 0;
 	end = num_entries - 1;
 
 	while (start <= end) {
 		middle = (start + end) / 2;
-		res = os_memcmp(list[middle].addr, addr, ETH_ALEN);
+		//MANA start - apply MAC mask
+		for (i=0; i<ETH_ALEN; i++) {
+			mac1[i] = list[middle].addr[i]; //This is already transformed on load
+			mac2[i] = addr[i] & list[middle].mask[i];
+		}
+		wpa_printf(MSG_DEBUG, "MANA: Comparing " MACSTR "/"MACSTR " against " MACSTR " transformed to " MACSTR,MAC2STR(mac1), MAC2STR(list[middle].mask), MAC2STR(addr), MAC2STR(mac2));
+		res = os_memcmp(mac1, mac2, ETH_ALEN);
+		//MANA end
+		//res = os_memcmp(list[middle].addr, addr, ETH_ALEN);
 		if (res == 0) {
 			if (vlan_id)
 				*vlan_id = list[middle].vlan_id;
 			return 1;
 		}
+		//MANA start
+		if (res != 0)
+			res = os_memcmp(mac1, addr, ETH_ALEN); //binary search requires a constant value, transformed value is changing each time
+		//MANA end
 		if (res < 0)
 			start = middle + 1;
 		else
@@ -1039,6 +1053,21 @@ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 	return 0;
 }
 
+// MANA Start - SSID filter
+int hostapd_ssidlist_found(struct ssid_filter_entry *list, int num_entries, const char *ssid)
+{
+	int start, end;
+	start = 0;
+	end = num_entries - 1;
+	while (start <= end) {
+		if (!strcmp(list[start].ssid, ssid)) {
+			return 1;
+		}
+		start++;
+	}
+	return 0;
+}
+// MANA End
 
 int hostapd_rate_found(int *list, int rate)
 {
