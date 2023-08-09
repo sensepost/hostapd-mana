@@ -27,7 +27,7 @@ u8 * hostapd_eid_ht_capabilities(struct hostapd_data *hapd, u8 *eid)
 	u8 *pos = eid;
 
 	if (!hapd->iconf->ieee80211n || !hapd->iface->current_mode ||
-	    hapd->conf->disable_11n)
+	    hapd->conf->disable_11n || is_6ghz_op_class(hapd->iconf->op_class))
 		return eid;
 
 	*pos++ = WLAN_EID_HT_CAP;
@@ -84,7 +84,8 @@ u8 * hostapd_eid_ht_operation(struct hostapd_data *hapd, u8 *eid)
 	struct ieee80211_ht_operation *oper;
 	u8 *pos = eid;
 
-	if (!hapd->iconf->ieee80211n || hapd->conf->disable_11n)
+	if (!hapd->iconf->ieee80211n || hapd->conf->disable_11n ||
+	    is_6ghz_op_class(hapd->iconf->op_class))
 		return eid;
 
 	*pos++ = WLAN_EID_HT_OPERATION;
@@ -108,32 +109,9 @@ u8 * hostapd_eid_ht_operation(struct hostapd_data *hapd, u8 *eid)
 }
 
 
-u8 * hostapd_eid_secondary_channel(struct hostapd_data *hapd, u8 *eid)
-{
-	u8 sec_ch;
-
-	if (!hapd->cs_freq_params.channel ||
-	    !hapd->cs_freq_params.sec_channel_offset)
-		return eid;
-
-	if (hapd->cs_freq_params.sec_channel_offset == -1)
-		sec_ch = HT_INFO_HT_PARAM_SECONDARY_CHNL_BELOW;
-	else if (hapd->cs_freq_params.sec_channel_offset == 1)
-		sec_ch = HT_INFO_HT_PARAM_SECONDARY_CHNL_ABOVE;
-	else
-		return eid;
-
-	*eid++ = WLAN_EID_SECONDARY_CHANNEL_OFFSET;
-	*eid++ = 1;
-	*eid++ = sec_ch;
-
-	return eid;
-}
-
-
 /*
 op_mode
-Set to 0 (HT pure) under the followign conditions
+Set to 0 (HT pure) under the following conditions
 	- all STAs in the BSS are 20/40 MHz HT in 20/40 MHz BSS or
 	- all STAs in the BSS are 20 MHz HT in 20 MHz BSS
 Set to 1 (HT non-member protection) if there may be non-HT STAs
@@ -236,17 +214,29 @@ void hostapd_2040_coex_action(struct hostapd_data *hapd,
 	int i;
 	const u8 *start = (const u8 *) mgmt;
 	const u8 *data = start + IEEE80211_HDRLEN + 2;
+	struct sta_info *sta;
+
+	wpa_printf(MSG_DEBUG,
+		   "HT: Received 20/40 BSS Coexistence Management frame from "
+		   MACSTR, MAC2STR(mgmt->sa));
 
 	hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
 		       HOSTAPD_LEVEL_DEBUG, "hostapd_public_action - action=%d",
 		       mgmt->u.action.u.public_action.action);
 
-	if (!(iface->conf->ht_capab & HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET))
+	if (!(iface->conf->ht_capab & HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET)) {
+		wpa_printf(MSG_DEBUG,
+			   "Ignore 20/40 BSS Coexistence Management frame since 40 MHz capability is not enabled");
 		return;
+	}
 
-	if (len < IEEE80211_HDRLEN + 2 + sizeof(*bc_ie))
+	if (len < IEEE80211_HDRLEN + 2 + sizeof(*bc_ie)) {
+		wpa_printf(MSG_DEBUG,
+			   "Ignore too short 20/40 BSS Coexistence Management frame");
 		return;
+	}
 
+	/* 20/40 BSS Coexistence element */
 	bc_ie = (struct ieee80211_2040_bss_coex_ie *) data;
 	if (bc_ie->element_id != WLAN_EID_20_40_BSS_COEXISTENCE ||
 	    bc_ie->length < 1) {
@@ -254,13 +244,35 @@ void hostapd_2040_coex_action(struct hostapd_data *hapd,
 			   bc_ie->element_id, bc_ie->length);
 		return;
 	}
-	if (len < IEEE80211_HDRLEN + 2 + 2 + bc_ie->length)
+	if (len < IEEE80211_HDRLEN + 2 + 2 + bc_ie->length) {
+		wpa_printf(MSG_DEBUG,
+			   "Truncated 20/40 BSS Coexistence element");
 		return;
+	}
 	data += 2 + bc_ie->length;
 
-	wpa_printf(MSG_DEBUG, "20/40 BSS Coexistence Information field: 0x%x",
-		   bc_ie->coex_param);
+	wpa_printf(MSG_DEBUG,
+		   "20/40 BSS Coexistence Information field: 0x%x (%s%s%s%s%s%s)",
+		   bc_ie->coex_param,
+		   (bc_ie->coex_param & BIT(0)) ? "[InfoReq]" : "",
+		   (bc_ie->coex_param & BIT(1)) ? "[40MHzIntolerant]" : "",
+		   (bc_ie->coex_param & BIT(2)) ? "[20MHzBSSWidthReq]" : "",
+		   (bc_ie->coex_param & BIT(3)) ? "[OBSSScanExemptionReq]" : "",
+		   (bc_ie->coex_param & BIT(4)) ?
+		   "[OBSSScanExemptionGrant]" : "",
+		   (bc_ie->coex_param & (BIT(5) | BIT(6) | BIT(7))) ?
+		   "[Reserved]" : "");
+
 	if (bc_ie->coex_param & WLAN_20_40_BSS_COEX_20MHZ_WIDTH_REQ) {
+		/* Intra-BSS communication prohibiting 20/40 MHz BSS operation
+		 */
+		sta = ap_get_sta(hapd, mgmt->sa);
+		if (!sta || !(sta->flags & WLAN_STA_ASSOC)) {
+			wpa_printf(MSG_DEBUG,
+				   "Ignore intra-BSS 20/40 BSS Coexistence Management frame from not-associated STA");
+			return;
+		}
+
 		hostapd_logger(hapd, mgmt->sa,
 			       HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG,
@@ -269,6 +281,8 @@ void hostapd_2040_coex_action(struct hostapd_data *hapd,
 	}
 
 	if (bc_ie->coex_param & WLAN_20_40_BSS_COEX_40MHZ_INTOL) {
+		/* Inter-BSS communication prohibiting 20/40 MHz BSS operation
+		 */
 		hostapd_logger(hapd, mgmt->sa,
 			       HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG,
@@ -276,12 +290,16 @@ void hostapd_2040_coex_action(struct hostapd_data *hapd,
 		is_ht40_allowed = 0;
 	}
 
-	if (start + len - data >= 3 &&
-	    data[0] == WLAN_EID_20_40_BSS_INTOLERANT && data[1] >= 1) {
+	/* 20/40 BSS Intolerant Channel Report element (zero or more times) */
+	while (start + len - data >= 3 &&
+	       data[0] == WLAN_EID_20_40_BSS_INTOLERANT && data[1] >= 1) {
 		u8 ielen = data[1];
 
-		if (ielen > start + len - data - 2)
+		if (ielen > start + len - data - 2) {
+			wpa_printf(MSG_DEBUG,
+				   "Truncated 20/40 BSS Intolerant Channel Report element");
 			return;
+		}
 		ic_report = (struct ieee80211_2040_intol_chan_report *) data;
 		wpa_printf(MSG_DEBUG,
 			   "20/40 BSS Intolerant Channel Report: Operating Class %u",
@@ -292,8 +310,10 @@ void hostapd_2040_coex_action(struct hostapd_data *hapd,
 		for (i = 0; i < ielen - 1; i++) {
 			u8 chan = ic_report->variable[i];
 
+			if (chan == iface->conf->channel)
+				continue; /* matching own primary channel */
 			if (is_40_allowed(iface, chan))
-				continue;
+				continue; /* not within affected channels */
 			hostapd_logger(hapd, mgmt->sa,
 				       HOSTAPD_MODULE_IEEE80211,
 				       HOSTAPD_LEVEL_DEBUG,
@@ -301,6 +321,8 @@ void hostapd_2040_coex_action(struct hostapd_data *hapd,
 				       chan);
 			is_ht40_allowed = 0;
 		}
+
+		data += 2 + ielen;
 	}
 	wpa_printf(MSG_DEBUG, "is_ht40_allowed=%d num_sta_ht40_intolerant=%d",
 		   is_ht40_allowed, iface->num_sta_ht40_intolerant);
@@ -340,8 +362,8 @@ u16 copy_sta_ht_capab(struct hostapd_data *hapd, struct sta_info *sta,
 	 * that did not specify a valid WMM IE in the (Re)Association Request
 	 * frame.
 	 */
-	if (!ht_capab ||
-	    !(sta->flags & WLAN_STA_WMM) || hapd->conf->disable_11n) {
+	if (!ht_capab || !(sta->flags & WLAN_STA_WMM) ||
+	    !hapd->iconf->ieee80211n || hapd->conf->disable_11n) {
 		sta->flags &= ~WLAN_STA_HT;
 		os_free(sta->ht_capabilities);
 		sta->ht_capabilities = NULL;

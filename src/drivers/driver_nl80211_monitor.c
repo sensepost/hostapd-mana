@@ -71,6 +71,9 @@ static void handle_frame(struct wpa_driver_nl80211_data *drv,
 	u16 fc;
 	union wpa_event_data event;
 
+	if (!drv->use_monitor)
+		return;
+
 	hdr = (struct ieee80211_hdr *) buf;
 	fc = le_to_host16(hdr->frame_control);
 
@@ -361,8 +364,17 @@ int nl80211_create_monitor_interface(struct wpa_driver_nl80211_data *drv)
 		 */
 		snprintf(buf, IFNAMSIZ, "mon-%s", drv->first_bss->ifname + 4);
 	} else {
+		int ret;
+
 		/* Non-P2P interface with AP functionality. */
-		snprintf(buf, IFNAMSIZ, "mon.%s", drv->first_bss->ifname);
+		ret = os_snprintf(buf, IFNAMSIZ, "mon.%s",
+				  drv->first_bss->ifname);
+		if (ret >= (int) sizeof(buf))
+			wpa_printf(MSG_DEBUG,
+				   "nl80211: Monitor interface name has been truncated to %s",
+				   buf);
+		else if (ret < 0)
+			return ret;
 	}
 
 	buf[IFNAMSIZ - 1] = '\0';

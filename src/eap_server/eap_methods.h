@@ -12,14 +12,15 @@
 #include "eap_common/eap_defs.h"
 
 const struct eap_method * eap_server_get_eap_method(int vendor,
-						    EapType method);
+						    enum eap_type method);
 struct eap_method * eap_server_method_alloc(int version, int vendor,
-					    EapType method, const char *name);
+					    enum eap_type method,
+					    const char *name);
 int eap_server_method_register(struct eap_method *method);
 
-EapType eap_server_get_type(const char *name, int *vendor);
+enum eap_type eap_server_get_type(const char *name, int *vendor);
 void eap_server_unregister_methods(void);
-const char * eap_server_get_name(int vendor, EapType type);
+const char * eap_server_get_name(int vendor, enum eap_type type);
 
 /* EAP server method registration calls for statically linked in methods */
 int eap_server_identity_register(void);
@@ -41,6 +42,7 @@ int eap_server_sake_register(void);
 int eap_server_gpsk_register(void);
 int eap_server_vendor_test_register(void);
 int eap_server_fast_register(void);
+int eap_server_teap_register(void);
 int eap_server_wsc_register(void);
 int eap_server_ikev2_register(void);
 int eap_server_tnc_register(void);

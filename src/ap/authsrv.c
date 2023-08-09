@@ -71,19 +71,26 @@ static int hostapd_radius_get_eap_user(void *ctx, const u8 *identity,
 	}
 
 	if (eap_user->password) {
-		user->password = os_malloc(eap_user->password_len);
+		user->password = os_memdup(eap_user->password,
+					   eap_user->password_len);
 		if (user->password == NULL)
 			goto out;
-		os_memcpy(user->password, eap_user->password,
-			  eap_user->password_len);
 		user->password_len = eap_user->password_len;
 		user->password_hash = eap_user->password_hash;
+		if (eap_user->salt && eap_user->salt_len) {
+			user->salt = os_memdup(eap_user->salt,
+					       eap_user->salt_len);
+			if (!user->salt)
+				goto out;
+			user->salt_len = eap_user->salt_len;
+		}
 	}
 	user->force_version = eap_user->force_version;
 	user->macacl = eap_user->macacl;
 	user->ttls_auth = eap_user->ttls_auth;
 	user->remediation = eap_user->remediation;
 	user->accept_attr = eap_user->accept_attr;
+	user->t_c_timestamp = eap_user->t_c_timestamp;
 	rv = 0;
 
 out:
@@ -103,25 +110,10 @@ static int hostapd_setup_radius_srv(struct hostapd_data *hapd)
 	srv.auth_port = conf->radius_server_auth_port;
 	srv.acct_port = conf->radius_server_acct_port;
 	srv.conf_ctx = hapd;
-	srv.eap_sim_db_priv = hapd->eap_sim_db_priv;
-	srv.ssl_ctx = hapd->ssl_ctx;
-	srv.msg_ctx = hapd->msg_ctx;
-	srv.pac_opaque_encr_key = conf->pac_opaque_encr_key;
-	srv.eap_fast_a_id = conf->eap_fast_a_id;
-	srv.eap_fast_a_id_len = conf->eap_fast_a_id_len;
-	srv.eap_fast_a_id_info = conf->eap_fast_a_id_info;
-	srv.eap_fast_prov = conf->eap_fast_prov;
-	srv.pac_key_lifetime = conf->pac_key_lifetime;
-	srv.pac_key_refresh_time = conf->pac_key_refresh_time;
-	srv.eap_sim_aka_result_ind = conf->eap_sim_aka_result_ind;
-	srv.tnc = conf->tnc;
-	srv.wps = hapd->wps;
 	srv.ipv6 = conf->radius_server_ipv6;
 	srv.get_eap_user = hostapd_radius_get_eap_user;
 	srv.eap_req_id_text = conf->eap_req_id_text;
 	srv.eap_req_id_text_len = conf->eap_req_id_text_len;
-	srv.pwd_group = conf->pwd_group;
-	srv.server_id = conf->server_id ? conf->server_id : "hostapd";
 	srv.sqlite_file = conf->eap_user_sqlite;
 #ifdef CONFIG_RADIUS_TEST
 	srv.dump_msk_file = conf->dump_msk_file;
@@ -129,10 +121,11 @@ static int hostapd_setup_radius_srv(struct hostapd_data *hapd)
 #ifdef CONFIG_HS20
 	srv.subscr_remediation_url = conf->subscr_remediation_url;
 	srv.subscr_remediation_method = conf->subscr_remediation_method;
+	srv.hs20_sim_provisioning_url = conf->hs20_sim_provisioning_url;
+	srv.t_c_server_url = conf->t_c_server_url;
 #endif /* CONFIG_HS20 */
-	srv.erp = conf->eap_server_erp;
 	srv.erp_domain = conf->erp_domain;
-	srv.tls_session_lifetime = conf->tls_session_lifetime;
+	srv.eap_cfg = hapd->eap_cfg;
 
 	hapd->radius_srv = radius_server_init(&srv);
 	if (hapd->radius_srv == NULL) {
@@ -146,17 +139,119 @@ static int hostapd_setup_radius_srv(struct hostapd_data *hapd)
 #endif /* RADIUS_SERVER */
 
 
+#ifdef EAP_TLS_FUNCS
+static void authsrv_tls_event(void *ctx, enum tls_event ev,
+			      union tls_event_data *data)
+{
+	switch (ev) {
+	case TLS_CERT_CHAIN_SUCCESS:
+		wpa_printf(MSG_DEBUG, "authsrv: remote certificate verification success");
+		break;
+	case TLS_CERT_CHAIN_FAILURE:
+		wpa_printf(MSG_INFO, "authsrv: certificate chain failure: reason=%d depth=%d subject='%s' err='%s'",
+			   data->cert_fail.reason,
+			   data->cert_fail.depth,
+			   data->cert_fail.subject,
+			   data->cert_fail.reason_txt);
+		break;
+	case TLS_PEER_CERTIFICATE:
+		wpa_printf(MSG_DEBUG, "authsrv: peer certificate: depth=%d serial_num=%s subject=%s",
+			   data->peer_cert.depth,
+			   data->peer_cert.serial_num ? data->peer_cert.serial_num : "N/A",
+			   data->peer_cert.subject);
+		break;
+	case TLS_ALERT:
+		if (data->alert.is_local)
+			wpa_printf(MSG_DEBUG, "authsrv: local TLS alert: %s",
+				   data->alert.description);
+		else
+			wpa_printf(MSG_DEBUG, "authsrv: remote TLS alert: %s",
+				   data->alert.description);
+		break;
+	}
+}
+#endif /* EAP_TLS_FUNCS */
+
+
+static struct eap_config * authsrv_eap_config(struct hostapd_data *hapd)
+{
+	struct eap_config *cfg;
+
+	cfg = os_zalloc(sizeof(*cfg));
+	if (!cfg)
+		return NULL;
+
+	cfg->eap_server = hapd->conf->eap_server;
+	cfg->ssl_ctx = hapd->ssl_ctx;
+	cfg->msg_ctx = hapd->msg_ctx;
+	cfg->eap_sim_db_priv = hapd->eap_sim_db_priv;
+	cfg->tls_session_lifetime = hapd->conf->tls_session_lifetime;
+	cfg->tls_flags = hapd->conf->tls_flags;
+	cfg->max_auth_rounds = hapd->conf->max_auth_rounds;
+	cfg->max_auth_rounds_short = hapd->conf->max_auth_rounds_short;
+	if (hapd->conf->pac_opaque_encr_key)
+		cfg->pac_opaque_encr_key =
+			os_memdup(hapd->conf->pac_opaque_encr_key, 16);
+	if (hapd->conf->eap_fast_a_id) {
+		cfg->eap_fast_a_id = os_memdup(hapd->conf->eap_fast_a_id,
+					       hapd->conf->eap_fast_a_id_len);
+		cfg->eap_fast_a_id_len = hapd->conf->eap_fast_a_id_len;
+	}
+	if (hapd->conf->eap_fast_a_id_info)
+		cfg->eap_fast_a_id_info =
+			os_strdup(hapd->conf->eap_fast_a_id_info);
+	cfg->eap_fast_prov = hapd->conf->eap_fast_prov;
+	cfg->pac_key_lifetime = hapd->conf->pac_key_lifetime;
+	cfg->pac_key_refresh_time = hapd->conf->pac_key_refresh_time;
+	cfg->eap_teap_auth = hapd->conf->eap_teap_auth;
+	cfg->eap_teap_pac_no_inner = hapd->conf->eap_teap_pac_no_inner;
+	cfg->eap_teap_separate_result = hapd->conf->eap_teap_separate_result;
+	cfg->eap_teap_id = hapd->conf->eap_teap_id;
+	cfg->eap_sim_aka_result_ind = hapd->conf->eap_sim_aka_result_ind;
+	cfg->eap_sim_id = hapd->conf->eap_sim_id;
+	cfg->tnc = hapd->conf->tnc;
+	cfg->wps = hapd->wps;
+	cfg->fragment_size = hapd->conf->fragment_size;
+	cfg->pwd_group = hapd->conf->pwd_group;
+	cfg->pbc_in_m1 = hapd->conf->pbc_in_m1;
+	if (hapd->conf->server_id) {
+		cfg->server_id = (u8 *) os_strdup(hapd->conf->server_id);
+		cfg->server_id_len = os_strlen(hapd->conf->server_id);
+	} else {
+		cfg->server_id = (u8 *) os_strdup("hostapd");
+		cfg->server_id_len = 7;
+	}
+	cfg->erp = hapd->conf->eap_server_erp;
+
+	return cfg;
+}
+
+
 int authsrv_init(struct hostapd_data *hapd)
 {
 #ifdef EAP_TLS_FUNCS
 	if (hapd->conf->eap_server &&
 	    (hapd->conf->ca_cert || hapd->conf->server_cert ||
-	     hapd->conf->private_key || hapd->conf->dh_file)) {
+	     hapd->conf->private_key || hapd->conf->dh_file ||
+	     hapd->conf->server_cert2 || hapd->conf->private_key2)) {
 		struct tls_config conf;
 		struct tls_connection_params params;
 
 		os_memset(&conf, 0, sizeof(conf));
 		conf.tls_session_lifetime = hapd->conf->tls_session_lifetime;
+		if (hapd->conf->crl_reload_interval > 0 &&
+		    hapd->conf->check_crl <= 0) {
+			wpa_printf(MSG_INFO,
+				   "Cannot enable CRL reload functionality - it depends on check_crl being set");
+		} else if (hapd->conf->crl_reload_interval > 0) {
+			conf.crl_reload_interval =
+				hapd->conf->crl_reload_interval;
+			wpa_printf(MSG_INFO,
+				   "Enabled CRL reload functionality");
+		}
+		conf.tls_flags = hapd->conf->tls_flags;
+		conf.event_cb = authsrv_tls_event;
+		conf.cb_ctx = hapd;
 		hapd->ssl_ctx = tls_init(&conf);
 		if (hapd->ssl_ctx == NULL) {
 			wpa_printf(MSG_ERROR, "Failed to initialize TLS");
@@ -167,14 +262,19 @@ int authsrv_init(struct hostapd_data *hapd)
 		os_memset(&params, 0, sizeof(params));
 		params.ca_cert = hapd->conf->ca_cert;
 		params.client_cert = hapd->conf->server_cert;
+		params.client_cert2 = hapd->conf->server_cert2;
 		params.private_key = hapd->conf->private_key;
+		params.private_key2 = hapd->conf->private_key2;
 		params.private_key_passwd = hapd->conf->private_key_passwd;
+		params.private_key_passwd2 = hapd->conf->private_key_passwd2;
 		params.dh_file = hapd->conf->dh_file;
 		params.openssl_ciphers = hapd->conf->openssl_ciphers;
+		params.openssl_ecdh_curves = hapd->conf->openssl_ecdh_curves;
 		params.ocsp_stapling_response =
 			hapd->conf->ocsp_stapling_response;
 		params.ocsp_stapling_response_multi =
 			hapd->conf->ocsp_stapling_response_multi;
+		params.check_cert_subject = hapd->conf->check_cert_subject;
 
 		if (tls_global_set_params(hapd->ssl_ctx, &params)) {
 			wpa_printf(MSG_ERROR, "Failed to set TLS parameters");
@@ -183,7 +283,8 @@ int authsrv_init(struct hostapd_data *hapd)
 		}
 
 		if (tls_global_set_verify(hapd->ssl_ctx,
-					  hapd->conf->check_crl)) {
+					  hapd->conf->check_crl,
+					  hapd->conf->check_crl_strict)) {
 			wpa_printf(MSG_ERROR, "Failed to enable check_crl");
 			authsrv_deinit(hapd);
 			return -1;
@@ -205,6 +306,14 @@ int authsrv_init(struct hostapd_data *hapd)
 		}
 	}
 #endif /* EAP_SIM_DB */
+
+	hapd->eap_cfg = authsrv_eap_config(hapd);
+	if (!hapd->eap_cfg) {
+		wpa_printf(MSG_ERROR,
+			   "Failed to build EAP server configuration");
+		authsrv_deinit(hapd);
+		return -1;
+	}
 
 #ifdef RADIUS_SERVER
 	if (hapd->conf->radius_server_clients &&
@@ -236,4 +345,7 @@ void authsrv_deinit(struct hostapd_data *hapd)
 		hapd->eap_sim_db_priv = NULL;
 	}
 #endif /* EAP_SIM_DB */
+
+	eap_server_config_free(hapd->eap_cfg);
+	hapd->eap_cfg = NULL;
 }

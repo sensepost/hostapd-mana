@@ -150,10 +150,12 @@ static void handle_ndisc(void *ctx, const u8 *src_addr, const u8 *buf,
 				return;
 		}
 		break;
+#ifdef CONFIG_HS20
 	case ROUTER_ADVERTISEMENT:
 		if (hapd->conf->disable_dgaf)
 			ucast_to_stas(hapd, buf, len);
 		break;
+#endif /* CONFIG_HS20 */
 	case NEIGHBOR_ADVERTISEMENT:
 		if (hapd->conf->na_mcast_to_ucast)
 			ucast_to_stas(hapd, buf, len);
@@ -182,4 +184,5 @@ int ndisc_snoop_init(struct hostapd_data *hapd)
 void ndisc_snoop_deinit(struct hostapd_data *hapd)
 {
 	l2_packet_deinit(hapd->sock_ndisc);
+	hapd->sock_ndisc = NULL;
 }

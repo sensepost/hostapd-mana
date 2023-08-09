@@ -12,7 +12,7 @@
 #ifdef CONFIG_WPS_TESTING
 
 extern int wps_version_number;
-extern int wps_testing_dummy_cred;
+extern int wps_testing_stub_cred;
 extern int wps_corrupt_pkhash;
 extern int wps_force_auth_types_in_use;
 extern u16 wps_force_auth_types;
@@ -152,7 +152,8 @@ enum {
 	WFA_ELEM_NETWORK_KEY_SHAREABLE = 0x02,
 	WFA_ELEM_REQUEST_TO_ENROLL = 0x03,
 	WFA_ELEM_SETTINGS_DELAY_TIME = 0x04,
-	WFA_ELEM_REGISTRAR_CONFIGURATION_METHODS = 0x05
+	WFA_ELEM_REGISTRAR_CONFIGURATION_METHODS = 0x05,
+	WFA_ELEM_MULTI_AP = 0x06
 };
 
 /* Device Password ID */

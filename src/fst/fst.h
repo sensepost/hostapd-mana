@@ -19,10 +19,18 @@
 #define US_IN_MS           1000
 #define LLT_UNIT_US        32 /* See 10.32.2.2  Transitioning between states */
 
-#define FST_LLT_MS_TO_VAL(m) (((u32) (m)) * US_IN_MS / LLT_UNIT_US)
-#define FST_LLT_VAL_TO_MS(v) (((u32) (v)) * LLT_UNIT_US / US_IN_MS)
-
-#define FST_MAX_LLT_MS       FST_LLT_VAL_TO_MS(-1)
+/*
+ * These were originally
+ * #define FST_LLT_MS_TO_VAL(m) (((u32) (m)) * US_IN_MS / LLT_UNIT_US)
+ * #define FST_LLT_VAL_TO_MS(v) (((u32) (v)) * LLT_UNIT_US / US_IN_MS)
+ * #define FST_MAX_LLT_MS FST_LLT_VAL_TO_MS(-1)
+ * but those can overflow 32-bit unsigned integer, so use alternative defines
+ * to avoid undefined behavior with such overflow.
+ * LLT_UNIT_US/US_IN_MS = 32/1000 = 4/125
+ */
+#define FST_LLT_MS_TO_VAL(m) (((u32) (m)) * 125 / 4)
+#define FST_LLT_VAL_TO_MS(v) (((u32) (v)) * 4 / 125)
+#define FST_MAX_LLT_MS       (((u32) -1) / 4)
 #define FST_MAX_PRIO_VALUE   ((u8) -1)
 #define FST_MAX_GROUP_ID_LEN IFNAMSIZ
 
@@ -105,24 +113,24 @@ struct fst_wpa_obj {
 	 * get_peer_first - Get MAC address of the 1st connected STA
 	 * @ctx: User context %ctx
 	 * @get_ctx: Context to be used for %get_peer_next call
-	 * @mb_only: %TRUE if only multi-band capable peer should be reported
+	 * @mb_only: %true if only multi-band capable peer should be reported
 	 * Returns: Address of the 1st connected STA, %NULL if no STAs connected
 	 */
 	const u8 * (*get_peer_first)(void *ctx,
 				     struct fst_get_peer_ctx **get_ctx,
-				     Boolean mb_only);
+				     bool mb_only);
 	/**
 	 * get_peer_next - Get MAC address of the next connected STA
 	 * @ctx: User context %ctx
 	 * @get_ctx: Context received from %get_peer_first or previous
 	 *           %get_peer_next call
-	 * @mb_only: %TRUE if only multi-band capable peer should be reported
+	 * @mb_only: %true if only multi-band capable peer should be reported
 	 * Returns: Address of the next connected STA, %NULL if no more STAs
 	 *          connected
 	 */
 	const u8 * (*get_peer_next)(void *ctx,
 				    struct fst_get_peer_ctx **get_ctx,
-				    Boolean mb_only);
+				    bool mb_only);
 };
 
 /**
@@ -265,11 +273,18 @@ void fst_notify_peer_disconnected(struct fst_iface *iface, const u8 *addr);
  * @iface1: 1st FST interface object
  * @iface1: 2nd FST interface object
  *
- * Returns: %TRUE if the interfaces belong to the same FST group,
- *          %FALSE otherwise
+ * Returns: %true if the interfaces belong to the same FST group,
+ *          %false otherwise
  */
-Boolean fst_are_ifaces_aggregated(struct fst_iface *iface1,
-				  struct fst_iface *iface2);
+bool fst_are_ifaces_aggregated(struct fst_iface *iface1,
+			       struct fst_iface *iface2);
+
+/**
+ * fst_update_mac_addr - Notify FST about MAC address change
+ * @iface: FST interface object
+ * @addr: New MAC address
+ */
+void fst_update_mac_addr(struct fst_iface *iface, const u8 *addr);
 
 #else /* CONFIG_FST */
 

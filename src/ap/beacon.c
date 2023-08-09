@@ -16,6 +16,7 @@
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
 #include "common/hw_features_common.h"
+#include "common/wpa_ctrl.h"
 #include "wps/wps_defs.h"
 #include "p2p/p2p.h"
 #include "hostapd.h"
@@ -30,35 +31,10 @@
 #include "hs20.h"
 #include "dfs.h"
 #include "taxonomy.h"
-// MANA START
-#include "common/mana.h" //MANA
+#include "ieee802_11_auth.h"
 
-struct mana_mac *mana_machash = NULL;
-struct mana_ssid *mana_ssidhash = NULL;
-// MANA END
 
 #ifdef NEED_AP_MLME
-
-static u8 * hostapd_eid_rm_enabled_capab(struct hostapd_data *hapd, u8 *eid,
-					 size_t len)
-{
-	size_t i;
-
-	for (i = 0; i < RRM_CAPABILITIES_IE_LEN; i++) {
-		if (hapd->conf->radio_measurements[i])
-			break;
-	}
-
-	if (i == RRM_CAPABILITIES_IE_LEN || len < 2 + RRM_CAPABILITIES_IE_LEN)
-		return eid;
-
-	*eid++ = WLAN_EID_RRM_ENABLED_CAPABILITIES;
-	*eid++ = RRM_CAPABILITIES_IE_LEN;
-	os_memcpy(eid, hapd->conf->radio_measurements, RRM_CAPABILITIES_IE_LEN);
-
-	return eid + RRM_CAPABILITIES_IE_LEN;
-}
-
 
 static u8 * hostapd_eid_bss_load(struct hostapd_data *hapd, u8 *eid, size_t len)
 {
@@ -86,43 +62,6 @@ static u8 * hostapd_eid_bss_load(struct hostapd_data *hapd, u8 *eid, size_t len)
 	return eid;
 }
 
-//Start MANA
-//Log output of observed MACs & SSIDs
-static void log_ssid(struct hostapd_data *hapd, const u8 *ssid, size_t ssid_len, const u8 *mac) {
-	if (os_strcmp("NOT_SET", hapd->iconf->mana_outfile) == 0) {
-		return; // File not set, so don't log
-	}
-	FILE *f = fopen(hapd->iconf->mana_outfile, "a");
-	if (f != NULL) {
-		int rand=0;
-		if (mac[0] & 2) //Check if locally administered aka random MAC
-			rand=1; 
-
-#ifdef CONFIG_TAXONOMY
-		struct sta_info *sta;
-		struct hostapd_sta_info *info;
-		if ((sta = ap_get_sta(hapd, mac)) != NULL) {
-			char reply[512] = "";
-			size_t reply_len = 512;
-			retrieve_sta_taxonomy(hapd, sta, reply, reply_len);
-			fprintf(f,MACSTR ", %s, %d, %s\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand, reply);
-		} else if ((info = sta_track_get(hapd->iface, mac)) != NULL) {
-			char reply[512] = "";
-			size_t reply_len = 512;
-			retrieve_hostapd_sta_taxonomy(hapd, info, reply, reply_len);
-			fprintf(f,MACSTR ", %s, %d, %s\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand, reply);
-		} else {
-			fprintf(f,MACSTR ", %s, %d\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand);
-		}
-#endif /* CONFIG_TAXONOMY */
-#ifndef CONFIG_TAXONOMY
-		fprintf(f,MACSTR ", %s, %d\n", MAC2STR(mac), wpa_ssid_txt(ssid, ssid_len), rand);
-#endif /* CONFIG_TAXONOMY */
-		fclose(f);
-	} else
-		wpa_printf(MSG_ERROR, "MANA: Error writing to activity file %s", hapd->iconf->mana_outfile);
-}
-//End MANA
 
 static u8 ieee802_11_erp_info(struct hostapd_data *hapd)
 {
@@ -327,17 +266,101 @@ static u8 * hostapd_eid_country(struct hostapd_data *hapd, u8 *eid,
 }
 
 
-static u8 * hostapd_eid_wpa(struct hostapd_data *hapd, u8 *eid, size_t len)
+const u8 * hostapd_wpa_ie(struct hostapd_data *hapd, u8 eid)
+{
+	const u8 *ies;
+	size_t ies_len;
+
+	ies = wpa_auth_get_wpa_ie(hapd->wpa_auth, &ies_len);
+	if (!ies)
+		return NULL;
+
+	return get_ie(ies, ies_len, eid);
+}
+
+
+static const u8 * hostapd_vendor_wpa_ie(struct hostapd_data *hapd,
+					u32 vendor_type)
+{
+	const u8 *ies;
+	size_t ies_len;
+
+	ies = wpa_auth_get_wpa_ie(hapd->wpa_auth, &ies_len);
+	if (!ies)
+		return NULL;
+
+	return get_vendor_ie(ies, ies_len, vendor_type);
+}
+
+
+static u8 * hostapd_get_rsne(struct hostapd_data *hapd, u8 *pos, size_t len)
 {
 	const u8 *ie;
-	size_t ielen;
 
-	ie = wpa_auth_get_wpa_ie(hapd->wpa_auth, &ielen);
-	if (ie == NULL || ielen > len)
-		return eid;
+	ie = hostapd_wpa_ie(hapd, WLAN_EID_RSN);
+	if (!ie || 2U + ie[1] > len)
+		return pos;
 
-	os_memcpy(eid, ie, ielen);
-	return eid + ielen;
+	os_memcpy(pos, ie, 2 + ie[1]);
+	return pos + 2 + ie[1];
+}
+
+
+static u8 * hostapd_get_mde(struct hostapd_data *hapd, u8 *pos, size_t len)
+{
+	const u8 *ie;
+
+	ie = hostapd_wpa_ie(hapd, WLAN_EID_MOBILITY_DOMAIN);
+	if (!ie || 2U + ie[1] > len)
+		return pos;
+
+	os_memcpy(pos, ie, 2 + ie[1]);
+	return pos + 2 + ie[1];
+}
+
+
+static u8 * hostapd_get_rsnxe(struct hostapd_data *hapd, u8 *pos, size_t len)
+{
+	const u8 *ie;
+
+#ifdef CONFIG_TESTING_OPTIONS
+	if (hapd->conf->no_beacon_rsnxe) {
+		wpa_printf(MSG_INFO, "TESTING: Do not add RSNXE into Beacon");
+		return pos;
+	}
+#endif /* CONFIG_TESTING_OPTIONS */
+	ie = hostapd_wpa_ie(hapd, WLAN_EID_RSNX);
+	if (!ie || 2U + ie[1] > len)
+		return pos;
+
+	os_memcpy(pos, ie, 2 + ie[1]);
+	return pos + 2 + ie[1];
+}
+
+
+static u8 * hostapd_get_wpa_ie(struct hostapd_data *hapd, u8 *pos, size_t len)
+{
+	const u8 *ie;
+
+	ie = hostapd_vendor_wpa_ie(hapd, WPA_IE_VENDOR_TYPE);
+	if (!ie || 2U + ie[1] > len)
+		return pos;
+
+	os_memcpy(pos, ie, 2 + ie[1]);
+	return pos + 2 + ie[1];
+}
+
+
+static u8 * hostapd_get_osen_ie(struct hostapd_data *hapd, u8 *pos, size_t len)
+{
+	const u8 *ie;
+
+	ie = hostapd_vendor_wpa_ie(hapd, OSEN_IE_VENDOR_TYPE);
+	if (!ie || 2U + ie[1] > len)
+		return pos;
+
+	os_memcpy(pos, ie, 2 + ie[1]);
+	return pos + 2 + ie[1];
 }
 
 
@@ -387,7 +410,7 @@ static u8 * hostapd_eid_supported_op_classes(struct hostapd_data *hapd, u8 *eid)
 
 	if (ieee80211_freq_to_channel_ext(hapd->iface->freq,
 					  hapd->iconf->secondary_channel,
-					  hapd->iconf->vht_oper_chwidth,
+					  hostapd_get_oper_chwidth(hapd->iconf),
 					  &op_class, &channel) ==
 	    NUM_HOSTAPD_MODES)
 		return eid;
@@ -406,7 +429,6 @@ static u8 * hostapd_eid_supported_op_classes(struct hostapd_data *hapd, u8 *eid)
 
 
 static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
-				   const u8 *ssid, size_t ssid_len, //MANA
 				   const struct ieee80211_mgmt *req,
 				   int is_p2p, size_t *resp_len)
 {
@@ -435,7 +457,22 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 			2 + sizeof(struct ieee80211_vht_operation);
 	}
 
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax) {
+		buflen += 3 + sizeof(struct ieee80211_he_capabilities) +
+			3 + sizeof(struct ieee80211_he_operation) +
+			3 + sizeof(struct ieee80211_he_mu_edca_parameter_set) +
+			3 + sizeof(struct ieee80211_spatial_reuse);
+		if (is_6ghz_op_class(hapd->iconf->op_class))
+			buflen += sizeof(struct ieee80211_he_6ghz_oper_info) +
+				3 + sizeof(struct ieee80211_he_6ghz_band_cap);
+	}
+#endif /* CONFIG_IEEE80211AX */
+
+	buflen += hostapd_eid_rnr_len(hapd, WLAN_FC_STYPE_PROBE_RESP);
 	buflen += hostapd_mbo_ie_len(hapd);
+	buflen += hostapd_eid_owe_trans_len(hapd);
+	buflen += hostapd_eid_dpp_cc_len(hapd);
 
 	resp = os_zalloc(buflen);
 	if (resp == NULL)
@@ -445,25 +482,6 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 	resp->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
 					   WLAN_FC_STYPE_PROBE_RESP);
-
-	//MANA - check against macacl
-	if (req && hapd->iconf->mana_macacl) {
-		int match;
-		if (hapd->iconf->bss[0]->macaddr_acl == DENY_UNLESS_ACCEPTED) {
-			match = hostapd_maclist_found(hapd->conf->accept_mac, hapd->conf->num_accept_mac, req->sa, NULL);
-			if (!match) {
-				wpa_printf(MSG_DEBUG, "MANA: Station MAC is not authorised by accept ACL: " MACSTR, MAC2STR(req->sa));
-				return NULL; //MAC is not in accept list, back out and don't send
-			}
-		} else if (hapd->iconf->bss[0]->macaddr_acl == ACCEPT_UNLESS_DENIED) {
-			if (hostapd_maclist_found(hapd->conf->deny_mac, hapd->conf->num_deny_mac, req->sa, NULL)) {
-				wpa_printf(MSG_DEBUG, "MANA: Station MAC is not authorised by deny ACL: " MACSTR, MAC2STR(req->sa));
-				return NULL; //MAC is in deny list, back out and don't send
-			}
-		}
-		wpa_printf(MSG_INFO, "MANA: Station MAC is authorised by ACL: " MACSTR, MAC2STR(req->sa));
-	}
-    //MANA END
 	if (req)
 		os_memcpy(resp->da, req->sa, ETH_ALEN);
 	os_memcpy(resp->sa, hapd->own_addr, ETH_ALEN);
@@ -478,26 +496,15 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 	pos = resp->u.probe_resp.variable;
 	*pos++ = WLAN_EID_SSID;
-	//*pos++ = hapd->conf->ssid.ssid_len;
-	//os_memcpy(pos, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
-	//pos += hapd->conf->ssid.ssid_len;
- 	// MANA START
- 	if (hapd->iconf->enable_mana && ssid_len > 0) {
- 		*pos++ = ssid_len;
- 		os_memcpy(pos, ssid, ssid_len);
- 		pos += ssid_len;
- 	} else {
- 		*pos++ = hapd->conf->ssid.ssid_len;
- 		os_memcpy(pos, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
- 		pos += hapd->conf->ssid.ssid_len;
- 	}
- 	// MANA END
+	*pos++ = hapd->conf->ssid.ssid_len;
+	os_memcpy(pos, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
+	pos += hapd->conf->ssid.ssid_len;
 
 	/* Supported rates */
 	pos = hostapd_eid_supp_rates(hapd, pos);
 
 	/* DS Params */
-	pos = hostapd_eid_ds_params(hapd, pos); //MANA
+	pos = hostapd_eid_ds_params(hapd, pos);
 
 	pos = hostapd_eid_country(hapd, pos, epos - pos);
 
@@ -516,12 +523,10 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	/* Extended supported rates */
 	pos = hostapd_eid_ext_supp_rates(hapd, pos);
 
-	/* RSN, MDIE, WPA */
-	pos = hostapd_eid_wpa(hapd, pos, epos - pos);
-
+	pos = hostapd_get_rsne(hapd, pos, epos - pos);
 	pos = hostapd_eid_bss_load(hapd, pos, epos - pos);
-
 	pos = hostapd_eid_rm_enabled_capab(hapd, pos, epos - pos);
+	pos = hostapd_get_mde(hapd, pos, epos - pos);
 
 	/* eCSA IE */
 	csa_pos = hostapd_eid_ecsa(hapd, pos);
@@ -530,15 +535,8 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	pos = csa_pos;
 
 	pos = hostapd_eid_supported_op_classes(hapd, pos);
-
-#ifdef CONFIG_IEEE80211N
-	/* Secondary Channel Offset element */
-	/* TODO: The standard doesn't specify a position for this element. */
-	pos = hostapd_eid_secondary_channel(hapd, pos);
-
 	pos = hostapd_eid_ht_capabilities(hapd, pos);
 	pos = hostapd_eid_ht_operation(hapd, pos);
-#endif /* CONFIG_IEEE80211N */
 
 	pos = hostapd_eid_ext_capab(hapd, pos);
 
@@ -558,15 +556,44 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 #endif /* CONFIG_FST */
 
 #ifdef CONFIG_IEEE80211AC
-	if (hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac) {
+	if (hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac &&
+	    !is_6ghz_op_class(hapd->iconf->op_class)) {
 		pos = hostapd_eid_vht_capabilities(hapd, pos, 0);
 		pos = hostapd_eid_vht_operation(hapd, pos);
 		pos = hostapd_eid_txpower_envelope(hapd, pos);
-		pos = hostapd_eid_wb_chsw_wrapper(hapd, pos);
 	}
+#endif /* CONFIG_IEEE80211AC */
+
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax &&
+	    is_6ghz_op_class(hapd->iconf->op_class))
+		pos = hostapd_eid_txpower_envelope(hapd, pos);
+#endif /* CONFIG_IEEE80211AX */
+
+	pos = hostapd_eid_wb_chsw_wrapper(hapd, pos);
+
+	pos = hostapd_eid_rnr(hapd, pos, WLAN_FC_STYPE_PROBE_RESP);
+	pos = hostapd_eid_fils_indic(hapd, pos, 0);
+	pos = hostapd_get_rsnxe(hapd, pos, epos - pos);
+
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax) {
+		pos = hostapd_eid_he_capab(hapd, pos, IEEE80211_MODE_AP);
+		pos = hostapd_eid_he_operation(hapd, pos);
+		pos = hostapd_eid_spatial_reuse(hapd, pos);
+		pos = hostapd_eid_he_mu_edca_parameter_set(hapd, pos);
+		pos = hostapd_eid_he_6ghz_band_cap(hapd, pos);
+	}
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211AC
 	if (hapd->conf->vendor_vht)
 		pos = hostapd_eid_vendor_vht(hapd, pos);
 #endif /* CONFIG_IEEE80211AC */
+
+	/* WPA / OSEN */
+	pos = hostapd_get_wpa_ie(hapd, pos, epos - pos);
+	pos = hostapd_get_osen_ie(hapd, pos, epos - pos);
 
 	/* Wi-Fi Alliance WMM */
 	pos = hostapd_eid_wmm(hapd, pos);
@@ -595,10 +622,11 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 #ifdef CONFIG_HS20
 	pos = hostapd_eid_hs20_indication(hapd, pos);
-	pos = hostapd_eid_osen(hapd, pos);
 #endif /* CONFIG_HS20 */
 
 	pos = hostapd_eid_mbo(hapd, pos, (u8 *) resp + buflen - pos);
+	pos = hostapd_eid_owe_trans(hapd, pos, (u8 *) resp + buflen - pos);
+	pos = hostapd_eid_dpp_cc(hapd, pos, (u8 *) resp + buflen - pos);
 
 	if (hapd->conf->vendor_elements) {
 		os_memcpy(pos, wpabuf_head(hapd->conf->vendor_elements),
@@ -610,19 +638,25 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	return (u8 *) resp;
 }
 
+
 enum ssid_match_result {
 	NO_SSID_MATCH,
 	EXACT_SSID_MATCH,
-	WILDCARD_SSID_MATCH
+	WILDCARD_SSID_MATCH,
+	CO_LOCATED_SSID_MATCH,
 };
 
 static enum ssid_match_result ssid_match(struct hostapd_data *hapd,
 					 const u8 *ssid, size_t ssid_len,
 					 const u8 *ssid_list,
-					 size_t ssid_list_len)
+					 size_t ssid_list_len,
+					 const u8 *short_ssid_list,
+					 size_t short_ssid_list_len)
 {
 	const u8 *pos, *end;
+	struct hostapd_iface *iface = hapd->iface;
 	int wildcard = 0;
+	size_t i, j;
 
 	if (ssid_len == 0)
 		wildcard = 1;
@@ -630,23 +664,59 @@ static enum ssid_match_result ssid_match(struct hostapd_data *hapd,
 	    os_memcmp(ssid, hapd->conf->ssid.ssid, ssid_len) == 0)
 		return EXACT_SSID_MATCH;
 
-	if (ssid_list == NULL)
-		return wildcard ? WILDCARD_SSID_MATCH : NO_SSID_MATCH;
-
-	pos = ssid_list;
-	end = ssid_list + ssid_list_len;
-	while (end - pos >= 1) {
-		if (2 + pos[1] > end - pos)
-			break;
-		if (pos[1] == 0)
-			wildcard = 1;
-		if (pos[1] == hapd->conf->ssid.ssid_len &&
-		    os_memcmp(pos + 2, hapd->conf->ssid.ssid, pos[1]) == 0)
-			return EXACT_SSID_MATCH;
-		pos += 2 + pos[1];
+	if (ssid_list) {
+		pos = ssid_list;
+		end = ssid_list + ssid_list_len;
+		while (end - pos >= 2) {
+			if (2 + pos[1] > end - pos)
+				break;
+			if (pos[1] == 0)
+				wildcard = 1;
+			if (pos[1] == hapd->conf->ssid.ssid_len &&
+			    os_memcmp(pos + 2, hapd->conf->ssid.ssid,
+				      pos[1]) == 0)
+				return EXACT_SSID_MATCH;
+			pos += 2 + pos[1];
+		}
 	}
 
-	return wildcard ? WILDCARD_SSID_MATCH : NO_SSID_MATCH;
+	if (short_ssid_list) {
+		pos = short_ssid_list;
+		end = short_ssid_list + short_ssid_list_len;
+		while (end - pos >= 4) {
+			if (hapd->conf->ssid.short_ssid == WPA_GET_LE32(pos))
+				return EXACT_SSID_MATCH;
+			pos += 4;
+		}
+	}
+
+	if (wildcard)
+		return WILDCARD_SSID_MATCH;
+
+	if (!iface->interfaces || iface->interfaces->count <= 1 ||
+	    is_6ghz_op_class(hapd->iconf->op_class))
+		return NO_SSID_MATCH;
+
+	for (i = 0; i < iface->interfaces->count; i++) {
+		struct hostapd_iface *colocated;
+
+		colocated = iface->interfaces->iface[i];
+
+		if (colocated == iface ||
+		    !is_6ghz_op_class(colocated->conf->op_class))
+			continue;
+
+		for (j = 0; j < colocated->num_bss; j++) {
+			struct hostapd_bss_config *conf;
+
+			conf = colocated->bss[j]->conf;
+			if (ssid_len == conf->ssid.ssid_len &&
+			    os_memcmp(ssid, conf->ssid.ssid, ssid_len) == 0)
+				return CO_LOCATED_SSID_MATCH;
+		}
+	}
+
+	return NO_SSID_MATCH;
 }
 
 
@@ -677,8 +747,7 @@ void sta_track_expire(struct hostapd_iface *iface, int force)
 }
 
 
-//static struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface, //MANA
-struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface,
+static struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface,
 					       const u8 *addr)
 {
 	struct hostapd_sta_info *info;
@@ -691,7 +760,7 @@ struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface,
 }
 
 
-void sta_track_add(struct hostapd_iface *iface, const u8 *addr)
+void sta_track_add(struct hostapd_iface *iface, const u8 *addr, int ssi_signal)
 {
 	struct hostapd_sta_info *info;
 
@@ -701,6 +770,7 @@ void sta_track_add(struct hostapd_iface *iface, const u8 *addr)
 		dl_list_del(&info->list);
 		dl_list_add_tail(&iface->sta_seen, &info->list);
 		os_get_reltime(&info->last_seen);
+		info->ssi_signal = ssi_signal;
 		return;
 	}
 
@@ -710,6 +780,7 @@ void sta_track_add(struct hostapd_iface *iface, const u8 *addr)
 		return;
 	os_memcpy(info->addr, addr, ETH_ALEN);
 	os_get_reltime(&info->last_seen);
+	info->ssi_signal = ssi_signal;
 
 	if (iface->num_sta_seen >= iface->conf->track_sta_max_num) {
 		/* Expire oldest entry to make room for a new one */
@@ -780,14 +851,27 @@ void handle_probe_req(struct hostapd_data *hapd,
 	int ret;
 	u16 csa_offs[2];
 	size_t csa_offs_len;
-	int iterate = 0; //MANA
+	struct radius_sta rad_info;
+
+	if (hapd->iconf->rssi_ignore_probe_request && ssi_signal &&
+	    ssi_signal < hapd->iconf->rssi_ignore_probe_request)
+		return;
 
 	if (len < IEEE80211_HDRLEN)
 		return;
 	ie = ((const u8 *) mgmt) + IEEE80211_HDRLEN;
 	if (hapd->iconf->track_sta_max_num)
-		sta_track_add(hapd->iface, mgmt->sa);
+		sta_track_add(hapd->iface, mgmt->sa, ssi_signal);
 	ie_len = len - IEEE80211_HDRLEN;
+
+	ret = hostapd_allowed_address(hapd, mgmt->sa, (const u8 *) mgmt, len,
+				      &rad_info, 1);
+	if (ret == HOSTAPD_ACL_REJECT) {
+		wpa_msg(hapd->msg_ctx, MSG_DEBUG,
+			"Ignore Probe Request frame from " MACSTR
+			" due to ACL reject ", MAC2STR(mgmt->sa));
+		return;
+	}
 
 	for (i = 0; hapd->probereq_cb && i < hapd->num_probereq_cb; i++)
 		if (hapd->probereq_cb[i].cb(hapd->probereq_cb[i].ctx,
@@ -795,7 +879,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 					    ie, ie_len, ssi_signal) > 0)
 			return;
 
-	if (!hapd->iconf->send_probe_response)
+	if (!hapd->conf->send_probe_response)
 		return;
 
 	if (ieee802_11_parse_elems(ie, ie_len, &elems, 0) == ParseFailed) {
@@ -858,15 +942,9 @@ void handle_probe_req(struct hostapd_data *hapd,
 		wpabuf_free(p2p);
 	}
 #endif /* CONFIG_P2P */
-	if (os_strcmp(hapd->iconf->mana_ssid_filter_file,"NOT_SET") && elems.ssid_len != 0) { //MANA
-		if (hostapd_ssidlist_found(hapd->conf->ssid_filter, hapd->conf->num_ssid_filter, wpa_ssid_txt(elems.ssid, elems.ssid_len)) != hapd->iconf->mana_ssid_filter_type) {
-			wpa_printf(MSG_DEBUG, "MANA - SSID '%s' has been denied.", wpa_ssid_txt(elems.ssid, elems.ssid_len));
-			return;
-		}
-	}
 
 	if (hapd->conf->ignore_broadcast_ssid && elems.ssid_len == 0 &&
-	    elems.ssid_list_len == 0 && !hapd->iconf->enable_mana) { //MANA
+	    elems.ssid_list_len == 0 && elems.short_ssid_list_len == 0) {
 		wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR " for "
 			   "broadcast SSID ignored", MAC2STR(mgmt->sa));
 		return;
@@ -883,38 +961,24 @@ void handle_probe_req(struct hostapd_data *hapd,
 #endif /* CONFIG_P2P */
 
 #ifdef CONFIG_TAXONOMY
-	
+	{
 		struct sta_info *sta;
 		struct hostapd_sta_info *info;
 
 		if ((sta = ap_get_sta(hapd, mgmt->sa)) != NULL) {
 			taxonomy_sta_info_probe_req(hapd, sta, ie, ie_len);
-			//START MANA - JUST CHECK TAXONOMY IN OUTPUT
-			char reply[512] = "";
-			size_t reply_len = 512;
-			retrieve_sta_taxonomy(hapd, sta, reply, reply_len);
-			wpa_printf(MSG_MSGDUMP, "MANA TAXONOMY STA '%s'", reply);
-			//END MANA
 		} else if ((info = sta_track_get(hapd->iface,
 						 mgmt->sa)) != NULL) {
 			taxonomy_hostapd_sta_info_probe_req(hapd, info,
 							    ie, ie_len);
-			//START MANA - JUST CHECK TAXONOMY IN OUTPUT
-			char reply[512] = "";
-			size_t reply_len = 512;
-			retrieve_hostapd_sta_taxonomy(hapd, info, reply, reply_len);
-			wpa_printf(MSG_MSGDUMP, "MANA TAXONOMY STA '%s'", reply);
-			//END MANA
 		}
-	
+	}
 #endif /* CONFIG_TAXONOMY */
 
 	res = ssid_match(hapd, elems.ssid, elems.ssid_len,
-			 elems.ssid_list, elems.ssid_list_len);
-	//MANA START
- 	// todo handle ssid_list see ssid_match for code
- 	// todo change emit code below (global flag?)
-	if (!hapd->iconf->enable_mana && res == NO_SSID_MATCH) {
+			 elems.ssid_list, elems.ssid_list_len,
+			 elems.short_ssid_list, elems.short_ssid_list_len);
+	if (res == NO_SSID_MATCH) {
 		if (!(mgmt->da[0] & 0x01)) {
 			wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
 				   " for foreign SSID '%s' (DA " MACSTR ")%s",
@@ -924,49 +988,13 @@ void handle_probe_req(struct hostapd_data *hapd,
 				   elems.ssid_list ? " (SSID list)" : "");
 		}
 		return;
-	} else if (hapd->iconf->enable_mana) {
-		if (res == WILDCARD_SSID_MATCH) {
-			//Broadcast probe no need to record SSID or STA
-			wpa_printf(MSG_DEBUG,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
-			iterate = 1; //iterate through hash emitting multiple probe responses
-			log_ssid(hapd, (const u8 *)"<Broadcast>", 11, mgmt->sa);
-		} else {
-			//Directed probe
-			struct mana_ssid *newssid = NULL;
-			struct mana_mac *newsta = NULL;
-			if (hapd->iconf->mana_loud) {
-				//Loud mode check ssidhash
-				HASH_FIND_STR(mana_ssidhash, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
-			} else {
-				//Not loud mode, check if the STA probing is in our hash
-				HASH_FIND(hh,mana_machash, mgmt->sa, 6, newsta);
-				if (newsta == NULL) { //STA MAC not seen before adding to hash
-					wpa_printf(MSG_DEBUG, "MANA - Adding STA " MACSTR " to the hash.", MAC2STR(mgmt->sa));
-					newsta = (struct mana_mac*)os_malloc(sizeof(struct mana_mac));
-					os_memcpy(newsta->sta_addr, mgmt->sa, ETH_ALEN);
-					newsta->ssids = NULL;
-					HASH_ADD(hh,mana_machash, sta_addr, 6, newsta);
-				}
-				HASH_FIND_STR(newsta->ssids, wpa_ssid_txt(elems.ssid, elems.ssid_len), newssid);
-			}
-
-			if (newssid == NULL) {
-				//Probed for SSID not found (and not Broadcast) add SSID to hash
-				wpa_printf(MSG_DEBUG, "MANA - Adding SSID %s(%d) from STA " MACSTR " to the hash.", wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len, MAC2STR(mgmt->sa));
-				struct mana_ssid *newssid = os_malloc(sizeof(struct mana_ssid));
-				os_memcpy(newssid->ssid_txt, wpa_ssid_txt(elems.ssid, elems.ssid_len), elems.ssid_len+1);
-				os_memcpy(newssid->ssid, elems.ssid, elems.ssid_len);
-				newssid->ssid_len = elems.ssid_len;
-				if (hapd->iconf->mana_loud)
-					HASH_ADD_STR(mana_ssidhash, ssid_txt, newssid);
-				else
-					HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
-			}
- 			wpa_printf(MSG_INFO,"MANA - Directed probe request for SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
-			log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
- 		}
 	}
-	//MANA END
+
+	if (hapd->conf->ignore_broadcast_ssid && res == WILDCARD_SSID_MATCH) {
+		wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR " for "
+			   "broadcast SSID ignored", MAC2STR(mgmt->sa));
+		return;
+	}
 
 #ifdef CONFIG_INTERWORKING
 	if (hapd->conf->interworking &&
@@ -1046,103 +1074,46 @@ void handle_probe_req(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_TESTING_OPTIONS */
 
+	wpa_msg_ctrl(hapd->msg_ctx, MSG_INFO, RX_PROBE_REQUEST "sa=" MACSTR
+		     " signal=%d", MAC2STR(mgmt->sa), ssi_signal);
 
-	//MANA Start - this is just the same original code repeated twice, except MANA has a hash iterator around it
-	if (!iterate) { //MANA Either we're not in mana or it's not a broadcast probe
-		if (!hapd->iconf->enable_mana) //MANA if *not* mana, respond with the proper ssid
-			resp = hostapd_gen_probe_resp(hapd, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len, mgmt, elems.p2p != NULL, &resp_len);
-		else {
-			wpa_printf(MSG_DEBUG, "MANA - Attempting to generate response : %.*s (%d) for STA " MACSTR, elems.ssid_len, elems.ssid, elems.ssid_len, MAC2STR(mgmt->sa));
-			resp = hostapd_gen_probe_resp(hapd, elems.ssid, elems.ssid_len, mgmt, elems.p2p != NULL, &resp_len);
-		}
-		if (resp == NULL)
-			return;
+	resp = hostapd_gen_probe_resp(hapd, mgmt, elems.p2p != NULL,
+				      &resp_len);
+	if (resp == NULL)
+		return;
 
-		/*
-	 	* If this is a broadcast probe request, apply no ack policy to avoid
-	 	* excessive retries.
-	 	*/
-		noack = !!(res == WILDCARD_SSID_MATCH &&
-		   	is_broadcast_ether_addr(mgmt->da));
+	/*
+	 * If this is a broadcast probe request, apply no ack policy to avoid
+	 * excessive retries.
+	 */
+	noack = !!(res == WILDCARD_SSID_MATCH &&
+		   is_broadcast_ether_addr(mgmt->da));
 
-		csa_offs_len = 0;
-		if (hapd->csa_in_progress) {
-			if (hapd->cs_c_off_proberesp)
-				csa_offs[csa_offs_len++] =
-					hapd->cs_c_off_proberesp;
+	csa_offs_len = 0;
+	if (hapd->csa_in_progress) {
+		if (hapd->cs_c_off_proberesp)
+			csa_offs[csa_offs_len++] =
+				hapd->cs_c_off_proberesp;
 
-			if (hapd->cs_c_off_ecsa_proberesp)
-				csa_offs[csa_offs_len++] =
-					hapd->cs_c_off_ecsa_proberesp;
-		}
+		if (hapd->cs_c_off_ecsa_proberesp)
+			csa_offs[csa_offs_len++] =
+				hapd->cs_c_off_ecsa_proberesp;
+	}
 
-		ret = hostapd_drv_send_mlme_csa(hapd, resp, resp_len, noack,
-						csa_offs_len ? csa_offs : NULL,
-						csa_offs_len);
+	ret = hostapd_drv_send_mlme(hapd, resp, resp_len, noack,
+				    csa_offs_len ? csa_offs : NULL,
+				    csa_offs_len, 0);
 
-		if (ret < 0)
-			wpa_printf(MSG_INFO, "handle_probe_req: send failed");
+	if (ret < 0)
+		wpa_printf(MSG_INFO, "handle_probe_req: send failed");
 
-		os_free(resp);
+	os_free(resp);
 
-		wpa_printf(MSG_EXCESSIVE, "STA " MACSTR " sent probe request for %s "
-			   "SSID", MAC2STR(mgmt->sa),
-			   elems.ssid_len == 0 ? "broadcast" : "our");
-	} else { 
-		//MANA iterate
-		struct mana_ssid *khash;
-		struct mana_ssid *k;
-		struct mana_mac *newsta = NULL;
-
-		// Select appropriate hash to iterate
-		if (hapd->iconf->mana_loud)
-			khash = mana_ssidhash;
-		else {
-			// Find specific MAC's SSID hash
-			HASH_FIND(hh, mana_machash, mgmt->sa, 6, newsta);
-			if (newsta == NULL)
-				return;
-			khash = newsta->ssids;
-		}
-		for ( k = khash; k != NULL; k = (struct mana_ssid*)(k->hh.next)) {
-			wpa_printf(MSG_DEBUG, "MANA: Generating Broadcast response : %s (%zu) for STA " MACSTR, k->ssid_txt, k->ssid_len, MAC2STR(mgmt->sa));
-			resp = hostapd_gen_probe_resp(hapd, k->ssid, k->ssid_len, mgmt, elems.p2p != NULL, &resp_len);
-			if (resp == NULL)
-				return;
-
-			/*
-	 		* If this is a broadcast probe request, apply no ack policy to avoid
-	 		* excessive retries.
-	 		*/
-			noack = !!(res == WILDCARD_SSID_MATCH &&
-		   		is_broadcast_ether_addr(mgmt->da));
-
-			csa_offs_len = 0;
-			if (hapd->csa_in_progress) {
-				if (hapd->cs_c_off_proberesp)
-					csa_offs[csa_offs_len++] =
-						hapd->cs_c_off_proberesp;
-
-				if (hapd->cs_c_off_ecsa_proberesp)
-					csa_offs[csa_offs_len++] =
-						hapd->cs_c_off_ecsa_proberesp;
-			}
-
-			ret = hostapd_drv_send_mlme_csa(hapd, resp, resp_len, noack,
-							csa_offs_len ? csa_offs : NULL,
-							csa_offs_len);
-
-			if (ret < 0)
-				wpa_printf(MSG_ERROR, "handle_probe_req: send failed");
-
-			os_free(resp);
-
-			wpa_printf(MSG_EXCESSIVE, "MANA: STA " MACSTR " sent probe request for %s "
-			   	"SSID", MAC2STR(mgmt->sa), k->ssid);
-		} //for
-	} //MANA iterate END
-
+	wpa_printf(MSG_EXCESSIVE, "STA " MACSTR " sent probe request for %s "
+		   "SSID", MAC2STR(mgmt->sa),
+		   elems.ssid_len == 0 ? "broadcast" : "our");
 }
+
 
 static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
 					size_t *resp_len)
@@ -1176,11 +1147,27 @@ static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
 			   "this");
 
 	/* Generate a Probe Response template for the non-P2P case */
-	//return hostapd_gen_probe_resp(hapd, NULL, 0, resp_len);
-	return hostapd_gen_probe_resp(hapd, NULL, 0, NULL, 0, resp_len); //MANA
+	return hostapd_gen_probe_resp(hapd, NULL, 0, resp_len);
 }
 
 #endif /* NEED_AP_MLME */
+
+
+#ifdef CONFIG_IEEE80211AX
+/* Unsolicited broadcast Probe Response transmission, 6 GHz only */
+static u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
+					   struct wpa_driver_ap_params *params)
+{
+	if (!is_6ghz_op_class(hapd->iconf->op_class))
+		return NULL;
+
+	params->unsol_bcast_probe_resp_interval =
+		hapd->conf->unsol_bcast_probe_resp_interval;
+
+	return hostapd_gen_probe_resp(hapd, NULL, 0,
+				      &params->unsol_bcast_probe_resp_tmpl_len);
+}
+#endif /* CONFIG_IEEE80211AX */
 
 
 void sta_track_del(struct hostapd_sta_info *info)
@@ -1193,6 +1180,247 @@ void sta_track_del(struct hostapd_sta_info *info)
 }
 
 
+#ifdef CONFIG_FILS
+
+static u16 hostapd_fils_discovery_cap(struct hostapd_data *hapd)
+{
+	u16 cap_info, phy_index = 0;
+	u8 chwidth = FD_CAP_BSS_CHWIDTH_20, mcs_nss_size = 4;
+	struct hostapd_hw_modes *mode = hapd->iface->current_mode;
+
+	cap_info = FD_CAP_ESS;
+	if (hapd->conf->wpa)
+		cap_info |= FD_CAP_PRIVACY;
+
+	if (is_6ghz_op_class(hapd->iconf->op_class)) {
+		phy_index = FD_CAP_PHY_INDEX_HE;
+
+		switch (hapd->iconf->op_class) {
+		case 135:
+			mcs_nss_size += 4;
+			/* fallthrough */
+		case 134:
+			mcs_nss_size += 4;
+			chwidth = FD_CAP_BSS_CHWIDTH_160_80_80;
+			break;
+		case 133:
+			chwidth = FD_CAP_BSS_CHWIDTH_80;
+			break;
+		case 132:
+			chwidth = FD_CAP_BSS_CHWIDTH_40;
+			break;
+		}
+	} else {
+		switch (hostapd_get_oper_chwidth(hapd->iconf)) {
+		case CHANWIDTH_80P80MHZ:
+			mcs_nss_size += 4;
+			/* fallthrough */
+		case CHANWIDTH_160MHZ:
+			mcs_nss_size += 4;
+			chwidth = FD_CAP_BSS_CHWIDTH_160_80_80;
+			break;
+		case CHANWIDTH_80MHZ:
+			chwidth = FD_CAP_BSS_CHWIDTH_80;
+			break;
+		case CHANWIDTH_USE_HT:
+			if (hapd->iconf->secondary_channel)
+				chwidth = FD_CAP_BSS_CHWIDTH_40;
+			else
+				chwidth = FD_CAP_BSS_CHWIDTH_20;
+			break;
+		}
+
+#ifdef CONFIG_IEEE80211AX
+		if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax)
+			phy_index = FD_CAP_PHY_INDEX_HE;
+#endif /* CONFIG_IEEE80211AX */
+#ifdef CONFIG_IEEE80211AC
+		if (!phy_index &&
+		    hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac)
+			phy_index = FD_CAP_PHY_INDEX_VHT;
+#endif /* CONFIG_IEEE80211AC */
+		if (!phy_index &&
+		    hapd->iconf->ieee80211n && !hapd->conf->disable_11n)
+			phy_index = FD_CAP_PHY_INDEX_HT;
+	}
+
+	cap_info |= phy_index << FD_CAP_PHY_INDEX_SHIFT;
+	cap_info |= chwidth << FD_CAP_BSS_CHWIDTH_SHIFT;
+
+	if (mode) {
+		u16 *mcs = (u16 *) mode->he_capab[IEEE80211_MODE_AP].mcs;
+		int i;
+		u16 nss = 0;
+
+		for (i = 0; i < HE_NSS_MAX_STREAMS; i++) {
+			u16 nss_mask = 0x3 << (i * 2);
+
+			if (mcs_nss_size == 4 &&
+			    (((mcs[0] & nss_mask) == nss_mask) ||
+			     ((mcs[1] & nss_mask) == nss_mask)))
+				continue;
+
+			if (mcs_nss_size == 8 &&
+			    (((mcs[2] & nss_mask) == nss_mask) ||
+			     ((mcs[3] & nss_mask) == nss_mask)))
+				continue;
+
+			if (mcs_nss_size == 12 &&
+			    (((mcs[4] & nss_mask) == nss_mask) ||
+			     ((mcs[5] & nss_mask) == nss_mask)))
+				continue;
+
+			nss++;
+		}
+
+		if (nss > 4)
+			cap_info |= FD_CAP_NSS_5_8 << FD_CAP_NSS_SHIFT;
+		else if (nss)
+			cap_info |= (nss - 1) << FD_CAP_NSS_SHIFT;
+	}
+
+	return cap_info;
+}
+
+
+static u8 * hostapd_gen_fils_discovery(struct hostapd_data *hapd, size_t *len)
+{
+	struct ieee80211_mgmt *head;
+	const u8 *mobility_domain;
+	u8 *pos, *length_pos, buf[200];
+	u16 ctl = 0;
+	u8 fd_rsn_info[5];
+	size_t total_len, buf_len;
+
+	total_len = 24 + 2 + 12;
+
+	/* FILS Discovery Frame Control */
+	ctl = (sizeof(hapd->conf->ssid.short_ssid) - 1) |
+		FD_FRAME_CTL_SHORT_SSID_PRESENT |
+		FD_FRAME_CTL_LENGTH_PRESENT |
+		FD_FRAME_CTL_CAP_PRESENT;
+	total_len += 4 + 1 + 2;
+
+	/* Check for optional subfields and calculate length */
+	if (wpa_auth_write_fd_rsn_info(hapd->wpa_auth, fd_rsn_info)) {
+		ctl |= FD_FRAME_CTL_RSN_INFO_PRESENT;
+		total_len += sizeof(fd_rsn_info);
+	}
+
+	mobility_domain = hostapd_wpa_ie(hapd, WLAN_EID_MOBILITY_DOMAIN);
+	if (mobility_domain) {
+		ctl |= FD_FRAME_CTL_MD_PRESENT;
+		total_len += 3;
+	}
+
+	total_len += hostapd_eid_rnr_len(hapd, WLAN_FC_STYPE_ACTION);
+
+	pos = hostapd_eid_fils_indic(hapd, buf, 0);
+	buf_len = pos - buf;
+	total_len += buf_len;
+
+	head = os_zalloc(total_len);
+	if (!head)
+		return NULL;
+
+	head->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
+					   WLAN_FC_STYPE_ACTION);
+	os_memset(head->da, 0xff, ETH_ALEN);
+	os_memcpy(head->sa, hapd->own_addr, ETH_ALEN);
+	os_memcpy(head->bssid, hapd->own_addr, ETH_ALEN);
+
+	head->u.action.category = WLAN_ACTION_PUBLIC;
+	head->u.action.u.public_action.action = WLAN_PA_FILS_DISCOVERY;
+
+	pos = &head->u.action.u.public_action.variable[0];
+
+	/* FILS Discovery Information field */
+
+	/* FILS Discovery Frame Control */
+	WPA_PUT_LE16(pos, ctl);
+	pos += 2;
+
+	/* Hardware or low-level driver will fill in the Timestamp value */
+	pos += 8;
+
+	/* Beacon Interval */
+	WPA_PUT_LE16(pos, hapd->iconf->beacon_int);
+	pos += 2;
+
+	/* Short SSID */
+	WPA_PUT_LE32(pos, hapd->conf->ssid.short_ssid);
+	pos += sizeof(hapd->conf->ssid.short_ssid);
+
+	/* Store position of FILS discovery information element Length field */
+	length_pos = pos++;
+
+	/* FD Capability */
+	WPA_PUT_LE16(pos, hostapd_fils_discovery_cap(hapd));
+	pos += 2;
+
+	/* Operating Class - not present */
+
+	/* Primary Channel - not present */
+
+	/* AP Configuration Sequence Number - not present */
+
+	/* Access Network Options - not present */
+
+	/* FD RSN Information */
+	if (ctl & FD_FRAME_CTL_RSN_INFO_PRESENT) {
+		os_memcpy(pos, fd_rsn_info, sizeof(fd_rsn_info));
+		pos += sizeof(fd_rsn_info);
+	}
+
+	/* Channel Center Frequency Segment 1 - not present */
+
+	/* Mobility Domain */
+	if (ctl & FD_FRAME_CTL_MD_PRESENT) {
+		os_memcpy(pos, &mobility_domain[2], 3);
+		pos += 3;
+	}
+
+	/* Fill in the Length field value */
+	*length_pos = pos - (length_pos + 1);
+
+	pos = hostapd_eid_rnr(hapd, pos, WLAN_FC_STYPE_ACTION);
+
+	/* FILS Indication element */
+	if (buf_len) {
+		os_memcpy(pos, buf, buf_len);
+		pos += buf_len;
+	}
+
+	*len = pos - (u8 *) head;
+	wpa_hexdump(MSG_DEBUG, "FILS Discovery frame template",
+		    head, pos - (u8 *) head);
+	return (u8 *) head;
+}
+
+
+/* Configure FILS Discovery frame transmission parameters */
+static u8 * hostapd_fils_discovery(struct hostapd_data *hapd,
+				   struct wpa_driver_ap_params *params)
+{
+	params->fd_max_int = hapd->conf->fils_discovery_max_int;
+	if (is_6ghz_op_class(hapd->iconf->op_class) &&
+	    params->fd_max_int > FD_MAX_INTERVAL_6GHZ)
+		params->fd_max_int = FD_MAX_INTERVAL_6GHZ;
+
+	params->fd_min_int = hapd->conf->fils_discovery_min_int;
+	if (params->fd_min_int > params->fd_max_int)
+		params->fd_min_int = params->fd_max_int;
+
+	if (params->fd_max_int)
+		return hostapd_gen_fils_discovery(hapd,
+						  &params->fd_frame_tmpl_len);
+
+	return NULL;
+}
+
+#endif /* CONFIG_FILS */
+
+
 int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 			       struct wpa_driver_ap_params *params)
 {
@@ -1203,7 +1431,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	size_t resp_len = 0;
 #ifdef NEED_AP_MLME
 	u16 capab_info;
-	u8 *pos, *tailpos, *csa_pos;
+	u8 *pos, *tailpos, *tailend, *csa_pos;
 
 #define BEACON_HEAD_BUF_SIZE 256
 #define BEACON_TAIL_BUF_SIZE 512
@@ -1231,7 +1459,22 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_IEEE80211AC */
 
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax) {
+		tail_len += 3 + sizeof(struct ieee80211_he_capabilities) +
+			3 + sizeof(struct ieee80211_he_operation) +
+			3 + sizeof(struct ieee80211_he_mu_edca_parameter_set) +
+			3 + sizeof(struct ieee80211_spatial_reuse);
+		if (is_6ghz_op_class(hapd->iconf->op_class))
+			tail_len += sizeof(struct ieee80211_he_6ghz_oper_info) +
+				3 + sizeof(struct ieee80211_he_6ghz_band_cap);
+	}
+#endif /* CONFIG_IEEE80211AX */
+
+	tail_len += hostapd_eid_rnr_len(hapd, WLAN_FC_STYPE_BEACON);
 	tail_len += hostapd_mbo_ie_len(hapd);
+	tail_len += hostapd_eid_owe_trans_len(hapd);
+	tail_len += hostapd_eid_dpp_cc_len(hapd);
 
 	tailpos = tail = os_malloc(tail_len);
 	if (head == NULL || tail == NULL) {
@@ -1240,6 +1483,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		os_free(tail);
 		return -1;
 	}
+	tailend = tail + tail_len;
 
 	head->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
 					   WLAN_FC_STYPE_BEACON);
@@ -1280,8 +1524,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 	head_len = pos - (u8 *) head;
 
-	tailpos = hostapd_eid_country(hapd, tailpos,
-				      tail + BEACON_TAIL_BUF_SIZE - tailpos);
+	tailpos = hostapd_eid_country(hapd, tailpos, tailend - tailpos);
 
 	/* Power Constraint element */
 	tailpos = hostapd_eid_pwr_constraint(hapd, tailpos);
@@ -1298,16 +1541,11 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	/* Extended supported rates */
 	tailpos = hostapd_eid_ext_supp_rates(hapd, tailpos);
 
-	/* RSN, MDIE, WPA */
-	tailpos = hostapd_eid_wpa(hapd, tailpos, tail + BEACON_TAIL_BUF_SIZE -
-				  tailpos);
-
+	tailpos = hostapd_get_rsne(hapd, tailpos, tailend - tailpos);
+	tailpos = hostapd_eid_bss_load(hapd, tailpos, tailend - tailpos);
 	tailpos = hostapd_eid_rm_enabled_capab(hapd, tailpos,
-					       tail + BEACON_TAIL_BUF_SIZE -
-					       tailpos);
-
-	tailpos = hostapd_eid_bss_load(hapd, tailpos,
-				       tail + BEACON_TAIL_BUF_SIZE - tailpos);
+					       tailend - tailpos);
+	tailpos = hostapd_get_mde(hapd, tailpos, tailend - tailpos);
 
 	/* eCSA IE */
 	csa_pos = hostapd_eid_ecsa(hapd, tailpos);
@@ -1316,15 +1554,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	tailpos = csa_pos;
 
 	tailpos = hostapd_eid_supported_op_classes(hapd, tailpos);
-
-#ifdef CONFIG_IEEE80211N
-	/* Secondary Channel Offset element */
-	/* TODO: The standard doesn't specify a position for this element. */
-	tailpos = hostapd_eid_secondary_channel(hapd, tailpos);
-
 	tailpos = hostapd_eid_ht_capabilities(hapd, tailpos);
 	tailpos = hostapd_eid_ht_operation(hapd, tailpos);
-#endif /* CONFIG_IEEE80211N */
 
 	tailpos = hostapd_eid_ext_capab(hapd, tailpos);
 
@@ -1347,15 +1578,45 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 #endif /* CONFIG_FST */
 
 #ifdef CONFIG_IEEE80211AC
-	if (hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac) {
+	if (hapd->iconf->ieee80211ac && !hapd->conf->disable_11ac &&
+	    !is_6ghz_op_class(hapd->iconf->op_class)) {
 		tailpos = hostapd_eid_vht_capabilities(hapd, tailpos, 0);
 		tailpos = hostapd_eid_vht_operation(hapd, tailpos);
 		tailpos = hostapd_eid_txpower_envelope(hapd, tailpos);
-		tailpos = hostapd_eid_wb_chsw_wrapper(hapd, tailpos);
 	}
+#endif /* CONFIG_IEEE80211AC */
+
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax &&
+	    is_6ghz_op_class(hapd->iconf->op_class))
+		tailpos = hostapd_eid_txpower_envelope(hapd, tailpos);
+#endif /* CONFIG_IEEE80211AX */
+
+	tailpos = hostapd_eid_wb_chsw_wrapper(hapd, tailpos);
+
+	tailpos = hostapd_eid_rnr(hapd, tailpos, WLAN_FC_STYPE_BEACON);
+	tailpos = hostapd_eid_fils_indic(hapd, tailpos, 0);
+	tailpos = hostapd_get_rsnxe(hapd, tailpos, tailend - tailpos);
+
+#ifdef CONFIG_IEEE80211AX
+	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax) {
+		tailpos = hostapd_eid_he_capab(hapd, tailpos,
+					       IEEE80211_MODE_AP);
+		tailpos = hostapd_eid_he_operation(hapd, tailpos);
+		tailpos = hostapd_eid_spatial_reuse(hapd, tailpos);
+		tailpos = hostapd_eid_he_mu_edca_parameter_set(hapd, tailpos);
+		tailpos = hostapd_eid_he_6ghz_band_cap(hapd, tailpos);
+	}
+#endif /* CONFIG_IEEE80211AX */
+
+#ifdef CONFIG_IEEE80211AC
 	if (hapd->conf->vendor_vht)
 		tailpos = hostapd_eid_vendor_vht(hapd, tailpos);
 #endif /* CONFIG_IEEE80211AC */
+
+	/* WPA / OSEN */
+	tailpos = hostapd_get_wpa_ie(hapd, tailpos, tailend - tailpos);
+	tailpos = hostapd_get_osen_ie(hapd, tailpos, tailend - tailpos);
 
 	/* Wi-Fi Alliance WMM */
 	tailpos = hostapd_eid_wmm(hapd, tailpos);
@@ -1383,10 +1644,12 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 
 #ifdef CONFIG_HS20
 	tailpos = hostapd_eid_hs20_indication(hapd, tailpos);
-	tailpos = hostapd_eid_osen(hapd, tailpos);
 #endif /* CONFIG_HS20 */
 
 	tailpos = hostapd_eid_mbo(hapd, tailpos, tail + tail_len - tailpos);
+	tailpos = hostapd_eid_owe_trans(hapd, tailpos,
+					tail + tail_len - tailpos);
+	tailpos = hostapd_eid_dpp_cc(hapd, tailpos, tail + tail_len - tailpos);
 
 	if (hapd->conf->vendor_elements) {
 		os_memcpy(tailpos, wpabuf_head(hapd->conf->vendor_elements),
@@ -1409,6 +1672,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	params->dtim_period = hapd->conf->dtim_period;
 	params->beacon_int = hapd->iconf->beacon_int;
 	params->basic_rates = hapd->iface->basic_rates;
+	params->beacon_rate = hapd->iconf->beacon_rate;
+	params->rate_type = hapd->iconf->rate_type;
 	params->ssid = hapd->conf->ssid.ssid;
 	params->ssid_len = hapd->conf->ssid.ssid_len;
 	if ((hapd->conf->wpa & (WPA_PROTO_WPA | WPA_PROTO_RSN)) ==
@@ -1423,10 +1688,13 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 	params->key_mgmt_suites = hapd->conf->wpa_key_mgmt;
 	params->auth_algs = hapd->conf->auth_algs;
 	params->wpa_version = hapd->conf->wpa;
-	params->privacy = hapd->conf->ssid.wep.keys_set || hapd->conf->wpa ||
+	params->privacy = hapd->conf->wpa;
+#ifdef CONFIG_WEP
+	params->privacy |= hapd->conf->ssid.wep.keys_set ||
 		(hapd->conf->ieee802_1x &&
 		 (hapd->conf->default_wep_key_len ||
 		  hapd->conf->individual_wep_key_len));
+#endif /* CONFIG_WEP */
 	switch (hapd->conf->ignore_broadcast_ssid) {
 	case 0:
 		params->hide_ssid = NO_SSID_HIDING;
@@ -1439,7 +1707,6 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		break;
 	}
 	params->isolate = hapd->conf->isolate;
-	params->smps_mode = hapd->iconf->ht_capab & HT_CAP_INFO_SMPS_MASK;
 #ifdef NEED_AP_MLME
 	params->cts_protect = !!(ieee802_11_erp_info(hapd) &
 				ERP_INFO_USE_PROTECTION);
@@ -1472,7 +1739,20 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
 		params->osen = 1;
 	}
 #endif /* CONFIG_HS20 */
+	params->multicast_to_unicast = hapd->conf->multicast_to_unicast;
 	params->pbss = hapd->conf->pbss;
+
+	if (hapd->conf->ftm_responder) {
+		if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_FTM_RESPONDER) {
+			params->ftm_responder = 1;
+			params->lci = hapd->iface->conf->lci;
+			params->civic = hapd->iface->conf->civic;
+		} else {
+			wpa_printf(MSG_WARNING,
+				   "Not configuring FTM responder as the driver doesn't advertise support for it");
+		}
+	}
+
 	return 0;
 }
 
@@ -1485,17 +1765,31 @@ void ieee802_11_free_ap_params(struct wpa_driver_ap_params *params)
 	params->head = NULL;
 	os_free(params->proberesp);
 	params->proberesp = NULL;
+#ifdef CONFIG_FILS
+	os_free(params->fd_frame_tmpl);
+	params->fd_frame_tmpl = NULL;
+#endif /* CONFIG_FILS */
+#ifdef CONFIG_IEEE80211AX
+	os_free(params->unsol_bcast_probe_resp_tmpl);
+	params->unsol_bcast_probe_resp_tmpl = NULL;
+#endif /* CONFIG_IEEE80211AX */
 }
 
 
-int ieee802_11_set_beacon(struct hostapd_data *hapd)
+static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 {
 	struct wpa_driver_ap_params params;
 	struct hostapd_freq_params freq;
 	struct hostapd_iface *iface = hapd->iface;
 	struct hostapd_config *iconf = iface->conf;
+	struct hostapd_hw_modes *cmode = iface->current_mode;
 	struct wpabuf *beacon, *proberesp, *assocresp;
 	int res, ret = -1;
+
+	if (!hapd->drv_priv) {
+		wpa_printf(MSG_ERROR, "Interface is disabled");
+		return -1;
+	}
 
 	if (hapd->csa_in_progress) {
 		wpa_printf(MSG_ERROR, "Cannot set beacons during CSA period");
@@ -1515,33 +1809,52 @@ int ieee802_11_set_beacon(struct hostapd_data *hapd)
 	params.proberesp_ies = proberesp;
 	params.assocresp_ies = assocresp;
 	params.reenable = hapd->reenable_beacon;
+#ifdef CONFIG_IEEE80211AX
+	params.he_spr_ctrl = hapd->iface->conf->spr.sr_control;
+	params.he_spr_non_srg_obss_pd_max_offset =
+		hapd->iface->conf->spr.non_srg_obss_pd_max_offset;
+	params.he_spr_srg_obss_pd_min_offset =
+		hapd->iface->conf->spr.srg_obss_pd_min_offset;
+	params.he_spr_srg_obss_pd_max_offset =
+		hapd->iface->conf->spr.srg_obss_pd_max_offset;
+	os_memcpy(params.he_spr_bss_color_bitmap,
+		  hapd->iface->conf->spr.srg_bss_color_bitmap, 8);
+	os_memcpy(params.he_spr_partial_bssid_bitmap,
+		  hapd->iface->conf->spr.srg_partial_bssid_bitmap, 8);
+	params.he_bss_color_disabled =
+		hapd->iface->conf->he_op.he_bss_color_disabled;
+	params.he_bss_color_partial =
+		hapd->iface->conf->he_op.he_bss_color_partial;
+	params.he_bss_color = hapd->iface->conf->he_op.he_bss_color;
+	params.twt_responder = hostapd_get_he_twt_responder(hapd,
+							    IEEE80211_MODE_AP);
+	params.unsol_bcast_probe_resp_tmpl =
+		hostapd_unsol_bcast_probe_resp(hapd, &params);
+#endif /* CONFIG_IEEE80211AX */
 	hapd->reenable_beacon = 0;
+#ifdef CONFIG_SAE
+	params.sae_pwe = hapd->conf->sae_pwe;
+#endif /* CONFIG_SAE */
 
-	if (iface->current_mode &&
+#ifdef CONFIG_FILS
+	params.fd_frame_tmpl = hostapd_fils_discovery(hapd, &params);
+#endif /* CONFIG_FILS */
+
+	if (cmode &&
 	    hostapd_set_freq_params(&freq, iconf->hw_mode, iface->freq,
-				    iconf->channel, iconf->ieee80211n,
-				    iconf->ieee80211ac,
+				    iconf->channel, iconf->enable_edmg,
+				    iconf->edmg_channel, iconf->ieee80211n,
+				    iconf->ieee80211ac, iconf->ieee80211ax,
 				    iconf->secondary_channel,
-				    iconf->vht_oper_chwidth,
-				    iconf->vht_oper_centr_freq_seg0_idx,
-				    iconf->vht_oper_centr_freq_seg1_idx,
-				    iface->current_mode->vht_capab) == 0)
+				    hostapd_get_oper_chwidth(iconf),
+				    hostapd_get_oper_centr_freq_seg0_idx(iconf),
+				    hostapd_get_oper_centr_freq_seg1_idx(iconf),
+				    cmode->vht_capab,
+				    &cmode->he_capab[IEEE80211_MODE_AP]) == 0)
 		params.freq = &freq;
 
 	res = hostapd_drv_set_ap(hapd, &params);
-	//  MANA - Start Beacon Stuffs here
-	//hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
-	//struct wpa_driver_ap_params params2 = params;
-	//os_memset(&params2.ssid, 0, params2.ssid_len);
-	//params2.hide_ssid = HIDDEN_SSID_ZERO_CONTENTS;
-	//hostapd_build_ap_extra_ies(hapd, &beacon, &proberesp, &assocresp);
-	//params2.beacon_ies = beacon;
-	//params2.proberesp_ies = proberesp;
-   //params2.assocresp_ies = assocresp;
-	//wpa_printf(MSG_INFO, "ZZZZ : Sending Hidden AP: %s", params2.ssid);
-	//res = hostapd_drv_set_ap(hapd, &params2);
-	//hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
-	//  MANA - End Beacon Stuff here
+	hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
 	if (res)
 		wpa_printf(MSG_ERROR, "Failed to set beacon parameters");
 	else
@@ -1549,6 +1862,42 @@ int ieee802_11_set_beacon(struct hostapd_data *hapd)
 fail:
 	ieee802_11_free_ap_params(&params);
 	return ret;
+}
+
+
+int ieee802_11_set_beacon(struct hostapd_data *hapd)
+{
+	struct hostapd_iface *iface = hapd->iface;
+	int ret;
+	size_t i, j;
+	bool is_6g;
+
+	ret = __ieee802_11_set_beacon(hapd);
+	if (ret != 0)
+		return ret;
+
+	if (!iface->interfaces || iface->interfaces->count <= 1)
+		return 0;
+
+	/* Update Beacon frames in case of 6 GHz colocation */
+	is_6g = is_6ghz_op_class(iface->conf->op_class);
+	for (j = 0; j < iface->interfaces->count; j++) {
+		struct hostapd_iface *colocated;
+
+		colocated = iface->interfaces->iface[j];
+		if (colocated == iface || !colocated || !colocated->conf)
+			continue;
+
+		if (is_6g == is_6ghz_op_class(colocated->conf->op_class))
+			continue;
+
+		for (i = 0; i < colocated->num_bss; i++) {
+			if (colocated->bss[i] && colocated->bss[i]->started)
+				__ieee802_11_set_beacon(colocated->bss[i]);
+		}
+	}
+
+	return 0;
 }
 
 

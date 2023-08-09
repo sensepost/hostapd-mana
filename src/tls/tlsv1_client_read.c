@@ -290,7 +290,7 @@ static void tls_peer_cert_event(struct tlsv1_client *conn, int depth,
 		return;
 
 	os_memset(&ev, 0, sizeof(ev));
-	if (conn->cred->cert_probe || conn->cert_in_cb) {
+	if ((conn->cred && conn->cred->cert_probe) || conn->cert_in_cb) {
 		cert_buf = wpabuf_alloc_copy(cert->cert_start,
 					     cert->cert_len);
 		ev.peer_cert.cert = cert_buf;
@@ -311,6 +311,14 @@ static void tls_peer_cert_event(struct tlsv1_client *conn, int depth,
 	ev.peer_cert.depth = depth;
 	x509_name_string(&cert->subject, subject, sizeof(subject));
 	ev.peer_cert.subject = subject;
+
+	if (cert->extensions_present & X509_EXT_CERTIFICATE_POLICY) {
+		if (cert->certificate_policy & X509_EXT_CERT_POLICY_TOD_STRICT)
+			ev.peer_cert.tod = 1;
+		else if (cert->certificate_policy &
+			 X509_EXT_CERT_POLICY_TOD_TOFU)
+			ev.peer_cert.tod = 2;
+	}
 
 	conn->event_cb(conn->cb_ctx, TLS_PEER_CERTIFICATE, &ev);
 	wpabuf_free(cert_buf);
@@ -532,7 +540,7 @@ static int tls_process_certificate(struct tlsv1_client *conn, u8 ct,
 		}
 	} else if (conn->cred && conn->cred->cert_probe) {
 		wpa_printf(MSG_DEBUG,
-			   "TLSv1: Reject server certificate on probe-only rune");
+			   "TLSv1: Reject server certificate on probe-only run");
 		if (conn->event_cb) {
 			union tls_event_data ev;
 			char buf[128];
@@ -685,10 +693,9 @@ static int tlsv1_process_diffie_hellman(struct tlsv1_client *conn,
 			    pos, conn->dh_p_len);
 		goto fail;
 	}
-	conn->dh_p = os_malloc(conn->dh_p_len);
+	conn->dh_p = os_memdup(pos, conn->dh_p_len);
 	if (conn->dh_p == NULL)
 		goto fail;
-	os_memcpy(conn->dh_p, pos, conn->dh_p_len);
 	pos += conn->dh_p_len;
 	wpa_hexdump(MSG_DEBUG, "TLSv1: DH p (prime)",
 		    conn->dh_p, conn->dh_p_len);
@@ -700,10 +707,9 @@ static int tlsv1_process_diffie_hellman(struct tlsv1_client *conn,
 	if (val == 0 || val > (size_t) (end - pos))
 		goto fail;
 	conn->dh_g_len = val;
-	conn->dh_g = os_malloc(conn->dh_g_len);
+	conn->dh_g = os_memdup(pos, conn->dh_g_len);
 	if (conn->dh_g == NULL)
 		goto fail;
-	os_memcpy(conn->dh_g, pos, conn->dh_g_len);
 	pos += conn->dh_g_len;
 	wpa_hexdump(MSG_DEBUG, "TLSv1: DH g (generator)",
 		    conn->dh_g, conn->dh_g_len);
@@ -717,10 +723,9 @@ static int tlsv1_process_diffie_hellman(struct tlsv1_client *conn,
 	if (val == 0 || val > (size_t) (end - pos))
 		goto fail;
 	conn->dh_ys_len = val;
-	conn->dh_ys = os_malloc(conn->dh_ys_len);
+	conn->dh_ys = os_memdup(pos, conn->dh_ys_len);
 	if (conn->dh_ys == NULL)
 		goto fail;
-	os_memcpy(conn->dh_ys, pos, conn->dh_ys_len);
 	pos += conn->dh_ys_len;
 	wpa_hexdump(MSG_DEBUG, "TLSv1: DH Ys (server's public value)",
 		    conn->dh_ys, conn->dh_ys_len);

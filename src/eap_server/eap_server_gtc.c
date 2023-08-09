@@ -10,7 +10,6 @@
 
 #include "common.h"
 #include "eap_i.h"
-#include "common/mana.h" //MANA
 
 
 struct eap_gtc_data {
@@ -75,8 +74,8 @@ static struct wpabuf * eap_gtc_buildReq(struct eap_sm *sm, void *priv, u8 id)
 }
 
 
-static Boolean eap_gtc_check(struct eap_sm *sm, void *priv,
-			     struct wpabuf *respData)
+static bool eap_gtc_check(struct eap_sm *sm, void *priv,
+			  struct wpabuf *respData)
 {
 	const u8 *pos;
 	size_t len;
@@ -84,10 +83,10 @@ static Boolean eap_gtc_check(struct eap_sm *sm, void *priv,
 	pos = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_GTC, respData, &len);
 	if (pos == NULL || len < 1) {
 		wpa_printf(MSG_INFO, "EAP-GTC: Invalid frame");
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
 
@@ -142,12 +141,11 @@ static void eap_gtc_process(struct eap_sm *sm, void *priv,
 		} else {
 			os_free(sm->identity);
 			sm->identity_len = pos2 - pos;
-			sm->identity = os_malloc(sm->identity_len);
+			sm->identity = os_memdup(pos, sm->identity_len);
 			if (sm->identity == NULL) {
 				data->state = FAILURE;
 				return;
 			}
-			os_memcpy(sm->identity, pos, sm->identity_len);
 		}
 
 		if (eap_user_get(sm, sm->identity, sm->identity_len, 1) != 0) {
@@ -175,32 +173,25 @@ static void eap_gtc_process(struct eap_sm *sm, void *priv,
 		return;
 	}
 
-//MANA Start
-	if (mana.conf->mana_wpe) {
-		eap_server_pap_rx_callback(sm, "GTC",
-				sm->identity, sm->identity_len,
-				pos, rlen);
-	}
-//MANA End
-	//if (rlen != sm->user->password_len ||
-	    //os_memcmp_const(pos, sm->user->password, rlen) != 0) {
-		//wpa_printf(MSG_DEBUG, "EAP-GTC: Done - Failure");
-		//data->state = FAILURE;
-	//} else {
+	if (rlen != sm->user->password_len ||
+	    os_memcmp_const(pos, sm->user->password, rlen) != 0) {
+		wpa_printf(MSG_DEBUG, "EAP-GTC: Done - Failure");
+		data->state = FAILURE;
+	} else {
 		wpa_printf(MSG_DEBUG, "EAP-GTC: Done - Success");
 		data->state = SUCCESS;
-	//}
+	}
 }
 
 
-static Boolean eap_gtc_isDone(struct eap_sm *sm, void *priv)
+static bool eap_gtc_isDone(struct eap_sm *sm, void *priv)
 {
 	struct eap_gtc_data *data = priv;
 	return data->state != CONTINUE;
 }
 
 
-static Boolean eap_gtc_isSuccess(struct eap_sm *sm, void *priv)
+static bool eap_gtc_isSuccess(struct eap_sm *sm, void *priv)
 {
 	struct eap_gtc_data *data = priv;
 	return data->state == SUCCESS;

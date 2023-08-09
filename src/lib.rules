@@ -1,25 +1,29 @@
-ifndef CC
-CC=gcc
+_LIBMK := $(lastword $(wordlist 1,$(shell expr $(words $(MAKEFILE_LIST)) - 1),$(MAKEFILE_LIST)))
+_LIBNAME := $(notdir $(patsubst %/,%,$(dir $(abspath $(_LIBMK)))))
+ALL := $(OUT)lib$(_LIBNAME).a
+LIB_RULES := $(lastword $(MAKEFILE_LIST))
+include $(dir $(LIB_RULES))build.rules
+
+ifdef TEST_FUZZ
+CFLAGS += -DCONFIG_NO_RANDOM_POOL
+CFLAGS += -DTEST_FUZZ
 endif
 
-ifndef CFLAGS
-CFLAGS = -MMD -O2 -Wall -g
-endif
-
+CFLAGS += $(FUZZ_CFLAGS)
 CFLAGS += -I.. -I../utils
 
+_OBJS_VAR := LIB_OBJS
+include ../objs.mk
 
-Q=@
-E=echo
-ifeq ($(V), 1)
-Q=
-E=true
-endif
-ifeq ($(QUIET), 1)
-Q=@
-E=true
-endif
+$(ALL): $(LIB_OBJS)
+	@$(E) "  AR  $(notdir $@)"
+	$(Q)$(AR) crT $@ $?
 
-%.o: %.c
-	$(Q)$(CC) -c -o $@ $(CFLAGS) $<
-	@$(E) "  CC " $<
+install-default:
+	@echo Nothing to be made.
+
+%: %-default
+	@true
+
+clean: common-clean
+	$(Q)rm -f *~ *.o *.d *.gcno *.gcda *.gcov $(ALL)

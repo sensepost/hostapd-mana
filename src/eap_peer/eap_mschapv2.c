@@ -109,23 +109,21 @@ static void * eap_mschapv2_init(struct eap_sm *sm)
 		return NULL;
 
 	if (sm->peer_challenge) {
-		data->peer_challenge = os_malloc(MSCHAPV2_CHAL_LEN);
+		data->peer_challenge = os_memdup(sm->peer_challenge,
+						 MSCHAPV2_CHAL_LEN);
 		if (data->peer_challenge == NULL) {
 			eap_mschapv2_deinit(sm, data);
 			return NULL;
 		}
-		os_memcpy(data->peer_challenge, sm->peer_challenge,
-			  MSCHAPV2_CHAL_LEN);
 	}
 
 	if (sm->auth_challenge) {
-		data->auth_challenge = os_malloc(MSCHAPV2_CHAL_LEN);
+		data->auth_challenge = os_memdup(sm->auth_challenge,
+						 MSCHAPV2_CHAL_LEN);
 		if (data->auth_challenge == NULL) {
 			eap_mschapv2_deinit(sm, data);
 			return NULL;
 		}
-		os_memcpy(data->auth_challenge, sm->auth_challenge,
-			  MSCHAPV2_CHAL_LEN);
 	}
 
 	data->phase2 = sm->init_phase2;
@@ -252,7 +250,7 @@ static struct wpabuf * eap_mschapv2_challenge(
 	if (req_len < sizeof(*req) + 1) {
 		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Too short challenge data "
 			   "(len %lu)", (unsigned long) req_len);
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 	pos = (const u8 *) (req + 1);
@@ -261,7 +259,7 @@ static struct wpabuf * eap_mschapv2_challenge(
 	if (challenge_len != MSCHAPV2_CHAL_LEN) {
 		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Invalid challenge length "
 			   "%lu", (unsigned long) challenge_len);
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
@@ -269,7 +267,7 @@ static struct wpabuf * eap_mschapv2_challenge(
 		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Too short challenge"
 			   " packet: len=%lu challenge_len=%lu",
 			   (unsigned long) len, (unsigned long) challenge_len);
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
@@ -284,10 +282,10 @@ static struct wpabuf * eap_mschapv2_challenge(
 	wpa_hexdump_ascii(MSG_DEBUG, "EAP-MSCHAPV2: Authentication Servername",
 		    pos, len);
 
-	ret->ignore = FALSE;
+	ret->ignore = false;
 	ret->methodState = METHOD_MAY_CONT;
 	ret->decision = DECISION_FAIL;
-	ret->allowNotifications = TRUE;
+	ret->allowNotifications = true;
 
 	return eap_mschapv2_challenge_reply(sm, data, id, req->mschapv2_id,
 					    challenge);
@@ -379,7 +377,7 @@ static struct wpabuf * eap_mschapv2_success(struct eap_sm *sm,
 	if (resp == NULL) {
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Failed to allocate "
 			   "buffer for success response");
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
@@ -387,7 +385,7 @@ static struct wpabuf * eap_mschapv2_success(struct eap_sm *sm,
 
 	ret->methodState = METHOD_DONE;
 	ret->decision = DECISION_UNCOND_SUCC;
-	ret->allowNotifications = FALSE;
+	ret->allowNotifications = false;
 	data->success = 1;
 
 	if (data->prev_error == ERROR_PASSWD_EXPIRED)
@@ -533,10 +531,10 @@ static struct wpabuf * eap_mschapv2_change_password(
 
 	username = mschapv2_remove_domain(username, &username_len);
 
-	ret->ignore = FALSE;
+	ret->ignore = false;
 	ret->methodState = METHOD_MAY_CONT;
 	ret->decision = DECISION_COND_SUCC;
-	ret->allowNotifications = TRUE;
+	ret->allowNotifications = true;
 
 	ms_len = sizeof(*ms) + sizeof(*cp);
 	resp = eap_msg_alloc(EAP_VENDOR_IETF, EAP_TYPE_MSCHAPV2, ms_len,
@@ -567,11 +565,11 @@ static struct wpabuf * eap_mschapv2_change_password(
 	if (pwhash) {
 		u8 new_password_hash[16];
 		if (nt_password_hash(new_password, new_password_len,
-				     new_password_hash))
+				     new_password_hash) ||
+		    nt_password_hash_encrypted_with_block(password,
+							  new_password_hash,
+							  cp->encr_hash))
 			goto fail;
-		nt_password_hash_encrypted_with_block(password,
-						      new_password_hash,
-						      cp->encr_hash);
 	} else {
 		if (old_nt_password_hash_encrypted_with_new_nt_password_hash(
 			    new_password, new_password_len,
@@ -674,10 +672,10 @@ static struct wpabuf * eap_mschapv2_failure(struct eap_sm *sm,
 		os_free(buf);
 	}
 
-	ret->ignore = FALSE;
+	ret->ignore = false;
 	ret->methodState = METHOD_DONE;
 	ret->decision = DECISION_FAIL;
-	ret->allowNotifications = FALSE;
+	ret->allowNotifications = false;
 
 	if (data->prev_error == ERROR_PASSWD_EXPIRED &&
 	    data->passwd_change_version == 3) {
@@ -785,7 +783,7 @@ static struct wpabuf * eap_mschapv2_process(struct eap_sm *sm, void *priv,
 	u8 id;
 
 	if (eap_mschapv2_check_config(sm)) {
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
@@ -802,13 +800,13 @@ static struct wpabuf * eap_mschapv2_process(struct eap_sm *sm, void *priv,
 	pos = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_MSCHAPV2, reqData,
 			       &len);
 	if (pos == NULL || len < sizeof(*ms) + 1) {
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
 	ms = (const struct eap_mschapv2_hdr *) pos;
 	if (eap_mschapv2_check_mslen(sm, len, ms)) {
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
@@ -828,13 +826,13 @@ static struct wpabuf * eap_mschapv2_process(struct eap_sm *sm, void *priv,
 	default:
 		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Unknown op %d - ignored",
 			   ms->op_code);
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 }
 
 
-static Boolean eap_mschapv2_isKeyAvailable(struct eap_sm *sm, void *priv)
+static bool eap_mschapv2_isKeyAvailable(struct eap_sm *sm, void *priv)
 {
 	struct eap_mschapv2_data *data = priv;
 	return data->success && data->master_key_valid;
@@ -858,9 +856,13 @@ static u8 * eap_mschapv2_getKey(struct eap_sm *sm, void *priv, size_t *len)
 
 	/* MSK = server MS-MPPE-Recv-Key | MS-MPPE-Send-Key, i.e.,
 	 *	peer MS-MPPE-Send-Key | MS-MPPE-Recv-Key */
-	get_asymetric_start_key(data->master_key, key, MSCHAPV2_KEY_LEN, 1, 0);
-	get_asymetric_start_key(data->master_key, key + MSCHAPV2_KEY_LEN,
-				MSCHAPV2_KEY_LEN, 0, 0);
+	if (get_asymetric_start_key(data->master_key, key, MSCHAPV2_KEY_LEN, 1,
+				    0) < 0 ||
+	    get_asymetric_start_key(data->master_key, key + MSCHAPV2_KEY_LEN,
+				    MSCHAPV2_KEY_LEN, 0, 0) < 0) {
+		os_free(key);
+		return NULL;
+	}
 
 	wpa_hexdump_key(MSG_DEBUG, "EAP-MSCHAPV2: Derived key",
 			key, key_len);

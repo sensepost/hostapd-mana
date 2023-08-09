@@ -595,14 +595,12 @@ void p2p_process_prov_disc_req(struct p2p_data *p2p, const u8 *sa,
 			goto out;
 		}
 
+		dev = p2p_get_device(p2p, sa);
 		if (!dev) {
-			dev = p2p_get_device(p2p, sa);
-			if (!dev) {
-				p2p_dbg(p2p,
-					"Provision Discovery device not found "
-					MACSTR, MAC2STR(sa));
-				goto out;
-			}
+			p2p_dbg(p2p,
+				"Provision Discovery device not found "
+				MACSTR, MAC2STR(sa));
+			goto out;
 		}
 	} else if (msg.wfd_subelems) {
 		wpabuf_free(dev->info.wfd_subelems);
@@ -1163,6 +1161,9 @@ out:
 					msg.group_id, msg.group_id_len);
 	}
 
+	if (reject != P2P_SC_FAIL_INFO_CURRENTLY_UNAVAILABLE)
+		p2ps_prov_free(p2p);
+
 	if (reject == P2P_SC_SUCCESS) {
 		switch (config_methods) {
 		case WPS_CONFIG_DISPLAY:
@@ -1424,7 +1425,7 @@ void p2p_process_prov_disc_resp(struct p2p_data *p2p, const u8 *sa,
 		 * Save the reported channel list and operating frequency.
 		 * Note that the specification mandates that the responder
 		 * should include in the channel list only channels reported by
-		 * the initiator, so this is only a sanity check, and if this
+		 * the initiator, so this is only a validity check, and if this
 		 * fails the flow would continue, although it would probably
 		 * fail. Same is true for the operating channel.
 		 */
@@ -1581,7 +1582,7 @@ out:
 					 report_config_methods);
 
 	if (p2p->state == P2P_PD_DURING_FIND) {
-		p2p_clear_timeout(p2p);
+		p2p_stop_listen_for_freq(p2p, 0);
 		p2p_continue_find(p2p);
 	}
 }

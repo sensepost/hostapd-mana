@@ -98,8 +98,10 @@ struct wps_device_data {
 	u16 config_methods;
 	struct wpabuf *vendor_ext_m1;
 	struct wpabuf *vendor_ext[MAX_WPS_VENDOR_EXTENSIONS];
+	struct wpabuf *application_ext;
 
 	int p2p;
+	u8 multi_ap_ext;
 };
 
 /**
@@ -187,6 +189,12 @@ struct wps_config {
 	 * peer_pubkey_hash - Peer public key hash or %NULL if not known
 	 */
 	const u8 *peer_pubkey_hash;
+
+	/**
+	 * multi_ap_backhaul_sta - Whether this is a Multi-AP backhaul STA
+	 * enrollee
+	 */
+	int multi_ap_backhaul_sta;
 };
 
 struct wps_data * wps_init(const struct wps_config *cfg);
@@ -337,6 +345,14 @@ struct wps_registrar_config {
 				 const char *dev_name);
 
 	/**
+	 * lookup_pskfile_cb - Callback for searching for PSK in wpa_psk_file
+	 * @ctx: Higher layer context data (cb_ctx)
+	 * @addr: Enrollee's MAC address
+	 * @psk: Pointer to found PSK (output arg)
+	 */
+	int (*lookup_pskfile_cb)(void *ctx, const u8 *mac_addr, const u8 **psk);
+
+	/**
 	 * cb_ctx: Higher layer context data for Registrar callbacks
 	 */
 	void *cb_ctx;
@@ -379,11 +395,6 @@ struct wps_registrar_config {
 	int disable_auto_conf;
 
 	/**
-	 * static_wep_only - Whether the BSS supports only static WEP
-	 */
-	int static_wep_only;
-
-	/**
 	 * dualband - Whether this is a concurrent dualband AP
 	 */
 	int dualband;
@@ -395,6 +406,37 @@ struct wps_registrar_config {
 	 * PSK is set for a network.
 	 */
 	int force_per_enrollee_psk;
+
+	/**
+	 * multi_ap_backhaul_ssid - SSID to supply to a Multi-AP backhaul
+	 * enrollee
+	 *
+	 * This SSID is used by the Registrar to fill in information for
+	 * Credentials when the enrollee advertises it is a Multi-AP backhaul
+	 * STA.
+	 */
+	const u8 *multi_ap_backhaul_ssid;
+
+	/**
+	 * multi_ap_backhaul_ssid_len - Length of multi_ap_backhaul_ssid in
+	 * octets
+	 */
+	size_t multi_ap_backhaul_ssid_len;
+
+	/**
+	 * multi_ap_backhaul_network_key - The Network Key (PSK) for the
+	 * Multi-AP backhaul enrollee.
+	 *
+	 * This key can be either the ASCII passphrase (8..63 characters) or the
+	 * 32-octet PSK (64 hex characters).
+	 */
+	const u8 *multi_ap_backhaul_network_key;
+
+	/**
+	 * multi_ap_backhaul_network_key_len - Length of
+	 * multi_ap_backhaul_network_key in octets
+	 */
+	size_t multi_ap_backhaul_network_key_len;
 };
 
 
@@ -695,7 +737,7 @@ struct wps_context {
 	 * uses this when acting as an Enrollee to notify Registrar of the
 	 * current configuration.
 	 *
-	 * When using WPA/WPA2-Person, this key can be either the ASCII
+	 * When using WPA/WPA2-Personal, this key can be either the ASCII
 	 * passphrase (8..63 characters) or the 32-octet PSK (64 hex
 	 * characters). When this is set to the ASCII passphrase, the PSK can
 	 * be provided in the psk buffer and used per-Enrollee to control which
@@ -799,6 +841,10 @@ struct wps_context {
 	struct wpabuf *ap_nfc_dh_pubkey;
 	struct wpabuf *ap_nfc_dh_privkey;
 	struct wpabuf *ap_nfc_dev_pw;
+
+	/* Whether to send WPA2-PSK passphrase as a passphrase instead of PSK
+	 * for WPA3-Personal transition mode needs. */
+	bool use_passphrase;
 };
 
 struct wps_registrar *
@@ -831,6 +877,11 @@ int wps_registrar_add_nfc_password_token(struct wps_registrar *reg,
 					 const u8 *oob_dev_pw,
 					 size_t oob_dev_pw_len);
 void wps_registrar_flush(struct wps_registrar *reg);
+int wps_registrar_update_multi_ap(struct wps_registrar *reg,
+				  const u8 *multi_ap_backhaul_ssid,
+				  size_t multi_ap_backhaul_ssid_len,
+				  const u8 *multi_ap_backhaul_network_key,
+				  size_t multi_ap_backhaul_network_key_len);
 
 int wps_build_credential_wrap(struct wpabuf *msg,
 			      const struct wps_credential *cred);

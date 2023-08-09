@@ -12,8 +12,6 @@
 
 #ifdef CONFIG_DEBUG_SYSLOG
 #include <syslog.h>
-
-static int wpa_debug_syslog = 0;
 #endif /* CONFIG_DEBUG_SYSLOG */
 
 #ifdef CONFIG_DEBUG_LINUX_TRACING
@@ -30,8 +28,12 @@ static FILE *wpa_debug_tracing_file = NULL;
 
 
 int wpa_debug_level = MSG_INFO;
-int wpa_debug_show_keys = 1;
+int wpa_debug_show_keys = 0;
 int wpa_debug_timestamp = 0;
+int wpa_debug_syslog = 0;
+#ifndef CONFIG_NO_STDOUT_DEBUG
+static FILE *out_file = NULL;
+#endif /* CONFIG_NO_STDOUT_DEBUG */
 
 
 #ifdef CONFIG_ANDROID_LOG
@@ -58,7 +60,9 @@ static int wpa_to_android_level(int level)
 #ifndef CONFIG_NO_STDOUT_DEBUG
 
 #ifdef CONFIG_DEBUG_FILE
-static FILE *out_file = NULL;
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #endif /* CONFIG_DEBUG_FILE */
 
 
@@ -72,12 +76,12 @@ void wpa_debug_print_timestamp(void)
 
 	os_get_time(&tv);
 #ifdef CONFIG_DEBUG_FILE
-	if (out_file) {
+	if (out_file)
 		fprintf(out_file, "%ld.%06u: ", (long) tv.sec,
 			(unsigned int) tv.usec);
-	} else
 #endif /* CONFIG_DEBUG_FILE */
-	printf("%ld.%06u: ", (long) tv.sec, (unsigned int) tv.usec);
+	if (!out_file && !wpa_debug_syslog)
+		printf("%ld.%06u: ", (long) tv.sec, (unsigned int) tv.usec);
 #endif /* CONFIG_ANDROID_LOG */
 }
 
@@ -140,6 +144,7 @@ int wpa_debug_open_linux_tracing(void)
 		printf("failed to read /proc/mounts\n");
 		return -1;
 	}
+	buf[buflen] = '\0';
 
 	line = strtok_r(buf, "\n", &tmp1);
 	while (line) {
@@ -205,35 +210,37 @@ void wpa_printf(int level, const char *fmt, ...)
 {
 	va_list ap;
 
-	va_start(ap, fmt);
 	if (level >= wpa_debug_level) {
 #ifdef CONFIG_ANDROID_LOG
+		va_start(ap, fmt);
 		__android_log_vprint(wpa_to_android_level(level),
 				     ANDROID_LOG_NAME, fmt, ap);
+		va_end(ap);
 #else /* CONFIG_ANDROID_LOG */
 #ifdef CONFIG_DEBUG_SYSLOG
 		if (wpa_debug_syslog) {
+			va_start(ap, fmt);
 			vsyslog(syslog_priority(level), fmt, ap);
-		} else {
+			va_end(ap);
+		}
 #endif /* CONFIG_DEBUG_SYSLOG */
 		wpa_debug_print_timestamp();
 #ifdef CONFIG_DEBUG_FILE
 		if (out_file) {
+			va_start(ap, fmt);
 			vfprintf(out_file, fmt, ap);
 			fprintf(out_file, "\n");
-		} else {
-#endif /* CONFIG_DEBUG_FILE */
-		vprintf(fmt, ap);
-		printf("\n");
-#ifdef CONFIG_DEBUG_FILE
+			va_end(ap);
 		}
 #endif /* CONFIG_DEBUG_FILE */
-#ifdef CONFIG_DEBUG_SYSLOG
+		if (!wpa_debug_syslog && !out_file) {
+			va_start(ap, fmt);
+			vprintf(fmt, ap);
+			printf("\n");
+			va_end(ap);
 		}
-#endif /* CONFIG_DEBUG_SYSLOG */
 #endif /* CONFIG_ANDROID_LOG */
 	}
-	va_end(ap);
 
 #ifdef CONFIG_DEBUG_LINUX_TRACING
 	if (wpa_debug_tracing_file != NULL) {
@@ -249,7 +256,7 @@ void wpa_printf(int level, const char *fmt, ...)
 
 
 static void _wpa_hexdump(int level, const char *title, const u8 *buf,
-			 size_t len, int show)
+			 size_t len, int show, int only_syslog)
 {
 	size_t i;
 
@@ -340,7 +347,8 @@ static void _wpa_hexdump(int level, const char *title, const u8 *buf,
 		syslog(syslog_priority(level), "%s - hexdump(len=%lu):%s",
 		       title, (unsigned long) len, display);
 		bin_clear_free(strbuf, 1 + 3 * len);
-		return;
+		if (only_syslog)
+			return;
 	}
 #endif /* CONFIG_DEBUG_SYSLOG */
 	wpa_debug_print_timestamp();
@@ -357,33 +365,32 @@ static void _wpa_hexdump(int level, const char *title, const u8 *buf,
 			fprintf(out_file, " [REMOVED]");
 		}
 		fprintf(out_file, "\n");
-	} else {
-#endif /* CONFIG_DEBUG_FILE */
-	printf("%s - hexdump(len=%lu):", title, (unsigned long) len);
-	if (buf == NULL) {
-		printf(" [NULL]");
-	} else if (show) {
-		for (i = 0; i < len; i++)
-			printf(" %02x", buf[i]);
-	} else {
-		printf(" [REMOVED]");
-	}
-	printf("\n");
-#ifdef CONFIG_DEBUG_FILE
 	}
 #endif /* CONFIG_DEBUG_FILE */
+	if (!wpa_debug_syslog && !out_file) {
+		printf("%s - hexdump(len=%lu):", title, (unsigned long) len);
+		if (buf == NULL) {
+			printf(" [NULL]");
+		} else if (show) {
+			for (i = 0; i < len; i++)
+				printf(" %02x", buf[i]);
+		} else {
+			printf(" [REMOVED]");
+		}
+		printf("\n");
+	}
 #endif /* CONFIG_ANDROID_LOG */
 }
 
 void wpa_hexdump(int level, const char *title, const void *buf, size_t len)
 {
-	_wpa_hexdump(level, title, buf, len, 1);
+	_wpa_hexdump(level, title, buf, len, 1, 0);
 }
 
 
 void wpa_hexdump_key(int level, const char *title, const void *buf, size_t len)
 {
-	_wpa_hexdump(level, title, buf, len, wpa_debug_show_keys);
+	_wpa_hexdump(level, title, buf, len, wpa_debug_show_keys, 0);
 }
 
 
@@ -416,8 +423,12 @@ static void _wpa_hexdump_ascii(int level, const char *title, const void *buf,
 	if (level < wpa_debug_level)
 		return;
 #ifdef CONFIG_ANDROID_LOG
-	_wpa_hexdump(level, title, buf, len, show);
+	_wpa_hexdump(level, title, buf, len, show, 0);
 #else /* CONFIG_ANDROID_LOG */
+#ifdef CONFIG_DEBUG_SYSLOG
+	if (wpa_debug_syslog)
+		_wpa_hexdump(level, title, buf, len, show, 1);
+#endif /* CONFIG_DEBUG_SYSLOG */
 	wpa_debug_print_timestamp();
 #ifdef CONFIG_DEBUG_FILE
 	if (out_file) {
@@ -425,13 +436,13 @@ static void _wpa_hexdump_ascii(int level, const char *title, const void *buf,
 			fprintf(out_file,
 				"%s - hexdump_ascii(len=%lu): [REMOVED]\n",
 				title, (unsigned long) len);
-			return;
+			goto file_done;
 		}
 		if (buf == NULL) {
 			fprintf(out_file,
 				"%s - hexdump_ascii(len=%lu): [NULL]\n",
 				title, (unsigned long) len);
-			return;
+			goto file_done;
 		}
 		fprintf(out_file, "%s - hexdump_ascii(len=%lu):\n",
 			title, (unsigned long) len);
@@ -455,42 +466,43 @@ static void _wpa_hexdump_ascii(int level, const char *title, const void *buf,
 			pos += llen;
 			len -= llen;
 		}
-	} else {
+	}
+file_done:
 #endif /* CONFIG_DEBUG_FILE */
-	if (!show) {
-		printf("%s - hexdump_ascii(len=%lu): [REMOVED]\n",
-		       title, (unsigned long) len);
-		return;
-	}
-	if (buf == NULL) {
-		printf("%s - hexdump_ascii(len=%lu): [NULL]\n",
-		       title, (unsigned long) len);
-		return;
-	}
-	printf("%s - hexdump_ascii(len=%lu):\n", title, (unsigned long) len);
-	while (len) {
-		llen = len > line_len ? line_len : len;
-		printf("    ");
-		for (i = 0; i < llen; i++)
-			printf(" %02x", pos[i]);
-		for (i = llen; i < line_len; i++)
-			printf("   ");
-		printf("   ");
-		for (i = 0; i < llen; i++) {
-			if (isprint(pos[i]))
-				printf("%c", pos[i]);
-			else
-				printf("_");
+	if (!wpa_debug_syslog && !out_file) {
+		if (!show) {
+			printf("%s - hexdump_ascii(len=%lu): [REMOVED]\n",
+			       title, (unsigned long) len);
+			return;
 		}
-		for (i = llen; i < line_len; i++)
-			printf(" ");
-		printf("\n");
-		pos += llen;
-		len -= llen;
+		if (buf == NULL) {
+			printf("%s - hexdump_ascii(len=%lu): [NULL]\n",
+			       title, (unsigned long) len);
+			return;
+		}
+		printf("%s - hexdump_ascii(len=%lu):\n", title,
+		       (unsigned long) len);
+		while (len) {
+			llen = len > line_len ? line_len : len;
+			printf("    ");
+			for (i = 0; i < llen; i++)
+				printf(" %02x", pos[i]);
+			for (i = llen; i < line_len; i++)
+				printf("   ");
+			printf("   ");
+			for (i = 0; i < llen; i++) {
+				if (isprint(pos[i]))
+					printf("%c", pos[i]);
+				else
+					printf("_");
+			}
+			for (i = llen; i < line_len; i++)
+				printf(" ");
+			printf("\n");
+			pos += llen;
+			len -= llen;
+		}
 	}
-#ifdef CONFIG_DEBUG_FILE
-	}
-#endif /* CONFIG_DEBUG_FILE */
 #endif /* CONFIG_ANDROID_LOG */
 }
 
@@ -539,6 +551,8 @@ int wpa_debug_reopen_file(void)
 int wpa_debug_open_file(const char *path)
 {
 #ifdef CONFIG_DEBUG_FILE
+	int out_fd;
+
 	if (!path)
 		return 0;
 
@@ -548,10 +562,28 @@ int wpa_debug_open_file(const char *path)
 		last_path = os_strdup(path);
 	}
 
-	out_file = fopen(path, "a");
+	out_fd = open(path, O_CREAT | O_APPEND | O_WRONLY,
+		      S_IRUSR | S_IWUSR | S_IRGRP);
+	if (out_fd < 0) {
+		wpa_printf(MSG_ERROR,
+			   "%s: Failed to open output file descriptor, using standard output",
+			   __func__);
+		return -1;
+	}
+
+#ifdef __linux__
+	if (fcntl(out_fd, F_SETFD, FD_CLOEXEC) < 0) {
+		wpa_printf(MSG_DEBUG,
+			   "%s: Failed to set FD_CLOEXEC - continue without: %s",
+			   __func__, strerror(errno));
+	}
+#endif /* __linux__ */
+
+	out_file = fdopen(out_fd, "a");
 	if (out_file == NULL) {
 		wpa_printf(MSG_ERROR, "wpa_debug_open_file: Failed to open "
 			   "output file, using standard output");
+		close(out_fd);
 		return -1;
 	}
 #ifndef _WIN32

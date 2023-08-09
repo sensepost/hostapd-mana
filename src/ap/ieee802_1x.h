@@ -39,11 +39,12 @@ u8 * ieee802_1x_get_radius_class(struct eapol_state_machine *sm, size_t *len,
 				 int idx);
 struct wpabuf * ieee802_1x_get_radius_cui(struct eapol_state_machine *sm);
 const u8 * ieee802_1x_get_key(struct eapol_state_machine *sm, size_t *len);
+const u8 * ieee802_1x_get_session_id(struct eapol_state_machine *sm,
+				     size_t *len);
 void ieee802_1x_notify_port_enabled(struct eapol_state_machine *sm,
-				    int enabled);
-void ieee802_1x_notify_port_valid(struct eapol_state_machine *sm,
-				  int valid);
-void ieee802_1x_notify_pre_auth(struct eapol_state_machine *sm, int pre_auth);
+				    bool enabled);
+void ieee802_1x_notify_port_valid(struct eapol_state_machine *sm, bool valid);
+void ieee802_1x_notify_pre_auth(struct eapol_state_machine *sm, bool pre_auth);
 int ieee802_1x_get_mib(struct hostapd_data *hapd, char *buf, size_t buflen);
 int ieee802_1x_get_mib_sta(struct hostapd_data *hapd, struct sta_info *sta,
 			   char *buf, size_t buflen);
@@ -57,5 +58,12 @@ int add_common_radius_attr(struct hostapd_data *hapd,
 			   struct hostapd_radius_attr *req_attr,
 			   struct sta_info *sta,
 			   struct radius_msg *msg);
+int add_sqlite_radius_attr(struct hostapd_data *hapd, struct sta_info *sta,
+			   struct radius_msg *msg, int acct);
+void ieee802_1x_encapsulate_radius(struct hostapd_data *hapd,
+				   struct sta_info *sta,
+				   const u8 *eap, size_t len);
+struct eapol_state_machine *
+ieee802_1x_alloc_eapol_sm(struct hostapd_data *hapd, struct sta_info *sta);
 
 #endif /* IEEE802_1X_H */

@@ -1,8 +1,0 @@
-extraction:
-  cpp:
-    prepare:
-      packages:
-      - "libnl-genl-3-dev"
-      - "libssl-dev"
-    index:
-      build_command: "make -C hostapd"

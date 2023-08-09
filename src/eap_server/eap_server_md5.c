@@ -12,7 +12,6 @@
 #include "crypto/random.h"
 #include "eap_i.h"
 #include "eap_common/chap.h"
-#include "common/mana.h" //MANA
 
 
 #define CHALLENGE_LEN 16
@@ -74,8 +73,8 @@ static struct wpabuf * eap_md5_buildReq(struct eap_sm *sm, void *priv, u8 id)
 }
 
 
-static Boolean eap_md5_check(struct eap_sm *sm, void *priv,
-			     struct wpabuf *respData)
+static bool eap_md5_check(struct eap_sm *sm, void *priv,
+			  struct wpabuf *respData)
 {
 	const u8 *pos;
 	size_t len;
@@ -83,16 +82,16 @@ static Boolean eap_md5_check(struct eap_sm *sm, void *priv,
 	pos = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_MD5, respData, &len);
 	if (pos == NULL || len < 1) {
 		wpa_printf(MSG_INFO, "EAP-MD5: Invalid frame");
-		return TRUE;
+		return true;
 	}
 	if (*pos != CHAP_MD5_LEN || 1 + CHAP_MD5_LEN > len) {
 		wpa_printf(MSG_INFO, "EAP-MD5: Invalid response "
 			   "(response_len=%d payload_len=%lu",
 			   *pos, (unsigned long) len);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
 
@@ -108,8 +107,8 @@ static void eap_md5_process(struct eap_sm *sm, void *priv,
 	    sm->user->password_hash) {
 		wpa_printf(MSG_INFO, "EAP-MD5: Plaintext password not "
 			   "configured");
-		//data->state = FAILURE;
-		//return;
+		data->state = FAILURE;
+		return;
 	}
 
 	pos = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_MD5, respData, &plen);
@@ -120,38 +119,31 @@ static void eap_md5_process(struct eap_sm *sm, void *priv,
 	wpa_hexdump(MSG_MSGDUMP, "EAP-MD5: Response", pos, CHAP_MD5_LEN);
 
 	id = eap_get_id(respData);
-//MANA Start
-	if (mana.conf->mana_wpe) {
-		eap_server_chap_rx_callback(sm, "MD5",
-				sm->identity, sm->identity_len,
-				pos, data->challenge, id);
-	}
-//MANA End
 	if (chap_md5(id, sm->user->password, sm->user->password_len,
 		     data->challenge, CHALLENGE_LEN, hash)) {
 		wpa_printf(MSG_INFO, "EAP-MD5: CHAP MD5 operation failed");
-		//data->state = FAILURE;
-		//return;
+		data->state = FAILURE;
+		return;
 	}
 
-	//if (os_memcmp_const(hash, pos, CHAP_MD5_LEN) == 0) {
+	if (os_memcmp_const(hash, pos, CHAP_MD5_LEN) == 0) {
 		wpa_printf(MSG_DEBUG, "EAP-MD5: Done - Success");
 		data->state = SUCCESS;
-	//} else {
-		//wpa_printf(MSG_DEBUG, "EAP-MD5: Done - Failure");
-		//data->state = FAILURE;
-	//}
+	} else {
+		wpa_printf(MSG_DEBUG, "EAP-MD5: Done - Failure");
+		data->state = FAILURE;
+	}
 }
 
 
-static Boolean eap_md5_isDone(struct eap_sm *sm, void *priv)
+static bool eap_md5_isDone(struct eap_sm *sm, void *priv)
 {
 	struct eap_md5_data *data = priv;
 	return data->state != CONTINUE;
 }
 
 
-static Boolean eap_md5_isSuccess(struct eap_sm *sm, void *priv)
+static bool eap_md5_isSuccess(struct eap_sm *sm, void *priv)
 {
 	struct eap_md5_data *data = priv;
 	return data->state == SUCCESS;

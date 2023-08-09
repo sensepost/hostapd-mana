@@ -50,6 +50,11 @@ struct eap_ssl_data {
 
 	enum { MSG, FRAG_ACK, WAIT_FRAG_ACK } state;
 	struct wpabuf tmpbuf;
+
+	/**
+	 * tls_v13 - Whether TLS v1.3 or newer is used
+	 */
+	int tls_v13;
 };
 
 
@@ -57,23 +62,25 @@ struct eap_ssl_data {
 #define EAP_TLS_FLAGS_LENGTH_INCLUDED 0x80
 #define EAP_TLS_FLAGS_MORE_FRAGMENTS 0x40
 #define EAP_TLS_FLAGS_START 0x20
+#define EAP_TEAP_FLAGS_OUTER_TLV_LEN 0x10
 #define EAP_TLS_VERSION_MASK 0x07
 
  /* could be up to 128 bytes, but only the first 64 bytes are used */
 #define EAP_TLS_KEY_LEN 64
 
-/* dummy type used as a flag for UNAUTH-TLS */
+/* stub type used as a flag for UNAUTH-TLS */
 #define EAP_UNAUTH_TLS_TYPE 255
 #define EAP_WFA_UNAUTH_TLS_TYPE 254
 
 
-struct wpabuf * eap_tls_msg_alloc(EapType type, size_t payload_len,
+struct wpabuf * eap_tls_msg_alloc(enum eap_type type, size_t payload_len,
 				  u8 code, u8 identifier);
 int eap_server_tls_ssl_init(struct eap_sm *sm, struct eap_ssl_data *data,
 			    int verify_peer, int eap_type);
 void eap_server_tls_ssl_deinit(struct eap_sm *sm, struct eap_ssl_data *data);
 u8 * eap_server_tls_derive_key(struct eap_sm *sm, struct eap_ssl_data *data,
-			       char *label, size_t len);
+			       const char *label, const u8 *context,
+			       size_t context_len, size_t len);
 u8 * eap_server_tls_derive_session_id(struct eap_sm *sm,
 				      struct eap_ssl_data *data, u8 eap_type,
 				      size_t *len);

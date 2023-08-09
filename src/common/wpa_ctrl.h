@@ -1,6 +1,6 @@
 /*
  * wpa_supplicant/hostapd control interface library
- * Copyright (c) 2004-2006, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2004-2017, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -50,10 +50,19 @@ extern "C" {
 #define WPA_EVENT_EAP_TLS_CERT_ERROR "CTRL-EVENT-EAP-TLS-CERT-ERROR "
 /** EAP status */
 #define WPA_EVENT_EAP_STATUS "CTRL-EVENT-EAP-STATUS "
+/** Retransmit the previous request packet */
+#define WPA_EVENT_EAP_RETRANSMIT "CTRL-EVENT-EAP-RETRANSMIT "
+#define WPA_EVENT_EAP_RETRANSMIT2 "CTRL-EVENT-EAP-RETRANSMIT2 "
 /** EAP authentication completed successfully */
 #define WPA_EVENT_EAP_SUCCESS "CTRL-EVENT-EAP-SUCCESS "
+#define WPA_EVENT_EAP_SUCCESS2 "CTRL-EVENT-EAP-SUCCESS2 "
 /** EAP authentication failed (EAP-Failure received) */
 #define WPA_EVENT_EAP_FAILURE "CTRL-EVENT-EAP-FAILURE "
+#define WPA_EVENT_EAP_FAILURE2 "CTRL-EVENT-EAP-FAILURE2 "
+/** EAP authentication failed due to no response received */
+#define WPA_EVENT_EAP_TIMEOUT_FAILURE "CTRL-EVENT-EAP-TIMEOUT-FAILURE "
+#define WPA_EVENT_EAP_TIMEOUT_FAILURE2 "CTRL-EVENT-EAP-TIMEOUT-FAILURE2 "
+#define WPA_EVENT_EAP_ERROR_CODE "EAP-ERROR-CODE "
 /** Network block temporarily disabled (e.g., due to authentication failure) */
 #define WPA_EVENT_TEMP_DISABLED "CTRL-EVENT-SSID-TEMP-DISABLED "
 /** Temporarily disabled network block re-enabled */
@@ -74,10 +83,24 @@ extern "C" {
 #define WPA_EVENT_NETWORK_NOT_FOUND "CTRL-EVENT-NETWORK-NOT-FOUND "
 /** Change in the signal level was reported by the driver */
 #define WPA_EVENT_SIGNAL_CHANGE "CTRL-EVENT-SIGNAL-CHANGE "
+/** Beacon loss reported by the driver */
+#define WPA_EVENT_BEACON_LOSS "CTRL-EVENT-BEACON-LOSS "
 /** Regulatory domain channel */
 #define WPA_EVENT_REGDOM_CHANGE "CTRL-EVENT-REGDOM-CHANGE "
+/** Channel switch started (followed by freq=<MHz> and other channel parameters)
+ */
+#define WPA_EVENT_CHANNEL_SWITCH_STARTED "CTRL-EVENT-STARTED-CHANNEL-SWITCH "
 /** Channel switch (followed by freq=<MHz> and other channel parameters) */
 #define WPA_EVENT_CHANNEL_SWITCH "CTRL-EVENT-CHANNEL-SWITCH "
+/** SAE authentication failed due to unknown password identifier */
+#define WPA_EVENT_SAE_UNKNOWN_PASSWORD_IDENTIFIER \
+	"CTRL-EVENT-SAE-UNKNOWN-PASSWORD-IDENTIFIER "
+/** Unprotected Beacon frame dropped */
+#define WPA_EVENT_UNPROT_BEACON "CTRL-EVENT-UNPROT-BEACON "
+/** Decision made to do a within-ESS roam */
+#define WPA_EVENT_DO_ROAM "CTRL-EVENT-DO-ROAM "
+/** Decision made to skip a within-ESS roam */
+#define WPA_EVENT_SKIP_ROAM "CTRL-EVENT-SKIP-ROAM "
 
 /** IP subnet status change notification
  *
@@ -103,6 +126,12 @@ extern "C" {
 #define WPA_EVENT_FREQ_CONFLICT "CTRL-EVENT-FREQ-CONFLICT "
 /** Frequency ranges that the driver recommends to avoid */
 #define WPA_EVENT_AVOID_FREQ "CTRL-EVENT-AVOID-FREQ "
+/** A new network profile was added (followed by network entry id) */
+#define WPA_EVENT_NETWORK_ADDED "CTRL-EVENT-NETWORK-ADDED "
+/** A network profile was removed (followed by prior network entry id) */
+#define WPA_EVENT_NETWORK_REMOVED "CTRL-EVENT-NETWORK-REMOVED "
+/** Result of MSCS setup */
+#define WPA_EVENT_MSCS_RESULT "CTRL-EVENT-MSCS-RESULT "
 /** WPS overlap detected in PBC mode */
 #define WPS_EVENT_OVERLAP "WPS-OVERLAP-DETECTED "
 /** Available WPS AP with active PBC found in scan results */
@@ -132,6 +161,10 @@ extern "C" {
 #define WPS_EVENT_ENROLLEE_SEEN "WPS-ENROLLEE-SEEN "
 
 #define WPS_EVENT_OPEN_NETWORK "WPS-OPEN-NETWORK "
+/** Result of SCS setup */
+#define WPA_EVENT_SCS_RESULT "CTRL-EVENT-SCS-RESULT "
+/* Event indicating DSCP policy */
+#define WPA_EVENT_DSCP_POLICY "CTRL-EVENT-DSCP-POLICY "
 
 /* WPS ER events */
 #define WPS_EVENT_ER_AP_ADD "WPS-ER-AP-ADD "
@@ -140,6 +173,45 @@ extern "C" {
 #define WPS_EVENT_ER_ENROLLEE_REMOVE "WPS-ER-ENROLLEE-REMOVE "
 #define WPS_EVENT_ER_AP_SETTINGS "WPS-ER-AP-SETTINGS "
 #define WPS_EVENT_ER_SET_SEL_REG "WPS-ER-AP-SET-SEL-REG "
+
+/* DPP events */
+#define DPP_EVENT_AUTH_SUCCESS "DPP-AUTH-SUCCESS "
+#define DPP_EVENT_AUTH_INIT_FAILED "DPP-AUTH-INIT-FAILED "
+#define DPP_EVENT_NOT_COMPATIBLE "DPP-NOT-COMPATIBLE "
+#define DPP_EVENT_RESPONSE_PENDING "DPP-RESPONSE-PENDING "
+#define DPP_EVENT_SCAN_PEER_QR_CODE "DPP-SCAN-PEER-QR-CODE "
+#define DPP_EVENT_AUTH_DIRECTION "DPP-AUTH-DIRECTION "
+#define DPP_EVENT_CONF_RECEIVED "DPP-CONF-RECEIVED "
+#define DPP_EVENT_CONF_SENT "DPP-CONF-SENT "
+#define DPP_EVENT_CONF_FAILED "DPP-CONF-FAILED "
+#define DPP_EVENT_CONN_STATUS_RESULT "DPP-CONN-STATUS-RESULT "
+#define DPP_EVENT_CONFOBJ_AKM "DPP-CONFOBJ-AKM "
+#define DPP_EVENT_CONFOBJ_SSID "DPP-CONFOBJ-SSID "
+#define DPP_EVENT_CONFOBJ_SSID_CHARSET "DPP-CONFOBJ-SSID-CHARSET "
+#define DPP_EVENT_CONFOBJ_PASS "DPP-CONFOBJ-PASS "
+#define DPP_EVENT_CONFOBJ_PSK "DPP-CONFOBJ-PSK "
+#define DPP_EVENT_CONNECTOR "DPP-CONNECTOR "
+#define DPP_EVENT_C_SIGN_KEY "DPP-C-SIGN-KEY "
+#define DPP_EVENT_PP_KEY "DPP-PP-KEY "
+#define DPP_EVENT_NET_ACCESS_KEY "DPP-NET-ACCESS-KEY "
+#define DPP_EVENT_SERVER_NAME "DPP-SERVER-NAME "
+#define DPP_EVENT_CERTBAG "DPP-CERTBAG "
+#define DPP_EVENT_CACERT "DPP-CACERT "
+#define DPP_EVENT_MISSING_CONNECTOR "DPP-MISSING-CONNECTOR "
+#define DPP_EVENT_NETWORK_ID "DPP-NETWORK-ID "
+#define DPP_EVENT_CONFIGURATOR_ID "DPP-CONFIGURATOR-ID "
+#define DPP_EVENT_RX "DPP-RX "
+#define DPP_EVENT_TX "DPP-TX "
+#define DPP_EVENT_TX_STATUS "DPP-TX-STATUS "
+#define DPP_EVENT_FAIL "DPP-FAIL "
+#define DPP_EVENT_PKEX_T_LIMIT "DPP-PKEX-T-LIMIT "
+#define DPP_EVENT_INTRO "DPP-INTRO "
+#define DPP_EVENT_CONF_REQ_RX "DPP-CONF-REQ-RX "
+#define DPP_EVENT_CHIRP_STOPPED "DPP-CHIRP-STOPPED "
+#define DPP_EVENT_MUD_URL "DPP-MUD-URL "
+#define DPP_EVENT_BAND_SUPPORT "DPP-BAND-SUPPORT "
+#define DPP_EVENT_CSR "DPP-CSR "
+#define DPP_EVENT_CHIRP_RX "DPP-CHIRP-RX "
 
 /* MESH events */
 #define MESH_GROUP_STARTED "MESH-GROUP-STARTED "
@@ -207,7 +279,7 @@ extern "C" {
 #define P2P_EVENT_P2PS_PROVISION_DONE "P2PS-PROV-DONE "
 
 #define INTERWORKING_AP "INTERWORKING-AP "
-#define INTERWORKING_BLACKLISTED "INTERWORKING-BLACKLISTED "
+#define INTERWORKING_EXCLUDED "INTERWORKING-BLACKLISTED "
 #define INTERWORKING_NO_MATCH "INTERWORKING-NO-MATCH "
 #define INTERWORKING_ALREADY_CONNECTED "INTERWORKING-ALREADY-CONNECTED "
 #define INTERWORKING_SELECTED "INTERWORKING-SELECTED "
@@ -232,9 +304,14 @@ extern "C" {
 #define RX_HS20_ANQP "RX-HS20-ANQP "
 #define RX_HS20_ANQP_ICON "RX-HS20-ANQP-ICON "
 #define RX_HS20_ICON "RX-HS20-ICON "
+#define RX_MBO_ANQP "RX-MBO-ANQP "
+
+/* parameters: <Venue Number> <Venue URL> */
+#define RX_VENUE_URL "RX-VENUE-URL "
 
 #define HS20_SUBSCRIPTION_REMEDIATION "HS20-SUBSCRIPTION-REMEDIATION "
 #define HS20_DEAUTH_IMMINENT_NOTICE "HS20-DEAUTH-IMMINENT-NOTICE "
+#define HS20_T_C_ACCEPTANCE "HS20-T-C-ACCEPTANCE "
 
 #define EXT_RADIO_WORK_START "EXT-RADIO-WORK-START "
 #define EXT_RADIO_WORK_TIMEOUT "EXT-RADIO-WORK-TIMEOUT "
@@ -250,6 +327,8 @@ extern "C" {
 #define WPS_EVENT_AP_SETUP_UNLOCKED "WPS-AP-SETUP-UNLOCKED "
 #define WPS_EVENT_AP_PIN_ENABLED "WPS-AP-PIN-ENABLED "
 #define WPS_EVENT_AP_PIN_DISABLED "WPS-AP-PIN-DISABLED "
+#define WPS_EVENT_PIN_ACTIVE "WPS-PIN-ACTIVE "
+#define WPS_EVENT_CANCEL "WPS-CANCEL "
 #define AP_STA_CONNECTED "AP-STA-CONNECTED "
 #define AP_STA_DISCONNECTED "AP-STA-DISCONNECTED "
 #define AP_STA_POSSIBLE_PSK_MISMATCH "AP-STA-POSSIBLE-PSK-MISMATCH "
@@ -257,6 +336,9 @@ extern "C" {
 
 #define AP_REJECTED_MAX_STA "AP-REJECTED-MAX-STA "
 #define AP_REJECTED_BLOCKED_STA "AP-REJECTED-BLOCKED-STA "
+
+#define HS20_T_C_FILTERING_ADD "HS20-T-C-FILTERING-ADD "
+#define HS20_T_C_FILTERING_REMOVE "HS20-T-C-FILTERING-REMOVE "
 
 #define AP_EVENT_ENABLED "AP-ENABLED "
 #define AP_EVENT_DISABLED "AP-DISABLED "
@@ -273,6 +355,7 @@ extern "C" {
 #define DFS_EVENT_CAC_START "DFS-CAC-START "
 #define DFS_EVENT_CAC_COMPLETED "DFS-CAC-COMPLETED "
 #define DFS_EVENT_NOP_FINISHED "DFS-NOP-FINISHED "
+#define DFS_EVENT_PRE_CAC_EXPIRED "DFS-PRE-CAC-EXPIRED "
 
 #define AP_CSA_FINISHED "AP-CSA-FINISHED "
 
@@ -282,11 +365,62 @@ extern "C" {
 /* BSS Transition Management Response frame received */
 #define BSS_TM_RESP "BSS-TM-RESP "
 
+/* Collocated Interference Request frame received;
+ * parameters: <dialog token> <automatic report enabled> <report timeout> */
+#define COLOC_INTF_REQ "COLOC-INTF-REQ "
+/* Collocated Interference Report frame received;
+ * parameters: <STA address> <dialog token> <hexdump of report elements> */
+#define COLOC_INTF_REPORT "COLOC-INTF-REPORT "
+
 /* MBO IE with cellular data connection preference received */
 #define MBO_CELL_PREFERENCE "MBO-CELL-PREFERENCE "
 
 /* BSS Transition Management Request received with MBO transition reason */
 #define MBO_TRANSITION_REASON "MBO-TRANSITION-REASON "
+
+/* parameters: <STA address> <dialog token> <ack=0/1> */
+#define BEACON_REQ_TX_STATUS "BEACON-REQ-TX-STATUS "
+/* parameters: <STA address> <dialog token> <report mode> <beacon report> */
+#define BEACON_RESP_RX "BEACON-RESP-RX "
+
+/* PMKSA cache entry added; parameters: <BSSID> <network_id> */
+#define PMKSA_CACHE_ADDED "PMKSA-CACHE-ADDED "
+/* PMKSA cache entry removed; parameters: <BSSID> <network_id> */
+#define PMKSA_CACHE_REMOVED "PMKSA-CACHE-REMOVED "
+
+/* FILS HLP Container receive; parameters: dst=<addr> src=<addr> frame=<hexdump>
+ */
+#define FILS_HLP_RX "FILS-HLP-RX "
+
+/* Event to indicate Probe Request frame;
+ * parameters: sa=<STA MAC address> signal=<signal> */
+#define RX_PROBE_REQUEST "RX-PROBE-REQUEST "
+
+/* Event to indicate station's HT/VHT operation mode change information */
+#define STA_OPMODE_MAX_BW_CHANGED "STA-OPMODE-MAX-BW-CHANGED "
+#define STA_OPMODE_SMPS_MODE_CHANGED "STA-OPMODE-SMPS-MODE-CHANGED "
+#define STA_OPMODE_N_SS_CHANGED "STA-OPMODE-N_SS-CHANGED "
+
+/* New interface addition or removal for 4addr WDS SDA */
+#define WDS_STA_INTERFACE_ADDED "WDS-STA-INTERFACE-ADDED "
+#define WDS_STA_INTERFACE_REMOVED "WDS-STA-INTERFACE-REMOVED "
+
+/* Transition mode disabled indication - followed by bitmap */
+#define TRANSITION_DISABLE "TRANSITION-DISABLE "
+
+/* OCV validation failure; parameters: addr=<src addr>
+ * frame=<saqueryreq/saqueryresp> error=<error string> */
+#define OCV_FAILURE "OCV-FAILURE "
+
+/* Event triggered for received management frame */
+#define AP_MGMT_FRAME_RECEIVED "AP-MGMT-FRAME-RECEIVED "
+
+#ifndef BIT
+#define BIT(x) (1U << (x))
+#endif
+
+/* PASN authentication status */
+#define PASN_AUTH_STATUS "PASN-AUTH-STATUS "
 
 /* BSS command information masks */
 
@@ -313,6 +447,9 @@ extern "C" {
 #define WPA_BSS_MASK_SNR		BIT(19)
 #define WPA_BSS_MASK_EST_THROUGHPUT	BIT(20)
 #define WPA_BSS_MASK_FST		BIT(21)
+#define WPA_BSS_MASK_UPDATE_IDX		BIT(22)
+#define WPA_BSS_MASK_BEACON_IE		BIT(23)
+#define WPA_BSS_MASK_FILS_INDICATION	BIT(24)
 
 
 /* VENDOR_ELEM_* frame id values */
@@ -386,7 +523,7 @@ void wpa_ctrl_close(struct wpa_ctrl *ctrl);
  *
  * This function is used to send commands to wpa_supplicant/hostapd. Received
  * response will be written to reply and reply_len is set to the actual length
- * of the reply. This function will block for up to two seconds while waiting
+ * of the reply. This function will block for up to 10 seconds while waiting
  * for the reply. If unsolicited messages are received, the blocking time may
  * be longer.
  *

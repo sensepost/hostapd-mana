@@ -488,7 +488,7 @@ void p2p_process_invitation_resp(struct p2p_data *p2p, const u8 *sa,
 	if (*msg.status == P2P_SC_FAIL_NO_COMMON_CHANNELS &&
 	    p2p->retry_invite_req &&
 	    p2p_channel_random_social(&p2p->cfg->channels, &p2p->op_reg_class,
-				      &p2p->op_channel) == 0) {
+				      &p2p->op_channel, NULL, NULL) == 0) {
 		p2p->retry_invite_req = 0;
 		p2p->cfg->send_action_done(p2p->cfg->cb_ctx);
 		p2p->cfg->stop_listen(p2p->cfg->cb_ctx);
@@ -653,8 +653,9 @@ int p2p_invite(struct p2p_data *p2p, const u8 *peer, enum p2p_invite_role role,
 	struct p2p_device *dev;
 
 	p2p_dbg(p2p, "Request to invite peer " MACSTR " role=%d persistent=%d "
-		"force_freq=%u",
-		MAC2STR(peer), role, persistent_group, force_freq);
+		"force_freq=%u allow_6ghz=%d",
+		MAC2STR(peer), role, persistent_group, force_freq,
+		p2p->allow_6ghz);
 	if (bssid)
 		p2p_dbg(p2p, "Invitation for BSSID " MACSTR, MAC2STR(bssid));
 	if (go_dev_addr) {

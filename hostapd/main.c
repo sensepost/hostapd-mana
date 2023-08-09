@@ -1,6 +1,6 @@
 /*
  * hostapd / main()
- * Copyright (c) 2002-2016, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2002-2022, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -18,12 +18,14 @@
 #include "crypto/random.h"
 #include "crypto/tls.h"
 #include "common/version.h"
+#include "common/dpp.h"
 #include "drivers/driver.h"
 #include "eap_server/eap.h"
 #include "eap_server/tncs.h"
 #include "ap/hostapd.h"
 #include "ap/ap_config.h"
 #include "ap/ap_drv_ops.h"
+#include "ap/dpp_hostapd.h"
 #include "fst/fst.h"
 #include "config_file.h"
 #include "eap_register.h"
@@ -79,9 +81,6 @@ static void hostapd_logger_cb(void *ctx, const u8 *addr, unsigned int module,
 	case HOSTAPD_MODULE_DRIVER:
 		module_str = "DRIVER";
 		break;
-	case HOSTAPD_MODULE_IAPP:
-		module_str = "IAPP";
-		break;
 	case HOSTAPD_MODULE_MLME:
 		module_str = "MLME";
 		break;
@@ -108,6 +107,10 @@ static void hostapd_logger_cb(void *ctx, const u8 *addr, unsigned int module,
 			    module_str ? module_str : "",
 			    module_str ? ": " : "", txt);
 
+#ifdef CONFIG_DEBUG_SYSLOG
+	if (wpa_debug_syslog)
+		conf_stdout = 0;
+#endif /* CONFIG_DEBUG_SYSLOG */
 	if ((conf_stdout & module) && level >= conf_stdout_level) {
 		wpa_debug_print_timestamp();
 		wpa_printf(MSG_INFO, "%s", format);
@@ -215,7 +218,7 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
 		struct wowlan_triggers *triggs;
 
 		iface->drv_flags = capa.flags;
-		iface->smps_modes = capa.smps_modes;
+		iface->drv_flags2 = capa.flags2;
 		iface->probe_resp_offloads = capa.probe_resp_offloads;
 		/*
 		 * Use default extended capa values from per-radio information
@@ -248,7 +251,7 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
  *
  * This function is used to parse configuration file for a full interface (one
  * or more BSSes sharing the same radio) and allocate memory for the BSS
- * interfaces. No actiual driver operations are started.
+ * interfaces. No actual driver operations are started.
  */
 static struct hostapd_iface *
 hostapd_interface_init(struct hapd_interfaces *interfaces, const char *if_name,
@@ -257,7 +260,7 @@ hostapd_interface_init(struct hapd_interfaces *interfaces, const char *if_name,
 	struct hostapd_iface *iface;
 	int k;
 
-	wpa_printf(MSG_ERROR, "Configuration file: %s", config_fname);
+	wpa_printf(MSG_DEBUG, "Configuration file: %s", config_fname);
 	iface = hostapd_init(interfaces, config_fname);
 	if (!iface)
 		return NULL;
@@ -448,19 +451,12 @@ static int hostapd_global_run(struct hapd_interfaces *ifaces, int daemonize,
 static void show_version(void)
 {
 	fprintf(stderr,
-		"hostapd-mana v" VERSION_STR "\n"
+		"hostapd v%s\n"
 		"User space daemon for IEEE 802.11 AP management,\n"
 		"IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator\n"
-		"Copyright (c) 2002-2016, Jouni Malinen <j@w1.fi> "
-		//"and contributors\n");
- 		"and contributors\n"
- 		"--------------------------------------------------\n"
- 		"MANA https://github.com/sensepost/hostapd-mana\n"
- 		"By @singe (dominic@sensepost.com)\n"
-		"Original MANA EAP by Ian (ian@sensepost.com)\n"
- 		"Original karma patches by Robin Wood - robin@digininja.org\n"
- 		"Original EAP patches by Brad Antoniewicz @brad_anton\n"
-		"Sycophant by Michael Kruger @_cablethief");
+		"Copyright (c) 2002-2022, Jouni Malinen <j@w1.fi> "
+		"and contributors\n",
+		VERSION_STR);
 }
 
 
@@ -488,10 +484,13 @@ static void usage(void)
 		"   -f   log output to debug file instead of stdout\n"
 #endif /* CONFIG_DEBUG_FILE */
 #ifdef CONFIG_DEBUG_LINUX_TRACING
-		"   -T = record to Linux tracing in addition to logging\n"
+		"   -T   record to Linux tracing in addition to logging\n"
 		"        (records all messages regardless of debug verbosity)\n"
 #endif /* CONFIG_DEBUG_LINUX_TRACING */
 		"   -i   list of interface names to use\n"
+#ifdef CONFIG_DEBUG_SYSLOG
+		"   -s   log output to syslog instead of stdout\n"
+#endif /* CONFIG_DEBUG_SYSLOG */
 		"   -S   start all the interfaces synchronously\n"
 		"   -t   include timestamps in some debug messages\n"
 		"   -v   show hostapd version\n");
@@ -557,14 +556,14 @@ static int hostapd_get_ctrl_iface_group(struct hapd_interfaces *interfaces,
 
 static int hostapd_get_interface_names(char ***if_names,
 				       size_t *if_names_size,
-				       char *optarg)
+				       char *arg)
 {
 	char *if_name, *tmp, **nnames;
 	size_t i;
 
-	if (!optarg)
+	if (!arg)
 		return -1;
-	if_name = strtok_r(optarg, ",", &tmp);
+	if_name = strtok_r(arg, ",", &tmp);
 
 	while (if_name) {
 		nnames = os_realloc_array(*if_names, 1 + *if_names_size,
@@ -652,6 +651,9 @@ int main(int argc, char *argv[])
 	int start_ifaces_in_sync = 0;
 	char **if_names = NULL;
 	size_t if_names_size = 0;
+#ifdef CONFIG_DPP
+	struct dpp_global_config dpp_conf;
+#endif /* CONFIG_DPP */
 
 	if (os_program_init())
 		return -1;
@@ -667,9 +669,22 @@ int main(int argc, char *argv[])
 	interfaces.global_iface_name = NULL;
 	interfaces.global_ctrl_sock = -1;
 	dl_list_init(&interfaces.global_ctrl_dst);
+#ifdef CONFIG_ETH_P_OUI
+	dl_list_init(&interfaces.eth_p_oui);
+#endif /* CONFIG_ETH_P_OUI */
+#ifdef CONFIG_DPP
+	os_memset(&dpp_conf, 0, sizeof(dpp_conf));
+	dpp_conf.cb_ctx = &interfaces;
+#ifdef CONFIG_DPP2
+	dpp_conf.remove_bi = hostapd_dpp_remove_bi;
+#endif /* CONFIG_DPP2 */
+	interfaces.dpp = dpp_global_init(&dpp_conf);
+	if (!interfaces.dpp)
+		return -1;
+#endif /* CONFIG_DPP */
 
 	for (;;) {
-		c = getopt(argc, argv, "b:Bde:f:hi:KP:STtu:vg:G:");
+		c = getopt(argc, argv, "b:Bde:f:hi:KP:sSTtu:vg:G:");
 		if (c < 0)
 			break;
 		switch (c) {
@@ -726,6 +741,11 @@ int main(int argc, char *argv[])
 			bss_config = tmp_bss;
 			bss_config[num_bss_configs++] = optarg;
 			break;
+#ifdef CONFIG_DEBUG_SYSLOG
+		case 's':
+			wpa_debug_syslog = 1;
+			break;
+#endif /* CONFIG_DEBUG_SYSLOG */
 		case 'S':
 			start_ifaces_in_sync = 1;
 			break;
@@ -752,8 +772,12 @@ int main(int argc, char *argv[])
 
 	if (log_file)
 		wpa_debug_open_file(log_file);
-	else
+	if (!log_file && !wpa_debug_syslog)
 		wpa_debug_setup_stdout();
+#ifdef CONFIG_DEBUG_SYSLOG
+	if (wpa_debug_syslog)
+		wpa_debug_open_syslog();
+#endif /* CONFIG_DEBUG_SYSLOG */
 #ifdef CONFIG_DEBUG_LINUX_TRACING
 	if (enable_trace_dbg) {
 		int tret = wpa_debug_open_linux_tracing();
@@ -882,14 +906,22 @@ int main(int argc, char *argv[])
 			!!(interfaces.iface[i]->drv_flags &
 			   WPA_DRIVER_FLAGS_AP_TEARDOWN_SUPPORT);
 		hostapd_interface_deinit_free(interfaces.iface[i]);
+		interfaces.iface[i] = NULL;
 	}
 	os_free(interfaces.iface);
+	interfaces.iface = NULL;
+	interfaces.count = 0;
+
+#ifdef CONFIG_DPP
+	dpp_global_deinit(interfaces.dpp);
+#endif /* CONFIG_DPP */
 
 	if (interfaces.eloop_initialized)
 		eloop_cancel_timeout(hostapd_periodic, &interfaces, NULL);
 	hostapd_global_deinit(pid_file, interfaces.eloop_initialized);
 	os_free(pid_file);
 
+	wpa_debug_close_syslog();
 	if (log_file)
 		wpa_debug_close_file();
 	wpa_debug_close_linux_tracing();

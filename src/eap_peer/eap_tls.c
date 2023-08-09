@@ -1,6 +1,6 @@
 /*
  * EAP peer method: EAP-TLS (RFC 2716)
- * Copyright (c) 2004-2008, 2012-2015, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2004-2008, 2012-2019, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -33,10 +33,17 @@ static void * eap_tls_init(struct eap_sm *sm)
 {
 	struct eap_tls_data *data;
 	struct eap_peer_config *config = eap_get_config(sm);
-	if (config == NULL ||
-	    ((sm->init_phase2 ? config->private_key2 : config->private_key)
-	     == NULL &&
-	     (sm->init_phase2 ? config->engine2 : config->engine) == 0)) {
+	struct eap_peer_cert_config *cert;
+
+	if (!config)
+		return NULL;
+	if (!sm->init_phase2)
+		cert = &config->cert;
+	else if (sm->use_machine_cred)
+		cert = &config->machine_cert;
+	else
+		cert = &config->phase2_cert;
+	if (!cert->private_key && cert->engine == 0) {
 		wpa_printf(MSG_INFO, "EAP-TLS: Private key not configured");
 		return NULL;
 	}
@@ -51,17 +58,16 @@ static void * eap_tls_init(struct eap_sm *sm)
 	if (eap_peer_tls_ssl_init(sm, &data->ssl, config, EAP_TYPE_TLS)) {
 		wpa_printf(MSG_INFO, "EAP-TLS: Failed to initialize SSL.");
 		eap_tls_deinit(sm, data);
-		if (config->engine) {
+		if (cert->engine) {
 			wpa_printf(MSG_DEBUG, "EAP-TLS: Requesting Smartcard "
 				   "PIN");
 			eap_sm_request_pin(sm);
-			sm->ignore = TRUE;
-		} else if (config->private_key && !config->private_key_passwd)
-		{
+			sm->ignore = true;
+		} else if (cert->private_key && !cert->private_key_passwd) {
 			wpa_printf(MSG_DEBUG, "EAP-TLS: Requesting private "
 				   "key passphrase");
 			eap_sm_request_passphrase(sm);
-			sm->ignore = TRUE;
+			sm->ignore = true;
 		}
 		return NULL;
 	}
@@ -173,14 +179,37 @@ static struct wpabuf * eap_tls_failure(struct eap_sm *sm,
 static void eap_tls_success(struct eap_sm *sm, struct eap_tls_data *data,
 			    struct eap_method_ret *ret)
 {
+	const char *label;
+	const u8 eap_tls13_context[] = { EAP_TYPE_TLS };
+	const u8 *context = NULL;
+	size_t context_len = 0;
+
 	wpa_printf(MSG_DEBUG, "EAP-TLS: Done");
 
-	ret->methodState = METHOD_DONE;
-	ret->decision = DECISION_UNCOND_SUCC;
+	if (data->ssl.tls_out) {
+		wpa_printf(MSG_DEBUG, "EAP-TLS: Fragment(s) remaining");
+		return;
+	}
+
+	if (data->ssl.tls_v13) {
+		label = "EXPORTER_EAP_TLS_Key_Material";
+		context = eap_tls13_context;
+		context_len = 1;
+
+		/* A possible NewSessionTicket may be received before
+		 * EAP-Success, so need to allow it to be received. */
+		ret->methodState = METHOD_MAY_CONT;
+		ret->decision = DECISION_COND_SUCC;
+	} else {
+		label = "client EAP encryption";
+
+		ret->methodState = METHOD_DONE;
+		ret->decision = DECISION_UNCOND_SUCC;
+	}
 
 	eap_tls_free_key(data);
-	data->key_data = eap_peer_tls_derive_key(sm, &data->ssl,
-						 "client EAP encryption",
+	data->key_data = eap_peer_tls_derive_key(sm, &data->ssl, label,
+						 context, context_len,
 						 EAP_TLS_KEY_LEN +
 						 EAP_EMSK_LEN);
 	if (data->key_data) {
@@ -273,6 +302,14 @@ static struct wpabuf * eap_tls_process(struct eap_sm *sm, void *priv,
 		return NULL;
 	}
 
+	/* draft-ietf-emu-eap-tls13-13 Section 2.5 */
+	if (res == 2 && data->ssl.tls_v13 && wpabuf_len(resp) == 1 &&
+	    *wpabuf_head_u8(resp) == 0) {
+		wpa_printf(MSG_DEBUG, "EAP-TLS: ACKing Commitment Message");
+		eap_peer_tls_reset_output(&data->ssl);
+		res = 1;
+	}
+
 	if (tls_connection_established(data->ssl_ctx, data->ssl.conn))
 		eap_tls_success(sm, data, ret);
 
@@ -285,7 +322,7 @@ static struct wpabuf * eap_tls_process(struct eap_sm *sm, void *priv,
 }
 
 
-static Boolean eap_tls_has_reauth_data(struct eap_sm *sm, void *priv)
+static bool eap_tls_has_reauth_data(struct eap_sm *sm, void *priv)
 {
 	struct eap_tls_data *data = priv;
 	return tls_connection_established(data->ssl_ctx, data->ssl.conn);
@@ -323,7 +360,7 @@ static int eap_tls_get_status(struct eap_sm *sm, void *priv, char *buf,
 }
 
 
-static Boolean eap_tls_isKeyAvailable(struct eap_sm *sm, void *priv)
+static bool eap_tls_isKeyAvailable(struct eap_sm *sm, void *priv)
 {
 	struct eap_tls_data *data = priv;
 	return data->key_data != NULL;
@@ -338,12 +375,11 @@ static u8 * eap_tls_getKey(struct eap_sm *sm, void *priv, size_t *len)
 	if (data->key_data == NULL)
 		return NULL;
 
-	key = os_malloc(EAP_TLS_KEY_LEN);
+	key = os_memdup(data->key_data, EAP_TLS_KEY_LEN);
 	if (key == NULL)
 		return NULL;
 
 	*len = EAP_TLS_KEY_LEN;
-	os_memcpy(key, data->key_data, EAP_TLS_KEY_LEN);
 
 	return key;
 }
@@ -357,12 +393,11 @@ static u8 * eap_tls_get_emsk(struct eap_sm *sm, void *priv, size_t *len)
 	if (data->key_data == NULL)
 		return NULL;
 
-	key = os_malloc(EAP_EMSK_LEN);
+	key = os_memdup(data->key_data + EAP_TLS_KEY_LEN, EAP_EMSK_LEN);
 	if (key == NULL)
 		return NULL;
 
 	*len = EAP_EMSK_LEN;
-	os_memcpy(key, data->key_data + EAP_TLS_KEY_LEN, EAP_EMSK_LEN);
 
 	return key;
 }
@@ -376,12 +411,11 @@ static u8 * eap_tls_get_session_id(struct eap_sm *sm, void *priv, size_t *len)
 	if (data->session_id == NULL)
 		return NULL;
 
-	id = os_malloc(data->id_len);
+	id = os_memdup(data->session_id, data->id_len);
 	if (id == NULL)
 		return NULL;
 
 	*len = data->id_len;
-	os_memcpy(id, data->session_id, data->id_len);
 
 	return id;
 }

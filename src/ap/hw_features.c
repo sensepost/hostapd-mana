@@ -78,10 +78,12 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 	int i, j;
 	u16 num_modes, flags;
 	struct hostapd_hw_modes *modes;
+	u8 dfs_domain;
 
 	if (hostapd_drv_none(hapd))
 		return -1;
-	modes = hostapd_get_hw_feature_data(hapd, &num_modes, &flags);
+	modes = hostapd_get_hw_feature_data(hapd, &num_modes, &flags,
+					    &dfs_domain);
 	if (modes == NULL) {
 		hostapd_logger(hapd, NULL, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG,
@@ -91,6 +93,7 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
 	}
 
 	iface->hw_flags = flags;
+	iface->dfs_domain = dfs_domain;
 
 	hostapd_free_hw_features(iface->hw_features, iface->num_hw_features);
 	iface->hw_features = modes;
@@ -221,19 +224,27 @@ int hostapd_prepare_rates(struct hostapd_iface *iface,
 }
 
 
-#ifdef CONFIG_IEEE80211N
 static int ieee80211n_allowed_ht40_channel_pair(struct hostapd_iface *iface)
 {
-	int pri_chan, sec_chan;
+	int pri_freq, sec_freq;
+	struct hostapd_channel_data *p_chan, *s_chan;
 
-	if (!iface->conf->secondary_channel)
-		return 1; /* HT40 not used */
+	pri_freq = iface->freq;
+	sec_freq = pri_freq + iface->conf->secondary_channel * 20;
 
-	pri_chan = iface->conf->channel;
-	sec_chan = pri_chan + iface->conf->secondary_channel * 4;
+	if (!iface->current_mode)
+		return 0;
 
-	return allowed_ht40_channel_pair(iface->current_mode, pri_chan,
-					 sec_chan);
+	p_chan = hw_get_channel_freq(iface->current_mode->mode, pri_freq, NULL,
+				     iface->hw_features,
+				     iface->num_hw_features);
+
+	s_chan = hw_get_channel_freq(iface->current_mode->mode, sec_freq, NULL,
+				     iface->hw_features,
+				     iface->num_hw_features);
+
+	return allowed_ht40_channel_pair(iface->current_mode->mode,
+					 p_chan, s_chan);
 }
 
 
@@ -241,9 +252,11 @@ static void ieee80211n_switch_pri_sec(struct hostapd_iface *iface)
 {
 	if (iface->conf->secondary_channel > 0) {
 		iface->conf->channel += 4;
+		iface->freq += 20;
 		iface->conf->secondary_channel = -1;
 	} else {
 		iface->conf->channel -= 4;
+		iface->freq -= 20;
 		iface->conf->secondary_channel = 1;
 	}
 }
@@ -252,13 +265,23 @@ static void ieee80211n_switch_pri_sec(struct hostapd_iface *iface)
 static int ieee80211n_check_40mhz_5g(struct hostapd_iface *iface,
 				     struct wpa_scan_results *scan_res)
 {
-	int pri_chan, sec_chan;
+	unsigned int pri_freq, sec_freq;
 	int res;
+	struct hostapd_channel_data *pri_chan, *sec_chan;
 
-	pri_chan = iface->conf->channel;
-	sec_chan = pri_chan + iface->conf->secondary_channel * 4;
+	pri_freq = iface->freq;
+	sec_freq = pri_freq + iface->conf->secondary_channel * 20;
 
-	res = check_40mhz_5g(iface->current_mode, scan_res, pri_chan, sec_chan);
+	if (!iface->current_mode)
+		return 0;
+	pri_chan = hw_get_channel_freq(iface->current_mode->mode, pri_freq,
+				       NULL, iface->hw_features,
+				       iface->num_hw_features);
+	sec_chan = hw_get_channel_freq(iface->current_mode->mode, sec_freq,
+				       NULL, iface->hw_features,
+				       iface->num_hw_features);
+
+	res = check_40mhz_5g(scan_res, pri_chan, sec_chan);
 
 	if (res == 2) {
 		if (iface->conf->no_pri_sec_switch) {
@@ -290,7 +313,7 @@ static void ieee80211n_check_scan(struct hostapd_iface *iface)
 {
 	struct wpa_scan_results *scan_res;
 	int oper40;
-	int res;
+	int res = 0;
 
 	/* Check list of neighboring BSSes (from scan) to see whether 40 MHz is
 	 * allowed per IEEE Std 802.11-2012, 10.15.3.2 */
@@ -326,9 +349,29 @@ static void ieee80211n_check_scan(struct hostapd_iface *iface)
 		}
 	}
 
-	res = ieee80211n_allowed_ht40_channel_pair(iface);
+#ifdef CONFIG_IEEE80211AX
+	if (iface->conf->secondary_channel &&
+	    iface->current_mode->mode == HOSTAPD_MODE_IEEE80211G &&
+	    iface->conf->ieee80211ax) {
+		struct he_capabilities *he_cap;
+
+		he_cap = &iface->current_mode->he_capab[IEEE80211_MODE_AP];
+		if (!(he_cap->phy_cap[HE_PHYCAP_CHANNEL_WIDTH_SET_IDX] &
+		      HE_PHYCAP_CHANNEL_WIDTH_SET_40MHZ_IN_2G)) {
+			wpa_printf(MSG_DEBUG,
+				   "HE: 40 MHz channel width is not supported in 2.4 GHz; clear secondary channel configuration");
+			iface->conf->secondary_channel = 0;
+		}
+	}
+#endif /* CONFIG_IEEE80211AX */
+
+	if (iface->conf->secondary_channel)
+		res = ieee80211n_allowed_ht40_channel_pair(iface);
 	if (!res) {
 		iface->conf->secondary_channel = 0;
+		hostapd_set_oper_centr_freq_seg0_idx(iface->conf, 0);
+		hostapd_set_oper_centr_freq_seg1_idx(iface->conf, 0);
+		hostapd_set_oper_chwidth(iface->conf, CHANWIDTH_USE_HT);
 		res = 1;
 		wpa_printf(MSG_INFO, "Fallback to 20 MHz");
 	}
@@ -349,7 +392,7 @@ static void ieee80211n_scan_channels_2g4(struct hostapd_iface *iface,
 	if (iface->current_mode == NULL)
 		return;
 
-	pri_freq = hostapd_hw_get_freq(iface->bss[0], iface->conf->channel);
+	pri_freq = iface->freq;
 	if (iface->conf->secondary_channel > 0)
 		sec_freq = pri_freq + 20;
 	else
@@ -394,7 +437,7 @@ static void ieee80211n_scan_channels_5g(struct hostapd_iface *iface,
 	if (iface->current_mode == NULL)
 		return;
 
-	pri_freq = hostapd_hw_get_freq(iface->bss[0], iface->conf->channel);
+	pri_freq = iface->freq;
 	if (iface->conf->secondary_channel > 0) {
 		affected_start = pri_freq - 10;
 		affected_end = pri_freq + 30;
@@ -534,26 +577,6 @@ static int ieee80211n_supported_ht_capab(struct hostapd_iface *iface)
 		return 0;
 	}
 
-	switch (conf & HT_CAP_INFO_SMPS_MASK) {
-	case HT_CAP_INFO_SMPS_STATIC:
-		if (!(iface->smps_modes & WPA_DRIVER_SMPS_MODE_STATIC)) {
-			wpa_printf(MSG_ERROR,
-				   "Driver does not support configured HT capability [SMPS-STATIC]");
-			return 0;
-		}
-		break;
-	case HT_CAP_INFO_SMPS_DYNAMIC:
-		if (!(iface->smps_modes & WPA_DRIVER_SMPS_MODE_DYNAMIC)) {
-			wpa_printf(MSG_ERROR,
-				   "Driver does not support configured HT capability [SMPS-DYNAMIC]");
-			return 0;
-		}
-		break;
-	case HT_CAP_INFO_SMPS_DISABLED:
-	default:
-		break;
-	}
-
 	if ((conf & HT_CAP_INFO_GREEN_FIELD) &&
 	    !(hw & HT_CAP_INFO_GREEN_FIELD)) {
 		wpa_printf(MSG_ERROR, "Driver does not support configured "
@@ -621,41 +644,6 @@ static int ieee80211n_supported_ht_capab(struct hostapd_iface *iface)
 
 
 #ifdef CONFIG_IEEE80211AC
-
-static int ieee80211ac_cap_check(u32 hw, u32 conf, u32 cap, const char *name)
-{
-	u32 req_cap = conf & cap;
-
-	/*
-	 * Make sure we support all requested capabilities.
-	 * NOTE: We assume that 'cap' represents a capability mask,
-	 * not a discrete value.
-	 */
-	if ((hw & req_cap) != req_cap) {
-		wpa_printf(MSG_ERROR, "Driver does not support configured VHT capability [%s]",
-			   name);
-		return 0;
-	}
-	return 1;
-}
-
-
-static int ieee80211ac_cap_check_max(u32 hw, u32 conf, u32 mask,
-				     unsigned int shift,
-				     const char *name)
-{
-	u32 hw_max = hw & mask;
-	u32 conf_val = conf & mask;
-
-	if (conf_val > hw_max) {
-		wpa_printf(MSG_ERROR, "Configured VHT capability [%s] exceeds max value supported by the driver (%d > %d)",
-			   name, conf_val >> shift, hw_max >> shift);
-		return 0;
-	}
-	return 1;
-}
-
-
 static int ieee80211ac_supported_vht_capab(struct hostapd_iface *iface)
 {
 	struct hostapd_hw_modes *mode = iface->current_mode;
@@ -683,55 +671,25 @@ static int ieee80211ac_supported_vht_capab(struct hostapd_iface *iface)
 		}
 	}
 
-#define VHT_CAP_CHECK(cap) \
-	do { \
-		if (!ieee80211ac_cap_check(hw, conf, cap, #cap)) \
-			return 0; \
-	} while (0)
-
-#define VHT_CAP_CHECK_MAX(cap) \
-	do { \
-		if (!ieee80211ac_cap_check_max(hw, conf, cap, cap ## _SHIFT, \
-					       #cap)) \
-			return 0; \
-	} while (0)
-
-	VHT_CAP_CHECK_MAX(VHT_CAP_MAX_MPDU_LENGTH_MASK);
-	VHT_CAP_CHECK(VHT_CAP_SUPP_CHAN_WIDTH_160MHZ);
-	VHT_CAP_CHECK(VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ);
-	VHT_CAP_CHECK(VHT_CAP_RXLDPC);
-	VHT_CAP_CHECK(VHT_CAP_SHORT_GI_80);
-	VHT_CAP_CHECK(VHT_CAP_SHORT_GI_160);
-	VHT_CAP_CHECK(VHT_CAP_TXSTBC);
-	VHT_CAP_CHECK_MAX(VHT_CAP_RXSTBC_MASK);
-	VHT_CAP_CHECK(VHT_CAP_SU_BEAMFORMER_CAPABLE);
-	VHT_CAP_CHECK(VHT_CAP_SU_BEAMFORMEE_CAPABLE);
-	VHT_CAP_CHECK_MAX(VHT_CAP_BEAMFORMEE_STS_MAX);
-	VHT_CAP_CHECK_MAX(VHT_CAP_SOUNDING_DIMENSION_MAX);
-	VHT_CAP_CHECK(VHT_CAP_MU_BEAMFORMER_CAPABLE);
-	VHT_CAP_CHECK(VHT_CAP_MU_BEAMFORMEE_CAPABLE);
-	VHT_CAP_CHECK(VHT_CAP_VHT_TXOP_PS);
-	VHT_CAP_CHECK(VHT_CAP_HTC_VHT);
-	VHT_CAP_CHECK_MAX(VHT_CAP_MAX_A_MPDU_LENGTH_EXPONENT_MAX);
-	VHT_CAP_CHECK(VHT_CAP_VHT_LINK_ADAPTATION_VHT_UNSOL_MFB);
-	VHT_CAP_CHECK(VHT_CAP_VHT_LINK_ADAPTATION_VHT_MRQ_MFB);
-	VHT_CAP_CHECK(VHT_CAP_RX_ANTENNA_PATTERN);
-	VHT_CAP_CHECK(VHT_CAP_TX_ANTENNA_PATTERN);
-
-#undef VHT_CAP_CHECK
-#undef VHT_CAP_CHECK_MAX
-
-	return 1;
+	return ieee80211ac_cap_check(hw, conf);
 }
 #endif /* CONFIG_IEEE80211AC */
 
-#endif /* CONFIG_IEEE80211N */
+
+#ifdef CONFIG_IEEE80211AX
+static int ieee80211ax_supported_he_capab(struct hostapd_iface *iface)
+{
+	return 1;
+}
+#endif /* CONFIG_IEEE80211AX */
 
 
 int hostapd_check_ht_capab(struct hostapd_iface *iface)
 {
-#ifdef CONFIG_IEEE80211N
 	int ret;
+
+	if (is_6ghz_freq(iface->freq))
+		return 0;
 	if (!iface->conf->ieee80211n)
 		return 0;
 
@@ -745,8 +703,14 @@ int hostapd_check_ht_capab(struct hostapd_iface *iface)
 
 	if (!ieee80211n_supported_ht_capab(iface))
 		return -1;
+#ifdef CONFIG_IEEE80211AX
+	if (iface->conf->ieee80211ax &&
+	    !ieee80211ax_supported_he_capab(iface))
+		return -1;
+#endif /* CONFIG_IEEE80211AX */
 #ifdef CONFIG_IEEE80211AC
-	if (!ieee80211ac_supported_vht_capab(iface))
+	if (iface->conf->ieee80211ac &&
+	    !ieee80211ac_supported_vht_capab(iface))
 		return -1;
 #endif /* CONFIG_IEEE80211AC */
 	ret = ieee80211n_check_40mhz(iface);
@@ -754,58 +718,274 @@ int hostapd_check_ht_capab(struct hostapd_iface *iface)
 		return ret;
 	if (!ieee80211n_allowed_ht40_channel_pair(iface))
 		return -1;
-#endif /* CONFIG_IEEE80211N */
 
 	return 0;
 }
 
 
-static int hostapd_is_usable_chan(struct hostapd_iface *iface,
-				  int channel, int primary)
+int hostapd_check_edmg_capab(struct hostapd_iface *iface)
 {
-	int i;
+	struct hostapd_hw_modes *mode = iface->hw_features;
+	struct ieee80211_edmg_config edmg;
+
+	if (!iface->conf->enable_edmg)
+		return 0;
+
+	hostapd_encode_edmg_chan(iface->conf->enable_edmg,
+				 iface->conf->edmg_channel,
+				 iface->conf->channel,
+				 &edmg);
+
+	if (mode->edmg.channels && ieee802_edmg_is_allowed(mode->edmg, edmg))
+		return 0;
+
+	wpa_printf(MSG_WARNING, "Requested EDMG configuration is not valid");
+	wpa_printf(MSG_INFO, "EDMG capab: channels 0x%x, bw_config %d",
+		   mode->edmg.channels, mode->edmg.bw_config);
+	wpa_printf(MSG_INFO,
+		   "Requested EDMG configuration: channels 0x%x, bw_config %d",
+		   edmg.channels, edmg.bw_config);
+	return -1;
+}
+
+
+int hostapd_check_he_6ghz_capab(struct hostapd_iface *iface)
+{
+#ifdef CONFIG_IEEE80211AX
+	struct he_capabilities *he_cap;
+	u16 hw;
+
+	if (!iface->current_mode || !is_6ghz_freq(iface->freq))
+		return 0;
+
+	he_cap = &iface->current_mode->he_capab[IEEE80211_MODE_AP];
+	hw = he_cap->he_6ghz_capa;
+	if (iface->conf->he_6ghz_max_mpdu >
+	    ((hw & HE_6GHZ_BAND_CAP_MAX_MPDU_LEN_MASK) >>
+	     HE_6GHZ_BAND_CAP_MAX_MPDU_LEN_SHIFT)) {
+		wpa_printf(MSG_ERROR,
+			   "The driver does not support the configured HE 6 GHz Max MPDU length");
+		return -1;
+	}
+
+	if (iface->conf->he_6ghz_max_ampdu_len_exp >
+	    ((hw & HE_6GHZ_BAND_CAP_MAX_AMPDU_LEN_EXP_MASK) >>
+	     HE_6GHZ_BAND_CAP_MAX_AMPDU_LEN_EXP_SHIFT)) {
+		wpa_printf(MSG_ERROR,
+			   "The driver does not support the configured HE 6 GHz Max AMPDU Length Exponent");
+		return -1;
+	}
+
+	if (iface->conf->he_6ghz_rx_ant_pat &&
+	    !(hw & HE_6GHZ_BAND_CAP_RX_ANTPAT_CONS)) {
+		wpa_printf(MSG_ERROR,
+			   "The driver does not support the configured HE 6 GHz Rx Antenna Pattern");
+		return -1;
+	}
+
+	if (iface->conf->he_6ghz_tx_ant_pat &&
+	    !(hw & HE_6GHZ_BAND_CAP_TX_ANTPAT_CONS)) {
+		wpa_printf(MSG_ERROR,
+			   "The driver does not support the configured HE 6 GHz Tx Antenna Pattern");
+		return -1;
+	}
+#endif /* CONFIG_IEEE80211AX */
+	return 0;
+}
+
+
+static int hostapd_is_usable_chan(struct hostapd_iface *iface,
+				  int frequency, int primary)
+{
 	struct hostapd_channel_data *chan;
 
 	if (!iface->current_mode)
 		return 0;
 
-	for (i = 0; i < iface->current_mode->num_channels; i++) {
-		chan = &iface->current_mode->channels[i];
-		if (chan->chan != channel)
+	chan = hw_get_channel_freq(iface->current_mode->mode, frequency, NULL,
+				   iface->hw_features, iface->num_hw_features);
+	if (!chan)
+		return 0;
+
+	if ((primary && chan_pri_allowed(chan)) ||
+	    (!primary && !(chan->flag & HOSTAPD_CHAN_DISABLED)))
+		return 1;
+
+	wpa_printf(MSG_INFO,
+		   "Frequency %d (%s) not allowed for AP mode, flags: 0x%x%s%s",
+		   frequency, primary ? "primary" : "secondary",
+		   chan->flag,
+		   chan->flag & HOSTAPD_CHAN_NO_IR ? " NO-IR" : "",
+		   chan->flag & HOSTAPD_CHAN_RADAR ? " RADAR" : "");
+	return 0;
+}
+
+
+static int hostapd_is_usable_edmg(struct hostapd_iface *iface)
+{
+	int i, contiguous = 0;
+	int num_of_enabled = 0;
+	int max_contiguous = 0;
+	struct ieee80211_edmg_config edmg;
+	struct hostapd_channel_data *pri_chan;
+
+	if (!iface->conf->enable_edmg)
+		return 1;
+
+	if (!iface->current_mode)
+		return 0;
+	pri_chan = hw_get_channel_freq(iface->current_mode->mode,
+				       iface->freq, NULL,
+				       iface->hw_features,
+				       iface->num_hw_features);
+	if (!pri_chan)
+		return 0;
+	hostapd_encode_edmg_chan(iface->conf->enable_edmg,
+				 iface->conf->edmg_channel,
+				 pri_chan->chan,
+				 &edmg);
+	if (!(edmg.channels & BIT(pri_chan->chan - 1)))
+		return 0;
+
+	/* 60 GHz channels 1..6 */
+	for (i = 0; i < 6; i++) {
+		int freq = 56160 + 2160 * (i + 1);
+
+		if (edmg.channels & BIT(i)) {
+			contiguous++;
+			num_of_enabled++;
+		} else {
+			contiguous = 0;
 			continue;
+		}
 
-		if (!(chan->flag & HOSTAPD_CHAN_DISABLED))
+		/* P802.11ay defines that the total number of subfields
+		 * set to one does not exceed 4.
+		 */
+		if (num_of_enabled > 4)
+			return 0;
+
+		if (!hostapd_is_usable_chan(iface, freq, 1))
+			return 0;
+
+		if (contiguous > max_contiguous)
+			max_contiguous = contiguous;
+	}
+
+	/* Check if the EDMG configuration is valid under the limitations
+	 * of P802.11ay.
+	 */
+	/* check bw_config against contiguous EDMG channels */
+	switch (edmg.bw_config) {
+	case EDMG_BW_CONFIG_4:
+		if (!max_contiguous)
+			return 0;
+		break;
+	case EDMG_BW_CONFIG_5:
+		if (max_contiguous < 2)
+			return 0;
+		break;
+	default:
+		return 0;
+	}
+
+	return 1;
+}
+
+
+static int hostapd_is_usable_chans(struct hostapd_iface *iface)
+{
+	int secondary_freq;
+	struct hostapd_channel_data *pri_chan;
+
+	if (!iface->current_mode)
+		return 0;
+	pri_chan = hw_get_channel_freq(iface->current_mode->mode,
+				       iface->freq, NULL,
+				       iface->hw_features,
+				       iface->num_hw_features);
+	if (!pri_chan) {
+		wpa_printf(MSG_ERROR, "Primary frequency not present");
+		return 0;
+	}
+	if (!hostapd_is_usable_chan(iface, pri_chan->freq, 1)) {
+		wpa_printf(MSG_ERROR, "Primary frequency not allowed");
+		return 0;
+	}
+	if (!hostapd_is_usable_edmg(iface))
+		return 0;
+
+	if (!iface->conf->secondary_channel)
+		return 1;
+
+	if (hostapd_is_usable_chan(iface, iface->freq +
+				   iface->conf->secondary_channel * 20, 0)) {
+		if (iface->conf->secondary_channel == 1 &&
+		    (pri_chan->allowed_bw & HOSTAPD_CHAN_WIDTH_40P))
 			return 1;
+		if (iface->conf->secondary_channel == -1 &&
+		    (pri_chan->allowed_bw & HOSTAPD_CHAN_WIDTH_40M))
+			return 1;
+	}
+	if (!iface->conf->ht40_plus_minus_allowed)
+		return 0;
 
-		wpa_printf(MSG_DEBUG,
-			   "%schannel [%i] (%i) is disabled for use in AP mode, flags: 0x%x%s%s",
-			   primary ? "" : "Configured HT40 secondary ",
-			   i, chan->chan, chan->flag,
-			   chan->flag & HOSTAPD_CHAN_NO_IR ? " NO-IR" : "",
-			   chan->flag & HOSTAPD_CHAN_RADAR ? " RADAR" : "");
+	/* Both HT40+ and HT40- are set, pick a valid secondary channel */
+	secondary_freq = iface->freq + 20;
+	if (hostapd_is_usable_chan(iface, secondary_freq, 0) &&
+	    (pri_chan->allowed_bw & HOSTAPD_CHAN_WIDTH_40P)) {
+		iface->conf->secondary_channel = 1;
+		return 1;
+	}
+
+	secondary_freq = iface->freq - 20;
+	if (hostapd_is_usable_chan(iface, secondary_freq, 0) &&
+	    (pri_chan->allowed_bw & HOSTAPD_CHAN_WIDTH_40M)) {
+		iface->conf->secondary_channel = -1;
+		return 1;
 	}
 
 	return 0;
 }
 
 
-static int hostapd_is_usable_chans(struct hostapd_iface *iface)
+static void hostapd_determine_mode(struct hostapd_iface *iface)
 {
-	if (!hostapd_is_usable_chan(iface, iface->conf->channel, 1))
-		return 0;
+	int i;
+	enum hostapd_hw_mode target_mode;
 
-	if (!iface->conf->secondary_channel)
-		return 1;
+	if (iface->current_mode ||
+	    iface->conf->hw_mode != HOSTAPD_MODE_IEEE80211ANY)
+		return;
 
-	return hostapd_is_usable_chan(iface, iface->conf->channel +
-				      iface->conf->secondary_channel * 4, 0);
+	if (iface->freq < 4000)
+		target_mode = HOSTAPD_MODE_IEEE80211G;
+	else if (iface->freq > 50000)
+		target_mode = HOSTAPD_MODE_IEEE80211AD;
+	else
+		target_mode = HOSTAPD_MODE_IEEE80211A;
+
+	for (i = 0; i < iface->num_hw_features; i++) {
+		struct hostapd_hw_modes *mode;
+
+		mode = &iface->hw_features[i];
+		if (mode->mode == target_mode) {
+			iface->current_mode = mode;
+			iface->conf->hw_mode = mode->mode;
+			break;
+		}
+	}
+
+	if (!iface->current_mode)
+		wpa_printf(MSG_ERROR, "ACS: Cannot decide mode");
 }
 
 
 static enum hostapd_chan_status
 hostapd_check_chans(struct hostapd_iface *iface)
 {
-	if (iface->conf->channel) {
+	if (iface->freq) {
+		hostapd_determine_mode(iface);
 		if (hostapd_is_usable_chans(iface))
 			return HOSTAPD_CHAN_VALID;
 		else
@@ -839,9 +1019,9 @@ static void hostapd_notify_bad_chans(struct hostapd_iface *iface)
 	hostapd_logger(iface->bss[0], NULL,
 		       HOSTAPD_MODULE_IEEE80211,
 		       HOSTAPD_LEVEL_WARNING,
-		       "Configured channel (%d) not found from the "
-		       "channel list of current mode (%d) %s",
+		       "Configured channel (%d) or frequency (%d) (secondary_channel=%d) not found from the channel list of the current mode (%d) %s",
 		       iface->conf->channel,
+		       iface->freq, iface->conf->secondary_channel,
 		       iface->current_mode->mode,
 		       hostapd_hw_mode_txt(iface->current_mode->mode));
 	hostapd_logger(iface->bss[0], NULL, HOSTAPD_MODULE_IEEE80211,
@@ -861,9 +1041,7 @@ int hostapd_acs_completed(struct hostapd_iface *iface, int err)
 	case HOSTAPD_CHAN_VALID:
 		wpa_msg(iface->bss[0]->msg_ctx, MSG_INFO,
 			ACS_EVENT_COMPLETED "freq=%d channel=%d",
-			hostapd_hw_get_freq(iface->bss[0],
-					    iface->conf->channel),
-			iface->conf->channel);
+			iface->freq, iface->conf->channel);
 		break;
 	case HOSTAPD_CHAN_ACS:
 		wpa_printf(MSG_ERROR, "ACS error - reported complete, but no result available");
@@ -908,27 +1086,41 @@ int hostapd_select_hw_mode(struct hostapd_iface *iface)
 		return -1;
 
 	if ((iface->conf->hw_mode == HOSTAPD_MODE_IEEE80211G ||
-	     iface->conf->ieee80211n || iface->conf->ieee80211ac) &&
+	     iface->conf->ieee80211n || iface->conf->ieee80211ac ||
+	     iface->conf->ieee80211ax) &&
 	    iface->conf->channel == 14) {
-		wpa_printf(MSG_INFO, "Disable OFDM/HT/VHT on channel 14");
+		wpa_printf(MSG_INFO, "Disable OFDM/HT/VHT/HE on channel 14");
 		iface->conf->hw_mode = HOSTAPD_MODE_IEEE80211B;
 		iface->conf->ieee80211n = 0;
 		iface->conf->ieee80211ac = 0;
+		iface->conf->ieee80211ax = 0;
 	}
 
 	iface->current_mode = NULL;
 	for (i = 0; i < iface->num_hw_features; i++) {
 		struct hostapd_hw_modes *mode = &iface->hw_features[i];
+		int chan;
+
 		if (mode->mode == iface->conf->hw_mode) {
+			if (iface->freq > 0 &&
+			    !hw_mode_get_channel(mode, iface->freq, &chan))
+				continue;
+
 			iface->current_mode = mode;
 			break;
 		}
 	}
 
 	if (iface->current_mode == NULL) {
-		if (!(iface->drv_flags & WPA_DRIVER_FLAGS_ACS_OFFLOAD) ||
-		    !(iface->drv_flags & WPA_DRIVER_FLAGS_SUPPORT_HW_MODE_ANY))
-		{
+		if ((iface->drv_flags & WPA_DRIVER_FLAGS_ACS_OFFLOAD) &&
+		    (iface->drv_flags & WPA_DRIVER_FLAGS_SUPPORT_HW_MODE_ANY)) {
+			wpa_printf(MSG_DEBUG,
+				   "Using offloaded hw_mode=any ACS");
+		} else if (!(iface->drv_flags & WPA_DRIVER_FLAGS_ACS_OFFLOAD) &&
+			   iface->conf->hw_mode == HOSTAPD_MODE_IEEE80211ANY) {
+			wpa_printf(MSG_DEBUG,
+				   "Using internal ACS for hw_mode=any");
+		} else {
 			wpa_printf(MSG_ERROR,
 				   "Hardware does not support configured mode");
 			hostapd_logger(iface->bss[0], NULL,
@@ -978,5 +1170,45 @@ int hostapd_hw_get_freq(struct hostapd_data *hapd, int chan)
 
 int hostapd_hw_get_channel(struct hostapd_data *hapd, int freq)
 {
-	return hw_get_chan(hapd->iface->current_mode, freq);
+	int i, channel;
+	struct hostapd_hw_modes *mode;
+
+	if (hapd->iface->current_mode) {
+		channel = hw_get_chan(hapd->iface->current_mode->mode, freq,
+				      hapd->iface->hw_features,
+				      hapd->iface->num_hw_features);
+		if (channel)
+			return channel;
+	}
+
+	/* Check other available modes since the channel list for the current
+	 * mode did not include the specified frequency. */
+	if (!hapd->iface->hw_features)
+		return 0;
+	for (i = 0; i < hapd->iface->num_hw_features; i++) {
+		mode = &hapd->iface->hw_features[i];
+		channel = hw_get_chan(mode->mode, freq,
+				      hapd->iface->hw_features,
+				      hapd->iface->num_hw_features);
+		if (channel)
+			return channel;
+	}
+	return 0;
+}
+
+
+int hostapd_hw_skip_mode(struct hostapd_iface *iface,
+			 struct hostapd_hw_modes *mode)
+{
+	int i;
+
+	if (iface->current_mode)
+		return mode != iface->current_mode;
+	if (mode->mode != HOSTAPD_MODE_IEEE80211B)
+		return 0;
+	for (i = 0; i < iface->num_hw_features; i++) {
+		if (iface->hw_features[i].mode == HOSTAPD_MODE_IEEE80211G)
+			return 1;
+	}
+	return 0;
 }

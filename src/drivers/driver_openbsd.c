@@ -62,20 +62,23 @@ static int
 wpa_driver_openbsd_get_capa(void *priv, struct wpa_driver_capa *capa)
 {
 	os_memset(capa, 0, sizeof(*capa));
-	capa->flags = WPA_DRIVER_FLAGS_4WAY_HANDSHAKE;
+	capa->flags = WPA_DRIVER_FLAGS_4WAY_HANDSHAKE_PSK |
+		      WPA_DRIVER_FLAGS_4WAY_HANDSHAKE_8021X;
 	return 0;
 }
 
 
 static int
-wpa_driver_openbsd_set_key(const char *ifname, void *priv, enum wpa_alg alg,
-	    const unsigned char *addr, int key_idx, int set_tx, const u8 *seq,
-	    size_t seq_len, const u8 *key, size_t key_len)
+wpa_driver_openbsd_set_key(void *priv, struct wpa_driver_set_key_params *params)
 {
 	struct openbsd_driver_data *drv = priv;
 	struct ieee80211_keyavail keyavail;
+	enum key_flag key_flag = params->key_flag;
+	const u8 *key = params->key;
+	size_t key_len = params->key_len;
 
-	if (alg != WPA_ALG_PMK || key_len > IEEE80211_PMK_LEN)
+	if (key_len > IEEE80211_PMK_LEN ||
+	    (key_flag & KEY_FLAG_PMK_MASK) != KEY_FLAG_PMK) {
 		return -1;
 
 	memset(&keyavail, 0, sizeof(keyavail));

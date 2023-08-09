@@ -1,6 +1,6 @@
 /*
  * OS specific functions for UNIX/POSIX systems
- * Copyright (c) 2005-2009, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2005-2019, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -39,7 +39,7 @@ static struct dl_list alloc_list = DL_LIST_HEAD_INIT(alloc_list);
 
 struct os_alloc_trace {
 	unsigned int magic;
-	struct dl_list list;
+	struct dl_list list __attribute__((aligned(16)));
 	size_t len;
 	WPA_TRACE_INFO
 } __attribute__((aligned(16)));
@@ -49,10 +49,16 @@ struct os_alloc_trace {
 
 void os_sleep(os_time_t sec, os_time_t usec)
 {
+#if defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200809L)
+	const struct timespec req = { sec, usec * 1000 };
+
+	nanosleep(&req, NULL);
+#else
 	if (sec)
 		sleep(sec);
 	if (usec)
 		usleep(usec);
+#endif
 }
 
 
@@ -79,6 +85,9 @@ int os_get_reltime(struct os_reltime *t)
 #endif
 	struct timespec ts;
 	int res;
+
+	if (TEST_FAIL())
+		return -1;
 
 	while (1) {
 		res = clock_gettime(clock_id, &ts);
@@ -247,6 +256,13 @@ void os_daemonize_terminate(const char *pid_file)
 
 int os_get_random(unsigned char *buf, size_t len)
 {
+#ifdef TEST_FUZZ
+	size_t i;
+
+	for (i = 0; i < len; i++)
+		buf[i] = i & 0xff;
+	return 0;
+#else /* TEST_FUZZ */
 	FILE *f;
 	size_t rc;
 
@@ -263,6 +279,7 @@ int os_get_random(unsigned char *buf, size_t len)
 	fclose(f);
 
 	return rc != len ? -1 : 0;
+#endif /* TEST_FUZZ */
 }
 
 
@@ -320,6 +337,8 @@ char * os_rel2abs_path(const char *rel_path)
 
 int os_program_init(void)
 {
+	unsigned int seed;
+
 #ifdef ANDROID
 	/*
 	 * We ignore errors here since errors are normal if we
@@ -347,6 +366,9 @@ int os_program_init(void)
 	cap.inheritable = 0;
 	capset(&header, &cap);
 #endif /* ANDROID */
+
+	if (os_get_random((unsigned char *) &seed, sizeof(seed)) == 0)
+		srandom(seed);
 
 	return 0;
 }
@@ -442,9 +464,9 @@ int os_file_exists(const char *fname)
 int os_fdatasync(FILE *stream)
 {
 	if (!fflush(stream)) {
-#ifdef __linux__
+#if defined __FreeBSD__ || defined __linux__
 		return fdatasync(fileno(stream));
-#else /* !__linux__ */
+#else /* !__linux__ && !__FreeBSD__ */
 #ifdef F_FULLFSYNC
 		/* OS X does not implement fdatasync(). */
 		return fcntl(fileno(stream), F_FULLFSYNC);
@@ -505,6 +527,16 @@ int os_memcmp_const(const void *a, const void *b, size_t len)
 }
 
 
+void * os_memdup(const void *src, size_t len)
+{
+	void *r = os_malloc(len);
+
+	if (r && src)
+		os_memcpy(r, src, len);
+	return r;
+}
+
+
 #ifdef WPA_TRACE
 
 #if defined(WPA_TRACE_BFD) && defined(CONFIG_TESTING_OPTIONS)
@@ -536,6 +568,8 @@ static int testing_fail_alloc(void)
 	if (i < res && os_strcmp(func[i], "os_realloc_array") == 0)
 		i++;
 	if (i < res && os_strcmp(func[i], "os_strdup") == 0)
+		i++;
+	if (i < res && os_strcmp(func[i], "os_memdup") == 0)
 		i++;
 
 	pos = wpa_trace_fail_func;

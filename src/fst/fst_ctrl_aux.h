@@ -35,6 +35,17 @@ enum fst_event_type {
 					 *  more info */
 };
 
+enum fst_reason {
+	REASON_TEARDOWN,
+	REASON_SETUP,
+	REASON_SWITCH,
+	REASON_STT,
+	REASON_REJECT,
+	REASON_ERROR_PARAMS,
+	REASON_RESET,
+	REASON_DETACH_IFACE,
+};
+
 enum fst_initiator {
 	FST_INITIATOR_UNDEFINED,
 	FST_INITIATOR_LOCAL,
@@ -43,12 +54,12 @@ enum fst_initiator {
 
 union fst_event_extra {
 	struct fst_event_extra_iface_state {
-		Boolean attached;
+		bool attached;
 		char ifname[FST_MAX_INTERFACE_SIZE];
 		char group_id[FST_MAX_GROUP_ID_SIZE];
 	} iface_state; /* for EVENT_FST_IFACE_STATE_CHANGED */
 	struct fst_event_extra_peer_state {
-		Boolean connected;
+		bool connected;
 		char ifname[FST_MAX_INTERFACE_SIZE];
 		u8 addr[ETH_ALEN];
 	} peer_state; /* for EVENT_PEER_STATE_CHANGED */
@@ -57,16 +68,7 @@ union fst_event_extra {
 		enum fst_session_state new_state;
 		union fst_session_state_switch_extra {
 			struct {
-				enum fst_reason {
-					REASON_TEARDOWN,
-					REASON_SETUP,
-					REASON_SWITCH,
-					REASON_STT,
-					REASON_REJECT,
-					REASON_ERROR_PARAMS,
-					REASON_RESET,
-					REASON_DETACH_IFACE,
-				} reason;
+				enum fst_reason reason;
 				u8 reject_code; /* REASON_REJECT */
 				/* REASON_SWITCH,
 				 * REASON_TEARDOWN,
