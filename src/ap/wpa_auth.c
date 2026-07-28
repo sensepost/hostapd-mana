@@ -1131,7 +1131,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	char *hc_out_buf = malloc(hc_out_buf_size);
 	size_t buf_index = 0;
 	buf_index += sprintf(hc_out_buf + buf_index, "WPA*02*");
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, mic_len == 24 ? key192->key_mic : key->key_mic, mic_len);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_mic, mic_len);
 	buf_index += sprintf(hc_out_buf + buf_index, "*");
 	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->wpa_auth->addr, 6);
 	buf_index += sprintf(hc_out_buf + buf_index, "*");
@@ -1150,33 +1150,18 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	// reason I'm guessing is related to hashcat optimisations, so all of this
 	// below code is just to make sure we remove the MIC from the EAPOL data.
 	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, hdr, sizeof(*hdr));
-	if (mic_len == 24) {
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, &key192->type, 1);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key192->key_info, 2);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key192->key_length, 2);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key192->replay_counter, WPA_REPLAY_COUNTER_LEN);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key192->key_nonce, WPA_NONCE_LEN);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key192->key_iv, 16);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key192->key_rsc, WPA_KEY_RSC_LEN);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key192->key_id, 8);
-					for (size_t j=0;j<16;j++) //hccapx truncates to 16
-									buf_index = append_hex_to_buffer(hc_out_buf, buf_index, "\x00", 1);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key192->key_data_length, 2);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key192+1, WPA_GET_BE16(key192->key_data_length));
-	} else {
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, &key->type, 1);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_info, 2);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_length, 2);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->replay_counter, WPA_REPLAY_COUNTER_LEN);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_nonce, WPA_NONCE_LEN);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_iv, 16);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_rsc, WPA_KEY_RSC_LEN);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_id, 8);
-					for (size_t j=0;j<16;j++) //hccapx truncates to 16
-									buf_index = append_hex_to_buffer(hc_out_buf, buf_index, "\x00", 1);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_data_length, 2);
-					buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key+1, WPA_GET_BE16(key->key_data_length));
-	}
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, &key->type, 1);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_info, 2);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_length, 2);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->replay_counter, WPA_REPLAY_COUNTER_LEN);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_nonce, WPA_NONCE_LEN);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_iv, 16);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_rsc, WPA_KEY_RSC_LEN);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_id, 8);
+	for (size_t j=0;j<16;j++) //hccapx truncates to 16
+			buf_index = append_hex_to_buffer(hc_out_buf, buf_index, "\x00", 1);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_data_length, 2);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key+1, WPA_GET_BE16(key->key_data_length));
 
 	buf_index += sprintf(hc_out_buf + buf_index, "*00");
 	wpa_printf(MSG_INFO, "MANA WPA2 HASHCAT | %s", hc_out_buf);
