@@ -1001,6 +1001,15 @@ static int wpa_try_alt_snonce(struct wpa_state_machine *sm, u8 *data,
 	return 0;
 }
 
+// MANA - hex printing helper function                                                                                     
+size_t append_hex_to_buffer(char *buffer, size_t index, const void *data, size_t len) {																		
+	const uint8_t *byte_data = (const uint8_t *)data;																																				
+	while (len-- > 0) {																																																			
+		index += sprintf(buffer + index, "%02x", *byte_data++);																																
+	}																																																												
+	return index;																																																						
+}																																																													
+// MANA end
 
 static bool wpa_auth_gtk_rekey_in_process(struct wpa_authenticator *wpa_auth)
 {
@@ -1092,68 +1101,79 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 		    key->replay_counter, WPA_REPLAY_COUNTER_LEN);
 
 	//MANA Start
+	wpa_printf(MSG_INFO, "MANA: Captured a WPA/2 handshake from: " MACSTR, MAC2STR(sm->addr));
 	/*
-	// Output hashcat's hccapx format, documented at
-	// https://hashcat.net/wiki/docu.php?id=hccapx
-	// Signature 0x58504348
-	// Version 4 
-	// Message Pair 0 aka M1 + M2
-	wpa_printf(MSG_DEBUG, "MANA SSID len: %lu", wpa_auth->conf.ssid_len);
-	wpa_printf(MSG_DEBUG, "MANA SSID: %s", wpa_auth->conf.ssid);
-	wpa_printf(MSG_DEBUG, "MANA Key Type: %u", key->type);
-	wpa_printf(MSG_DEBUG, "MANA MIC Length: %lu", mic_len);
-	wpa_hexdump(MSG_DEBUG, "MANA MIC: ", mic_len == 24 ? key192->key_mic : key->key_mic, mic_len);
-	wpa_printf(MSG_DEBUG, "MANA BSSID: " MACSTR, MAC2STR(sm->wpa_auth->addr));
-	wpa_hexdump(MSG_DEBUG, "MANA ANonce: ", sm->ANonce, WPA_NONCE_LEN);
-	wpa_printf(MSG_DEBUG, "MANA STA MAC: " MACSTR, MAC2STR(sm->addr));
-	wpa_hexdump(MSG_DEBUG, "MANA SNonce: ", key->key_nonce, WPA_NONCE_LEN);
-	wpa_printf(MSG_DEBUG, "MANA EAPOL Key Data Length: %u", key_data_length);
-	wpa_hexdump(MSG_DEBUG, "MANA EAPOL Key Data: ", key_data, key_data_length);
-	wpa_printf(MSG_DEBUG, "MANA EAPOL Data Length: %lu", data_len);
-	wpa_hexdump(MSG_DEBUG, "MANA EAPOL Data: ", data, data_len);
-	*/
+	Code to produce hashcat's new WPA2 EAPOL hash format for mode 22000
+	https://hashcat.net/forum/thread-10253.html
+	https://github.com/hashcat/hashcat/issues/1816
 
-	if (os_strcmp("NOT_SET",mana.conf->mana_wpaout)!=0) {
-		FILE *hccapx = fopen(mana.conf->mana_wpaout, "ab");
-		if (hccapx != NULL) {
-			fwrite("\x48\x43\x50\x58",4,1,hccapx); //Signature
-			fwrite("\x04\x00\x00\x00",4,1,hccapx); //Version
-			fwrite("\x00",1,1,hccapx); //Message Pair (M1+M2)
-			fwrite(&wpa_auth->conf.ssid_len,1,1,hccapx);
-			fwrite(wpa_auth->conf.ssid,32,1,hccapx);
-			fwrite(&key->type,1,1,hccapx);
-			fwrite(mic,16,1,hccapx); //hashcat truncates to 16
-			fwrite(sm->wpa_auth->addr,ETH_ALEN,1,hccapx);
-			fwrite(sm->ANonce,WPA_NONCE_LEN,1,hccapx);
-			fwrite(sm->addr,ETH_ALEN,1,hccapx);
-			fwrite(key->key_nonce,WPA_NONCE_LEN,1,hccapx);
-			fwrite(&data_len,2,1,hccapx);
-			fwrite(hdr,sizeof(*hdr),1,hccapx);
-			// Now follows a ridiculous amount of code to handle simply blanking the MIC
-			// as per https://github.com/hashcat/hashcat-utils/blob/master/src/cap2hccapx.c#L611
-			// I did use some simpler memcpy's but it lead to weird segfaults in seemingly
-			// unrelated functions. This, while long, explains the contents better.
-			int i;
-      fwrite(&key->type,1,1,hccapx);
-      fwrite(key->key_info,2,1,hccapx);
-      fwrite(key->key_length,2,1,hccapx);
-      fwrite(key->replay_counter,WPA_REPLAY_COUNTER_LEN,1,hccapx);
-      fwrite(key->key_nonce,WPA_NONCE_LEN,1,hccapx);
-      fwrite(key->key_iv,16,1,hccapx);
-      fwrite(key->key_rsc,WPA_KEY_RSC_LEN,1,hccapx);
-      fwrite(key->key_id,8,1,hccapx);
-      for (i=0;i<16;i++)
-        fwrite("\x00",1,1,hccapx);
-      fwrite(&key_data_length,2,1,hccapx);
-      fwrite(key+1,key_data_length,1,hccapx);
-			// Padding
-			for (i=0;i<(256 - sizeof(*hdr) - ntohs(hdr->length) - (mic_len == 24 ? 8 : 0));i++) {
-				fwrite("\x00",1,1,hccapx);
-			}
-			fclose(hccapx);
-			wpa_printf(MSG_INFO, "MANA: Captured a WPA/2 handshake from: " MACSTR, MAC2STR(sm->addr));
-		}
+	PROTOCOL*TYPE*PMKID/MIC*MACAP*MACCLIENT*ESSID*ANONCE*EAPOL*MESSAGEPAIR
+
+	PROTOCOL = Fixed string "WPA"
+	TYPE = 01 for PMKID, 02 for EAPOL
+	PMKID/MIC = PMKID if TYPE=01, MIC if TYPE=02
+	MACAP = MAC of AP
+	MACCLIENT = MAC of CLIENT
+	ESSID = network name (ESSID) in HEX
+	ANONCE = ANONCE
+	EAPOL = EAPOL (SNONCE is in here)
+	MESSAGEPAIR = Bitmask:
+		0: MP info (https://hashcat.net/wiki/doku.php?id=hccapx)
+		1: MP info (https://hashcat.net/wiki/doku.php?id=hccapx)
+		2: MP info (https://hashcat.net/wiki/doku.php?id=hccapx)
+		3: x (unused)
+		4: ap-less attack (set to 1) - no nonce-error-corrections necessary
+		5: LE router detected (set to 1) - nonce-error-corrections only for LE necessary
+		6: BE router detected (set to 1) - nonce-error-corrections only for BE necessary
+		7: not replaycount checked (set to 1) - replaycount not checked, nonce-error-corrections definitely necessary
+	*/
+	size_t hc_out_buf_size = 600; //416 // Turn this into an actual calc
+	char *hc_out_buf = malloc(hc_out_buf_size);
+	size_t buf_index = 0;
+	buf_index += sprintf(hc_out_buf + buf_index, "WPA*02*");
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, mic, mic_len);
+	buf_index += sprintf(hc_out_buf + buf_index, "*");
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->wpa_auth->addr, 6);
+	buf_index += sprintf(hc_out_buf + buf_index, "*");
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->addr, 6);
+	buf_index += sprintf(hc_out_buf + buf_index, "*");
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, wpa_auth->conf.ssid, wpa_auth->conf.ssid_len);
+	buf_index += sprintf(hc_out_buf + buf_index, "*");
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->ANonce, WPA_NONCE_LEN);
+	buf_index += sprintf(hc_out_buf + buf_index, "*");
+	/*
+	for (size_t j = 0; j < data_len; j++) {
+					buf_index += sprintf(hc_out_buf + buf_index, "%02x", data[j]);
 	}
+	*/
+	// We can't just output data like above, we need to blank the MIC for some
+	// reason I'm guessing is related to hashcat optimisations, so all of this
+	// below code is just to make sure we remove the MIC from the EAPOL data.
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, hdr, sizeof(*hdr));
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, &key->type, 1);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_info, 2);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_length, 2);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->replay_counter, WPA_REPLAY_COUNTER_LEN);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_nonce, WPA_NONCE_LEN);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_iv, 16);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_rsc, WPA_KEY_RSC_LEN);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_id, 8);
+	for (size_t j=0;j<mic_len;j++) //hccapx truncates to 16
+			buf_index = append_hex_to_buffer(hc_out_buf, buf_index, "\x00", 1);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, mic + mic_len, 2);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key_data, key_data_length);
+
+	buf_index += sprintf(hc_out_buf + buf_index, "*00");
+	wpa_printf(MSG_INFO, "MANA WPA2 HASHCAT | %s", hc_out_buf);
+
+	if (os_strcmp("NOT_SET",mana.conf->mana_wpaout)!=0) {																																 
+			FILE *f = fopen(mana.conf->mana_wpaout, "a");																																			 
+			if (f != NULL) {
+				fprintf(f,"[WPA2-EAPOL HASHCAT]\t%s\n", hc_out_buf);
+			}
+			fclose(f);
+	}
+	free(hc_out_buf);
 	//MANA End
 	
 	/* FIX: verify that the EAPOL-Key frame was encrypted if pairwise keys

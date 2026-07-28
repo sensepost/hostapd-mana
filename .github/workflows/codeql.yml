@@ -44,7 +44,7 @@ jobs:
 
       - name: Build cpp
         if: ${{ matrix.language == 'cpp' }}
-        run: make -C hostapd
+        run: cp hostapd/defconfig hostapd/.config && make -C hostapd
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v2
