@@ -41,7 +41,7 @@
 
 static void wpa_send_eapol_timeout(void *eloop_ctx, void *timeout_ctx);
 static int wpa_sm_step(struct wpa_state_machine *sm);
-static int wpa_verify_(int akmp, size_t pmk_len, struct wpa_ptk *PTK,
+static int wpa_verify_key_mic(int akmp, size_t pmk_len, struct wpa_ptk *PTK,
 			      u8 *data, size_t data_len);
 #ifdef CONFIG_FILS
 static int wpa_aead_decrypt(struct wpa_state_machine *sm, struct wpa_ptk *ptk,
@@ -964,7 +964,7 @@ static int wpa_try_alt_snonce(struct wpa_state_machine *sm, u8 *data,
 		    0)
 			break;
 
-		if (wpa_verify_(sm->wpa_key_mgmt, pmk_len, &PTK,
+		if (wpa_verify_key_mic(sm->wpa_key_mgmt, pmk_len, &PTK,
 				       data, data_len) == 0) {
 			if (sm->PMK != pmk) {
 				os_memcpy(sm->PMK, pmk, pmk_len);
