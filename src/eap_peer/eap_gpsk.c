@@ -96,12 +96,11 @@ static void * eap_gpsk_init(struct eap_sm *sm)
 
 	identity = eap_get_config_identity(sm, &identity_len);
 	if (identity) {
-		data->id_peer = os_malloc(identity_len);
+		data->id_peer = os_memdup(identity, identity_len);
 		if (data->id_peer == NULL) {
 			eap_gpsk_deinit(sm, data);
 			return NULL;
 		}
-		os_memcpy(data->id_peer, identity, identity_len);
 		data->id_peer_len = identity_len;
 	}
 
@@ -117,12 +116,11 @@ static void * eap_gpsk_init(struct eap_sm *sm)
 		}
 	}
 
-	data->psk = os_malloc(password_len);
+	data->psk = os_memdup(password, password_len);
 	if (data->psk == NULL) {
 		eap_gpsk_deinit(sm, data);
 		return NULL;
 	}
-	os_memcpy(data->psk, password, password_len);
 	data->psk_len = password_len;
 
 	return data;
@@ -158,12 +156,11 @@ static const u8 * eap_gpsk_process_id_server(struct eap_gpsk_data *data,
 		return NULL;
 	}
 	os_free(data->id_server);
-	data->id_server = os_malloc(alen);
+	data->id_server = os_memdup(pos, alen);
 	if (data->id_server == NULL) {
 		wpa_printf(MSG_DEBUG, "EAP-GPSK: No memory for ID_Server");
 		return NULL;
 	}
-	os_memcpy(data->id_server, pos, alen);
 	data->id_server_len = alen;
 	wpa_hexdump_ascii(MSG_DEBUG, "EAP-GPSK: ID_Server",
 			  data->id_server, data->id_server_len);
@@ -283,7 +280,7 @@ static struct wpabuf * eap_gpsk_process_gpsk_1(struct eap_sm *sm,
 	struct wpabuf *resp;
 
 	if (data->state != GPSK_1) {
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
@@ -591,7 +588,7 @@ static struct wpabuf * eap_gpsk_process_gpsk_3(struct eap_sm *sm,
 	const u8 *pos, *end;
 
 	if (data->state != GPSK_3) {
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
@@ -674,7 +671,7 @@ static struct wpabuf * eap_gpsk_process(struct eap_sm *sm, void *priv,
 
 	pos = eap_hdr_validate(EAP_VENDOR_IETF, EAP_TYPE_GPSK, reqData, &len);
 	if (pos == NULL || len < 1) {
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
@@ -683,10 +680,10 @@ static struct wpabuf * eap_gpsk_process(struct eap_sm *sm, void *priv,
 	len--;
 	wpa_printf(MSG_DEBUG, "EAP-GPSK: Received frame: opcode %d", opcode);
 
-	ret->ignore = FALSE;
+	ret->ignore = false;
 	ret->methodState = METHOD_MAY_CONT;
 	ret->decision = DECISION_FAIL;
-	ret->allowNotifications = FALSE;
+	ret->allowNotifications = false;
 
 	switch (opcode) {
 	case EAP_GPSK_OPCODE_GPSK_1:
@@ -699,7 +696,7 @@ static struct wpabuf * eap_gpsk_process(struct eap_sm *sm, void *priv,
 		wpa_printf(MSG_DEBUG,
 			   "EAP-GPSK: Ignoring message with unknown opcode %d",
 			   opcode);
-		ret->ignore = TRUE;
+		ret->ignore = true;
 		return NULL;
 	}
 
@@ -707,7 +704,7 @@ static struct wpabuf * eap_gpsk_process(struct eap_sm *sm, void *priv,
 }
 
 
-static Boolean eap_gpsk_isKeyAvailable(struct eap_sm *sm, void *priv)
+static bool eap_gpsk_isKeyAvailable(struct eap_sm *sm, void *priv)
 {
 	struct eap_gpsk_data *data = priv;
 	return data->state == SUCCESS;
@@ -722,10 +719,9 @@ static u8 * eap_gpsk_getKey(struct eap_sm *sm, void *priv, size_t *len)
 	if (data->state != SUCCESS)
 		return NULL;
 
-	key = os_malloc(EAP_MSK_LEN);
+	key = os_memdup(data->msk, EAP_MSK_LEN);
 	if (key == NULL)
 		return NULL;
-	os_memcpy(key, data->msk, EAP_MSK_LEN);
 	*len = EAP_MSK_LEN;
 
 	return key;
@@ -740,10 +736,9 @@ static u8 * eap_gpsk_get_emsk(struct eap_sm *sm, void *priv, size_t *len)
 	if (data->state != SUCCESS)
 		return NULL;
 
-	key = os_malloc(EAP_EMSK_LEN);
+	key = os_memdup(data->emsk, EAP_EMSK_LEN);
 	if (key == NULL)
 		return NULL;
-	os_memcpy(key, data->emsk, EAP_EMSK_LEN);
 	*len = EAP_EMSK_LEN;
 
 	return key;
@@ -758,10 +753,9 @@ static u8 * eap_gpsk_get_session_id(struct eap_sm *sm, void *priv, size_t *len)
 	if (data->state != SUCCESS)
 		return NULL;
 
-	sid = os_malloc(data->id_len);
+	sid = os_memdup(data->session_id, data->id_len);
 	if (sid == NULL)
 		return NULL;
-	os_memcpy(sid, data->session_id, data->id_len);
 	*len = data->id_len;
 
 	return sid;

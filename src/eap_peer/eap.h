@@ -16,6 +16,7 @@
 struct eap_sm;
 struct wpa_config_blob;
 struct wpabuf;
+struct tls_cert_data;
 
 struct eap_method_type {
 	int vendor;
@@ -43,7 +44,7 @@ enum eapol_bool_var {
 	/**
 	 * EAPOL_eapRestart - Lower layer request to restart authentication
 	 *
-	 * Set to TRUE in lower layer, FALSE in EAP state machine.
+	 * Set to true in lower layer, false in EAP state machine.
 	 */
 	EAPOL_eapRestart,
 
@@ -57,21 +58,21 @@ enum eapol_bool_var {
 	/**
 	 * EAPOL_eapResp - Response to send
 	 *
-	 * Set to TRUE in EAP state machine, FALSE in lower layer.
+	 * Set to true in EAP state machine, false in lower layer.
 	 */
 	EAPOL_eapResp,
 
 	/**
 	 * EAPOL_eapNoResp - Request has been process; no response to send
 	 *
-	 * Set to TRUE in EAP state machine, FALSE in lower layer.
+	 * Set to true in EAP state machine, false in lower layer.
 	 */
 	EAPOL_eapNoResp,
 
 	/**
 	 * EAPOL_eapReq - EAP request available from lower layer
 	 *
-	 * Set to TRUE in lower layer, FALSE in EAP state machine.
+	 * Set to true in lower layer, false in EAP state machine.
 	 */
 	EAPOL_eapReq,
 
@@ -146,7 +147,7 @@ struct eapol_callbacks {
 	 * @variable: EAPOL boolean variable to get
 	 * Returns: Value of the EAPOL variable
 	 */
-	Boolean (*get_bool)(void *ctx, enum eapol_bool_var variable);
+	bool (*get_bool)(void *ctx, enum eapol_bool_var variable);
 
 	/**
 	 * set_bool - Set a boolean EAPOL state variable
@@ -154,8 +155,7 @@ struct eapol_callbacks {
 	 * @variable: EAPOL boolean variable to set
 	 * @value: Value for the EAPOL variable
 	 */
-	void (*set_bool)(void *ctx, enum eapol_bool_var variable,
-			 Boolean value);
+	void (*set_bool)(void *ctx, enum eapol_bool_var variable, bool value);
 
 	/**
 	 * get_int - Get an integer EAPOL state variable
@@ -226,16 +226,11 @@ struct eapol_callbacks {
 	/**
 	 * notify_cert - Notification of a peer certificate
 	 * @ctx: eapol_ctx from eap_peer_sm_init() call
-	 * @depth: Depth in certificate chain (0 = server)
-	 * @subject: Subject of the peer certificate
-	 * @altsubject: Select fields from AltSubject of the peer certificate
-	 * @num_altsubject: Number of altsubject values
+	 * @cert: Certificate information
 	 * @cert_hash: SHA-256 hash of the certificate
-	 * @cert: Peer certificate
 	 */
-	void (*notify_cert)(void *ctx, int depth, const char *subject,
-			    const char *altsubject[], int num_altsubject,
-			    const char *cert_hash, const struct wpabuf *cert);
+	void (*notify_cert)(void *ctx, struct tls_cert_data *cert,
+			    const char *cert_hash);
 
 	/**
 	 * notify_status - Notification of the current EAP state
@@ -246,12 +241,37 @@ struct eapol_callbacks {
 	void (*notify_status)(void *ctx, const char *status,
 			      const char *parameter);
 
+	/**
+	 * notify_eap_error - Report EAP method error code
+	 * @ctx: eapol_ctx from eap_peer_sm_init() call
+	 * @error_code: Error code from the used EAP method
+	 */
+	void (*notify_eap_error)(void *ctx, int error_code);
+
 #ifdef CONFIG_EAP_PROXY
 	/**
 	 * eap_proxy_cb - Callback signifying any updates from eap_proxy
 	 * @ctx: eapol_ctx from eap_peer_sm_init() call
 	 */
 	void (*eap_proxy_cb)(void *ctx);
+
+	/**
+	 * eap_proxy_notify_sim_status - Notification of SIM status change
+	 * @ctx: eapol_ctx from eap_peer_sm_init() call
+	 * @sim_state: One of enum value from sim_state
+	 */
+	void (*eap_proxy_notify_sim_status)(void *ctx,
+					    enum eap_proxy_sim_state sim_state);
+
+	/**
+	 * get_imsi - Get the IMSI value from eap_proxy
+	 * @ctx: eapol_ctx from eap_peer_sm_init() call
+	 * @sim_num: SIM/USIM number to get the IMSI value for
+	 * @imsi: Buffer for IMSI value
+	 * @len: Buffer for returning IMSI length in octets
+	 * Returns: MNC length (2 or 3) or -1 on error
+	 */
+	int (*get_imsi)(void *ctx, int sim_num, char *imsi, size_t *len);
 #endif /* CONFIG_EAP_PROXY */
 
 	/**
@@ -348,6 +368,16 @@ void eap_sm_set_ext_pw_ctx(struct eap_sm *sm, struct ext_password_data *ext);
 void eap_set_anon_id(struct eap_sm *sm, const u8 *id, size_t len);
 int eap_peer_was_failure_expected(struct eap_sm *sm);
 void eap_peer_erp_free_keys(struct eap_sm *sm);
+struct wpabuf * eap_peer_build_erp_reauth_start(struct eap_sm *sm, u8 eap_id);
+void eap_peer_finish(struct eap_sm *sm, const struct eap_hdr *hdr, size_t len);
+int eap_peer_get_erp_info(struct eap_sm *sm, struct eap_peer_config *config,
+			  const u8 **username, size_t *username_len,
+			  const u8 **realm, size_t *realm_len, u16 *erp_seq_num,
+			  const u8 **rrk, size_t *rrk_len);
+int eap_peer_update_erp_next_seq_num(struct eap_sm *sm, u16 seq_num);
+void eap_peer_erp_init(struct eap_sm *sm, u8 *ext_session_id,
+		       size_t ext_session_id_len, u8 *ext_emsk,
+		       size_t ext_emsk_len);
 
 #endif /* IEEE8021X_EAPOL */
 

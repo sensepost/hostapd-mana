@@ -72,13 +72,12 @@ static void * eap_mschapv2_init(struct eap_sm *sm)
 	}
 
 	if (sm->peer_challenge) {
-		data->peer_challenge = os_malloc(CHALLENGE_LEN);
+		data->peer_challenge = os_memdup(sm->peer_challenge,
+						 CHALLENGE_LEN);
 		if (data->peer_challenge == NULL) {
 			os_free(data);
 			return NULL;
 		}
-		os_memcpy(data->peer_challenge, sm->peer_challenge,
-			  CHALLENGE_LEN);
 	}
 
 	return data;
@@ -111,7 +110,7 @@ static struct wpabuf * eap_mschapv2_build_challenge(
 		return NULL;
 	}
 
-	ms_len = sizeof(*ms) + 1 + CHALLENGE_LEN + sm->server_id_len;
+	ms_len = sizeof(*ms) + 1 + CHALLENGE_LEN + sm->cfg->server_id_len;
 	req = eap_msg_alloc(EAP_VENDOR_IETF, EAP_TYPE_MSCHAPV2, ms_len,
 			    EAP_CODE_REQUEST, id);
 	if (req == NULL) {
@@ -184,7 +183,7 @@ static struct wpabuf * eap_mschapv2_build_challenge(
 		wpabuf_put(req, CHALLENGE_LEN);
 	wpa_hexdump(MSG_MSGDUMP, "EAP-MSCHAPV2: Challenge",
 		    data->auth_challenge, CHALLENGE_LEN);
-	wpabuf_put_data(req, sm->server_id, sm->server_id_len);
+	wpabuf_put_data(req, sm->cfg->server_id, sm->cfg->server_id_len);
 
 	return req;
 }
@@ -288,8 +287,8 @@ static struct wpabuf * eap_mschapv2_buildReq(struct eap_sm *sm, void *priv,
 }
 
 
-static Boolean eap_mschapv2_check(struct eap_sm *sm, void *priv,
-				  struct wpabuf *respData)
+static bool eap_mschapv2_check(struct eap_sm *sm, void *priv,
+			       struct wpabuf *respData)
 {
 	struct eap_mschapv2_data *data = priv;
 	struct eap_mschapv2_hdr *resp;
@@ -300,7 +299,7 @@ static Boolean eap_mschapv2_check(struct eap_sm *sm, void *priv,
 			       &len);
 	if (pos == NULL || len < 1) {
 		wpa_printf(MSG_INFO, "EAP-MSCHAPV2: Invalid frame");
-		return TRUE;
+		return true;
 	}
 
 	resp = (struct eap_mschapv2_hdr *) pos;
@@ -308,7 +307,7 @@ static Boolean eap_mschapv2_check(struct eap_sm *sm, void *priv,
 	    resp->op_code != MSCHAPV2_OP_RESPONSE) {
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Expected Response - "
 			   "ignore op %d", resp->op_code);
-		return TRUE;
+		return true;
 	}
 
 	if (data->state == SUCCESS_REQ &&
@@ -316,17 +315,17 @@ static Boolean eap_mschapv2_check(struct eap_sm *sm, void *priv,
 	    resp->op_code != MSCHAPV2_OP_FAILURE) {
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Expected Success or "
 			   "Failure - ignore op %d", resp->op_code);
-		return TRUE;
+		return true;
 	}
 
 	if (data->state == FAILURE_REQ &&
 	    resp->op_code != MSCHAPV2_OP_FAILURE) {
 		wpa_printf(MSG_DEBUG, "EAP-MSCHAPV2: Expected Failure "
 			   "- ignore op %d", resp->op_code);
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
 
@@ -634,7 +633,7 @@ static void eap_mschapv2_process(struct eap_sm *sm, void *priv,
 }
 
 
-static Boolean eap_mschapv2_isDone(struct eap_sm *sm, void *priv)
+static bool eap_mschapv2_isDone(struct eap_sm *sm, void *priv)
 {
 	struct eap_mschapv2_data *data = priv;
 	return data->state == SUCCESS || data->state == FAILURE;
@@ -654,16 +653,20 @@ static u8 * eap_mschapv2_getKey(struct eap_sm *sm, void *priv, size_t *len)
 	if (key == NULL)
 		return NULL;
 	/* MSK = server MS-MPPE-Recv-Key | MS-MPPE-Send-Key */
-	get_asymetric_start_key(data->master_key, key, MSCHAPV2_KEY_LEN, 0, 1);
-	get_asymetric_start_key(data->master_key, key + MSCHAPV2_KEY_LEN,
-				MSCHAPV2_KEY_LEN, 1, 1);
+	if (get_asymetric_start_key(data->master_key, key, MSCHAPV2_KEY_LEN, 0,
+				    1) < 0 ||
+	    get_asymetric_start_key(data->master_key, key + MSCHAPV2_KEY_LEN,
+				    MSCHAPV2_KEY_LEN, 1, 1) < 0) {
+		os_free(key);
+		return NULL;
+	}
 	wpa_hexdump_key(MSG_DEBUG, "EAP-MSCHAPV2: Derived key", key, *len);
 
 	return key;
 }
 
 
-static Boolean eap_mschapv2_isSuccess(struct eap_sm *sm, void *priv)
+static bool eap_mschapv2_isSuccess(struct eap_sm *sm, void *priv)
 {
 	struct eap_mschapv2_data *data = priv;
 	return data->state == SUCCESS;

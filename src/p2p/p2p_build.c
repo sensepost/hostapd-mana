@@ -111,7 +111,7 @@ void p2p_buf_add_operating_channel(struct wpabuf *buf, const char *country,
 
 
 void p2p_buf_add_pref_channel_list(struct wpabuf *buf,
-				   const u32 *preferred_freq_list,
+				   const unsigned int *preferred_freq_list,
 				   unsigned int size)
 {
 	unsigned int i, count = 0;
@@ -802,7 +802,7 @@ int p2p_build_wps_ie(struct p2p_data *p2p, struct wpabuf *buf, int pw_id,
 		wpabuf_put_be16(buf, p2p->cfg->config_methods);
 	}
 
-	if (wps_build_wfa_ext(buf, 0, NULL, 0) < 0)
+	if (wps_build_wfa_ext(buf, 0, NULL, 0, 0) < 0)
 		return -1;
 
 	if (all_attr && p2p->cfg->num_sec_dev_types) {

@@ -413,17 +413,30 @@ int p2p_channel_select(struct p2p_channels *chans, const int *classes,
 
 
 int p2p_channel_random_social(struct p2p_channels *chans, u8 *op_class,
-			      u8 *op_channel)
+			      u8 *op_channel,
+			      struct wpa_freq_range_list *avoid_list,
+			      struct wpa_freq_range_list *disallow_list)
 {
 	u8 chan[4];
 	unsigned int num_channels = 0;
 
-	/* Try to find available social channels from 2.4 GHz */
-	if (p2p_channels_includes(chans, 81, 1))
+	/* Try to find available social channels from 2.4 GHz.
+	 * If the avoid_list includes any of the 2.4 GHz social channels, that
+	 * channel is not allowed by p2p_channels_includes() rules. However, it
+	 * is assumed to allow minimal traffic for P2P negotiation, so allow it
+	 * here for social channel selection unless explicitly disallowed in the
+	 * disallow_list. */
+	if (p2p_channels_includes(chans, 81, 1) ||
+	    (freq_range_list_includes(avoid_list, 2412) &&
+	     !freq_range_list_includes(disallow_list, 2412)))
 		chan[num_channels++] = 1;
-	if (p2p_channels_includes(chans, 81, 6))
+	if (p2p_channels_includes(chans, 81, 6) ||
+	    (freq_range_list_includes(avoid_list, 2437) &&
+	     !freq_range_list_includes(disallow_list, 2437)))
 		chan[num_channels++] = 6;
-	if (p2p_channels_includes(chans, 81, 11))
+	if (p2p_channels_includes(chans, 81, 11) ||
+	    (freq_range_list_includes(avoid_list, 2462) &&
+	     !freq_range_list_includes(disallow_list, 2462)))
 		chan[num_channels++] = 11;
 
 	/* Try to find available social channels from 60 GHz */
@@ -482,4 +495,43 @@ int p2p_channels_to_freqs(const struct p2p_channels *channels, int *freq_list,
 	freq_list[idx] = 0;
 
 	return idx;
+}
+
+
+void p2p_copy_channels(struct p2p_channels *dst,
+		       const struct p2p_channels *src, bool allow_6ghz)
+{
+	size_t i, j;
+
+	if (allow_6ghz) {
+		os_memcpy(dst, src, sizeof(struct p2p_channels));
+		return;
+	}
+
+	for (i = 0, j = 0; i < P2P_MAX_REG_CLASSES; i++) {
+		if (is_6ghz_op_class(src->reg_class[i].reg_class))
+			continue;
+		os_memcpy(&dst->reg_class[j], &src->reg_class[i],
+			  sizeof(struct p2p_reg_class));
+		j++;
+	}
+	dst->reg_classes = j;
+}
+
+
+int p2p_remove_6ghz_channels(unsigned int *pref_freq_list, int size)
+{
+	int i;
+
+	for (i = 0; i < size; i++) {
+		if (is_6ghz_freq(pref_freq_list[i])) {
+			wpa_printf(MSG_DEBUG, "P2P: Remove 6 GHz channel %d",
+				   pref_freq_list[i]);
+			size--;
+			os_memmove(&pref_freq_list[i], &pref_freq_list[i + 1],
+				   (size - i) * sizeof(pref_freq_list[0]));
+			i--;
+		}
+	}
+	return i;
 }

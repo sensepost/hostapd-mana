@@ -106,25 +106,25 @@ static inline void fst_iface_update_mb_ie(struct fst_iface *i,
 					  const u8 *addr,
 					  const u8 *buf, size_t size)
 {
-	return i->iface_obj.update_mb_ie(i->iface_obj.ctx, addr, buf, size);
+	i->iface_obj.update_mb_ie(i->iface_obj.ctx, addr, buf, size);
 }
 
 static inline const u8 * fst_iface_get_peer_first(struct fst_iface *i,
 						  struct fst_get_peer_ctx **ctx,
-						  Boolean mb_only)
+						  bool mb_only)
 {
 	return i->iface_obj.get_peer_first(i->iface_obj.ctx, ctx, mb_only);
 }
 
 static inline const u8 * fst_iface_get_peer_next(struct fst_iface *i,
 						 struct fst_get_peer_ctx **ctx,
-						 Boolean mb_only)
+						 bool mb_only)
 {
 	return i->iface_obj.get_peer_next(i->iface_obj.ctx, ctx, mb_only);
 }
 
-Boolean fst_iface_is_connected(struct fst_iface *iface, const u8 *addr,
-			       Boolean mb_only);
+bool fst_iface_is_connected(struct fst_iface *iface, const u8 *addr,
+			    bool mb_only);
 void fst_iface_attach_mbie(struct fst_iface *i, struct wpabuf *mbie);
 enum mb_band_id fst_iface_get_band_id(struct fst_iface *i);
 

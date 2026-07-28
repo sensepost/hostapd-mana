@@ -31,52 +31,50 @@ struct ieee802_1x_cp_sm {
 		CP_SECURED, CP_RECEIVE, CP_RECEIVING, CP_READY, CP_TRANSMIT,
 		CP_TRANSMITTING, CP_ABANDON, CP_RETIRE
 	} CP_state;
-	Boolean changed;
+	bool changed;
 
 	/* CP -> Client */
-	Boolean port_valid;
+	bool port_valid;
 
 	/* Logon -> CP */
 	enum connect_type connect;
-	u8 *authorization_data;
 
 	/* KaY -> CP */
-	Boolean chgd_server; /* clear by CP */
-	Boolean elected_self;
-	u8 *authorization_data1;
+	bool chgd_server; /* clear by CP */
+	bool elected_self;
 	enum confidentiality_offset cipher_offset;
 	u64 cipher_suite;
-	Boolean new_sak; /* clear by CP */
+	bool new_sak; /* clear by CP */
 	struct ieee802_1x_mka_ki distributed_ki;
 	u8 distributed_an;
-	Boolean using_receive_sas;
-	Boolean all_receiving;
-	Boolean server_transmitting;
-	Boolean using_transmit_sa;
+	bool using_receive_sas;
+	bool all_receiving;
+	bool server_transmitting;
+	bool using_transmit_sa;
 
 	/* CP -> KaY */
 	struct ieee802_1x_mka_ki *lki;
 	u8 lan;
-	Boolean ltx;
-	Boolean lrx;
+	bool ltx;
+	bool lrx;
 	struct ieee802_1x_mka_ki *oki;
 	u8 oan;
-	Boolean otx;
-	Boolean orx;
+	bool otx;
+	bool orx;
 
 	/* CP -> SecY */
-	Boolean protect_frames;
+	bool protect_frames;
 	enum validate_frames validate_frames;
 
-	Boolean replay_protect;
+	bool replay_protect;
 	u32 replay_window;
 
 	u64 current_cipher_suite;
 	enum confidentiality_offset confidentiality_offset;
-	Boolean controlled_port_enabled;
+	bool controlled_port_enabled;
 
 	/* SecY -> CP */
-	Boolean port_enabled; /* SecY->CP */
+	bool port_enabled; /* SecY->CP */
 
 	/* private */
 	u32 transmit_when;
@@ -111,23 +109,23 @@ SM_STATE(CP, INIT)
 {
 	SM_ENTRY(CP, INIT);
 
-	sm->controlled_port_enabled = FALSE;
+	sm->controlled_port_enabled = false;
 	secy_cp_control_enable_port(sm->kay, sm->controlled_port_enabled);
 
-	sm->port_valid = FALSE;
+	sm->port_valid = false;
 
 	os_free(sm->lki);
 	sm->lki = NULL;
-	sm->ltx = FALSE;
-	sm->lrx = FALSE;
+	sm->ltx = false;
+	sm->lrx = false;
 
 	os_free(sm->oki);
 	sm->oki = NULL;
-	sm->otx = FALSE;
-	sm->orx = FALSE;
+	sm->otx = false;
+	sm->orx = false;
 
-	sm->port_enabled = TRUE;
-	sm->chgd_server = FALSE;
+	sm->port_enabled = true;
+	sm->chgd_server = false;
 }
 
 
@@ -135,14 +133,32 @@ SM_STATE(CP, CHANGE)
 {
 	SM_ENTRY(CP, CHANGE);
 
-	sm->port_valid = FALSE;
-	sm->controlled_port_enabled = FALSE;
+	sm->port_valid = false;
+	sm->controlled_port_enabled = false;
 	secy_cp_control_enable_port(sm->kay, sm->controlled_port_enabled);
 
 	if (sm->lki)
 		ieee802_1x_kay_delete_sas(sm->kay, sm->lki);
 	if (sm->oki)
 		ieee802_1x_kay_delete_sas(sm->kay, sm->oki);
+	/* The standard doesn't say it but we should clear out the latest
+	 * and old key values. Why would we keep advertising them if
+	 * they've been deleted and the key server has been changed?
+	 */
+	os_free(sm->oki);
+	sm->oki = NULL;
+	sm->otx = false;
+	sm->orx = false;
+	sm->oan = 0;
+	ieee802_1x_kay_set_old_sa_attr(sm->kay, sm->oki, sm->oan,
+				       sm->otx, sm->orx);
+	os_free(sm->lki);
+	sm->lki = NULL;
+	sm->lrx = false;
+	sm->ltx = false;
+	sm->lan = 0;
+	ieee802_1x_kay_set_latest_sa_attr(sm->kay, sm->lki, sm->lan,
+					  sm->ltx, sm->lrx);
 }
 
 
@@ -150,15 +166,16 @@ SM_STATE(CP, ALLOWED)
 {
 	SM_ENTRY(CP, ALLOWED);
 
-	sm->protect_frames = FALSE;
-	sm->replay_protect = FALSE;
+	sm->protect_frames = false;
+	sm->replay_protect = false;
 	sm->validate_frames = Checked;
 
-	sm->port_valid = FALSE;
-	sm->controlled_port_enabled = TRUE;
+	sm->port_valid = false;
+	sm->controlled_port_enabled = true;
 
 	secy_cp_control_enable_port(sm->kay, sm->controlled_port_enabled);
 	secy_cp_control_protect_frames(sm->kay, sm->protect_frames);
+	secy_cp_control_encrypt(sm->kay, sm->kay->macsec_encrypt);
 	secy_cp_control_validate_frames(sm->kay, sm->validate_frames);
 	secy_cp_control_replay(sm->kay, sm->replay_protect, sm->replay_window);
 }
@@ -168,15 +185,16 @@ SM_STATE(CP, AUTHENTICATED)
 {
 	SM_ENTRY(CP, AUTHENTICATED);
 
-	sm->protect_frames = FALSE;
-	sm->replay_protect = FALSE;
+	sm->protect_frames = false;
+	sm->replay_protect = false;
 	sm->validate_frames = Checked;
 
-	sm->port_valid = FALSE;
-	sm->controlled_port_enabled = TRUE;
+	sm->port_valid = false;
+	sm->controlled_port_enabled = true;
 
 	secy_cp_control_enable_port(sm->kay, sm->controlled_port_enabled);
 	secy_cp_control_protect_frames(sm->kay, sm->protect_frames);
+	secy_cp_control_encrypt(sm->kay, sm->kay->macsec_encrypt);
 	secy_cp_control_validate_frames(sm->kay, sm->validate_frames);
 	secy_cp_control_replay(sm->kay, sm->replay_protect, sm->replay_window);
 }
@@ -186,7 +204,7 @@ SM_STATE(CP, SECURED)
 {
 	SM_ENTRY(CP, SECURED);
 
-	sm->chgd_server = FALSE;
+	sm->chgd_server = false;
 
 	sm->protect_frames = sm->kay->macsec_protect;
 	sm->replay_protect = sm->kay->macsec_replay_protect;
@@ -198,11 +216,12 @@ SM_STATE(CP, SECURED)
 
 	sm->confidentiality_offset = sm->cipher_offset;
 
-	sm->port_valid = TRUE;
+	sm->port_valid = true;
 
 	secy_cp_control_confidentiality_offset(sm->kay,
 					       sm->confidentiality_offset);
 	secy_cp_control_protect_frames(sm->kay, sm->protect_frames);
+	secy_cp_control_encrypt(sm->kay, sm->kay->macsec_encrypt);
 	secy_cp_control_validate_frames(sm->kay, sm->validate_frames);
 	secy_cp_control_replay(sm->kay, sm->replay_protect, sm->replay_window);
 }
@@ -211,14 +230,6 @@ SM_STATE(CP, SECURED)
 SM_STATE(CP, RECEIVE)
 {
 	SM_ENTRY(CP, RECEIVE);
-	/* RECEIVE state machine not keep with Figure 12-2 in
-	 * IEEE Std 802.1X-2010 */
-	sm->oki = sm->lki;
-	sm->oan = sm->lan;
-	sm->otx = sm->ltx;
-	sm->orx = sm->lrx;
-	ieee802_1x_kay_set_old_sa_attr(sm->kay, sm->oki, sm->oan,
-				       sm->otx, sm->orx);
 
 	sm->lki = os_malloc(sizeof(*sm->lki));
 	if (!sm->lki) {
@@ -227,14 +238,14 @@ SM_STATE(CP, RECEIVE)
 	}
 	os_memcpy(sm->lki, &sm->distributed_ki, sizeof(*sm->lki));
 	sm->lan = sm->distributed_an;
-	sm->ltx = FALSE;
-	sm->lrx = FALSE;
+	sm->ltx = false;
+	sm->lrx = false;
 	ieee802_1x_kay_set_latest_sa_attr(sm->kay, sm->lki, sm->lan,
 					  sm->ltx, sm->lrx);
 	ieee802_1x_kay_create_sas(sm->kay, sm->lki);
 	ieee802_1x_kay_enable_rx_sas(sm->kay, sm->lki);
-	sm->new_sak = FALSE;
-	sm->all_receiving = FALSE;
+	sm->new_sak = false;
+	sm->all_receiving = false;
 }
 
 
@@ -242,7 +253,7 @@ SM_STATE(CP, RECEIVING)
 {
 	SM_ENTRY(CP, RECEIVING);
 
-	sm->lrx = TRUE;
+	sm->lrx = true;
 	ieee802_1x_kay_set_latest_sa_attr(sm->kay, sm->lki, sm->lan,
 					  sm->ltx, sm->lrx);
 	sm->transmit_when = sm->transmit_delay;
@@ -253,8 +264,8 @@ SM_STATE(CP, RECEIVING)
 	 * but the CP will transmit from RECEIVING to READY under
 	 * the !electedSelf when KaY is not key server */
 	ieee802_1x_cp_sm_step(sm);
-	sm->using_receive_sas = FALSE;
-	sm->server_transmitting = FALSE;
+	sm->using_receive_sas = false;
+	sm->server_transmitting = false;
 }
 
 
@@ -270,14 +281,14 @@ SM_STATE(CP, TRANSMIT)
 {
 	SM_ENTRY(CP, TRANSMIT);
 
-	sm->controlled_port_enabled = TRUE;
+	sm->controlled_port_enabled = true;
 	secy_cp_control_enable_port(sm->kay, sm->controlled_port_enabled);
-	sm->ltx = TRUE;
+	sm->ltx = true;
 	ieee802_1x_kay_set_latest_sa_attr(sm->kay, sm->lki, sm->lan,
 					  sm->ltx, sm->lrx);
 	ieee802_1x_kay_enable_tx_sas(sm->kay,  sm->lki);
-	sm->all_receiving = FALSE;
-	sm->server_transmitting = FALSE;
+	sm->all_receiving = false;
+	sm->server_transmitting = false;
 }
 
 
@@ -285,21 +296,21 @@ SM_STATE(CP, TRANSMITTING)
 {
 	SM_ENTRY(CP, TRANSMITTING);
 	sm->retire_when = sm->orx ? sm->retire_delay : 0;
-	sm->otx = FALSE;
+	sm->otx = false;
 	ieee802_1x_kay_set_old_sa_attr(sm->kay, sm->oki, sm->oan,
 				       sm->otx, sm->orx);
 	ieee802_1x_kay_enable_new_info(sm->kay);
 	eloop_cancel_timeout(ieee802_1x_cp_retire_when_timeout, sm, NULL);
 	eloop_register_timeout(sm->retire_when / 1000, 0,
 			       ieee802_1x_cp_retire_when_timeout, sm, NULL);
-	sm->using_transmit_sa = FALSE;
+	sm->using_transmit_sa = false;
 }
 
 
 SM_STATE(CP, ABANDON)
 {
 	SM_ENTRY(CP, ABANDON);
-	sm->lrx = FALSE;
+	sm->lrx = false;
 	ieee802_1x_kay_set_latest_sa_attr(sm->kay, sm->lki, sm->lan,
 					  sm->ltx, sm->lrx);
 	ieee802_1x_kay_delete_sas(sm->kay, sm->lki);
@@ -308,21 +319,29 @@ SM_STATE(CP, ABANDON)
 	sm->lki = NULL;
 	ieee802_1x_kay_set_latest_sa_attr(sm->kay, sm->lki, sm->lan,
 					  sm->ltx, sm->lrx);
-	sm->new_sak = FALSE;
 }
 
 
 SM_STATE(CP, RETIRE)
 {
 	SM_ENTRY(CP, RETIRE);
-	/* RETIRE state machine not keep with Figure 12-2 in
-	 * IEEE Std 802.1X-2010 */
-	os_free(sm->oki);
-	sm->oki = NULL;
-	sm->orx = FALSE;
-	sm->otx = FALSE;
+	if (sm->oki) {
+		ieee802_1x_kay_delete_sas(sm->kay, sm->oki);
+		os_free(sm->oki);
+		sm->oki = NULL;
+	}
+	sm->oki = sm->lki;
+	sm->otx = sm->ltx;
+	sm->orx = sm->lrx;
+	sm->oan = sm->lan;
 	ieee802_1x_kay_set_old_sa_attr(sm->kay, sm->oki, sm->oan,
 				       sm->otx, sm->orx);
+	sm->lki = NULL;
+	sm->ltx = false;
+	sm->lrx = false;
+	sm->lan = 0;
+	ieee802_1x_kay_set_latest_sa_attr(sm->kay, sm->lki, sm->lan,
+					  sm->ltx, sm->lrx);
 }
 
 
@@ -380,7 +399,8 @@ SM_STEP(CP)
 		if (!sm->elected_self)
 			SM_ENTER(CP, READY);
 		if (sm->elected_self &&
-		    (sm->all_receiving || !sm->transmit_when))
+		    (sm->all_receiving || !sm->controlled_port_enabled ||
+		     !sm->transmit_when))
 			SM_ENTER(CP, TRANSMIT);
 		break;
 
@@ -403,8 +423,8 @@ SM_STEP(CP)
 
 	case CP_READY:
 		if (sm->new_sak || changed_connect(sm))
-			SM_ENTER(CP, RECEIVE);
-		if (sm->server_transmitting)
+			SM_ENTER(CP, ABANDON);
+		if (sm->server_transmitting || !sm->controlled_port_enabled)
 			SM_ENTER(CP, TRANSMIT);
 		break;
 	case CP_ABANDON:
@@ -435,23 +455,23 @@ struct ieee802_1x_cp_sm * ieee802_1x_cp_sm_init(struct ieee802_1x_kay *kay)
 
 	sm->kay = kay;
 
-	sm->port_valid = FALSE;
+	sm->port_valid = false;
 
-	sm->chgd_server = FALSE;
+	sm->chgd_server = false;
 
 	sm->protect_frames = kay->macsec_protect;
 	sm->validate_frames = kay->macsec_validate;
 	sm->replay_protect = kay->macsec_replay_protect;
 	sm->replay_window = kay->macsec_replay_window;
 
-	sm->controlled_port_enabled = FALSE;
+	sm->controlled_port_enabled = false;
 
 	sm->lki = NULL;
-	sm->lrx = FALSE;
-	sm->ltx = FALSE;
+	sm->lrx = false;
+	sm->ltx = false;
 	sm->oki = NULL;
-	sm->orx = FALSE;
-	sm->otx = FALSE;
+	sm->orx = false;
+	sm->otx = false;
 
 	sm->current_cipher_suite = default_cs_id;
 	sm->cipher_suite = default_cs_id;
@@ -460,19 +480,18 @@ struct ieee802_1x_cp_sm * ieee802_1x_cp_sm_init(struct ieee802_1x_kay *kay)
 	sm->transmit_delay = MKA_LIFE_TIME;
 	sm->retire_delay = MKA_SAK_RETIRE_TIME;
 	sm->CP_state = CP_BEGIN;
-	sm->changed = FALSE;
-	sm->authorization_data = NULL;
+	sm->changed = false;
 
 	wpa_printf(MSG_DEBUG, "CP: state machine created");
 
 	secy_cp_control_protect_frames(sm->kay, sm->protect_frames);
+	secy_cp_control_encrypt(sm->kay, sm->kay->macsec_encrypt);
 	secy_cp_control_validate_frames(sm->kay, sm->validate_frames);
 	secy_cp_control_replay(sm->kay, sm->replay_protect, sm->replay_window);
 	secy_cp_control_enable_port(sm->kay, sm->controlled_port_enabled);
 	secy_cp_control_confidentiality_offset(sm->kay,
 					       sm->confidentiality_offset);
 
-	SM_ENTER(CP, INIT);
 	SM_STEP_RUN(CP);
 
 	return sm;
@@ -514,7 +533,6 @@ void ieee802_1x_cp_sm_deinit(struct ieee802_1x_cp_sm *sm)
 	eloop_cancel_timeout(ieee802_1x_cp_step_cb, sm, NULL);
 	os_free(sm->lki);
 	os_free(sm->oki);
-	os_free(sm->authorization_data);
 	os_free(sm);
 }
 
@@ -570,30 +588,17 @@ void ieee802_1x_cp_signal_chgdserver(void *cp_ctx)
 {
 	struct ieee802_1x_cp_sm *sm = cp_ctx;
 
-	sm->chgd_server = TRUE;
+	sm->chgd_server = true;
 }
 
 
 /**
  * ieee802_1x_cp_set_electedself -
  */
-void ieee802_1x_cp_set_electedself(void *cp_ctx, Boolean status)
+void ieee802_1x_cp_set_electedself(void *cp_ctx, bool status)
 {
 	struct ieee802_1x_cp_sm *sm = cp_ctx;
 	sm->elected_self = status;
-}
-
-
-/**
- * ieee802_1x_cp_set_authorizationdata -
- */
-void ieee802_1x_cp_set_authorizationdata(void *cp_ctx, u8 *pdata, int len)
-{
-	struct ieee802_1x_cp_sm *sm = cp_ctx;
-	os_free(sm->authorization_data);
-	sm->authorization_data = os_zalloc(len);
-	if (sm->authorization_data)
-		os_memcpy(sm->authorization_data, pdata, len);
 }
 
 
@@ -623,7 +628,7 @@ void ieee802_1x_cp_set_offset(void *cp_ctx, enum confidentiality_offset offset)
 void ieee802_1x_cp_signal_newsak(void *cp_ctx)
 {
 	struct ieee802_1x_cp_sm *sm = cp_ctx;
-	sm->new_sak = TRUE;
+	sm->new_sak = true;
 }
 
 
@@ -651,7 +656,7 @@ void ieee802_1x_cp_set_distributedan(void *cp_ctx, u8 an)
 /**
  * ieee802_1x_cp_set_usingreceivesas -
  */
-void ieee802_1x_cp_set_usingreceivesas(void *cp_ctx, Boolean status)
+void ieee802_1x_cp_set_usingreceivesas(void *cp_ctx, bool status)
 {
 	struct ieee802_1x_cp_sm *sm = cp_ctx;
 	sm->using_receive_sas = status;
@@ -661,7 +666,7 @@ void ieee802_1x_cp_set_usingreceivesas(void *cp_ctx, Boolean status)
 /**
  * ieee802_1x_cp_set_allreceiving -
  */
-void ieee802_1x_cp_set_allreceiving(void *cp_ctx, Boolean status)
+void ieee802_1x_cp_set_allreceiving(void *cp_ctx, bool status)
 {
 	struct ieee802_1x_cp_sm *sm = cp_ctx;
 	sm->all_receiving = status;
@@ -671,7 +676,7 @@ void ieee802_1x_cp_set_allreceiving(void *cp_ctx, Boolean status)
 /**
  * ieee802_1x_cp_set_servertransmitting -
  */
-void ieee802_1x_cp_set_servertransmitting(void *cp_ctx, Boolean status)
+void ieee802_1x_cp_set_servertransmitting(void *cp_ctx, bool status)
 {
 	struct ieee802_1x_cp_sm *sm = cp_ctx;
 	sm->server_transmitting = status;
@@ -681,7 +686,7 @@ void ieee802_1x_cp_set_servertransmitting(void *cp_ctx, Boolean status)
 /**
  * ieee802_1x_cp_set_usingtransmitsas -
  */
-void ieee802_1x_cp_set_usingtransmitas(void *cp_ctx, Boolean status)
+void ieee802_1x_cp_set_usingtransmitas(void *cp_ctx, bool status)
 {
 	struct ieee802_1x_cp_sm *sm = cp_ctx;
 	sm->using_transmit_sa = status;

@@ -126,12 +126,10 @@ static TNC_Result TNC_TNCC_ReportMessageTypes(
 
 	imc = tnc_imc[imcID];
 	os_free(imc->supported_types);
-	imc->supported_types =
-		os_malloc(typeCount * sizeof(TNC_MessageType));
+	imc->supported_types = os_memdup(supportedTypes,
+					 typeCount * sizeof(TNC_MessageType));
 	if (imc->supported_types == NULL)
 		return TNC_RESULT_FATAL;
-	os_memcpy(imc->supported_types, supportedTypes,
-		  typeCount * sizeof(TNC_MessageType));
 	imc->num_supported_types = typeCount;
 
 	return TNC_RESULT_SUCCESS;
@@ -146,7 +144,7 @@ static TNC_Result TNC_TNCC_SendMessage(
 	TNC_MessageType messageType)
 {
 	struct tnc_if_imc *imc;
-	unsigned char *b64;
+	char *b64;
 	size_t b64len;
 
 	wpa_printf(MSG_DEBUG, "TNC: TNC_TNCC_SendMessage(imcID=%lu "
@@ -631,8 +629,7 @@ static unsigned char * tncc_get_base64(char *start, size_t *decoded_len)
 		return NULL;
 	*pos2 = '\0';
 
-	decoded = base64_decode((unsigned char *) pos, os_strlen(pos),
-				decoded_len);
+	decoded = base64_decode(pos, os_strlen(pos), decoded_len);
 	*pos2 = '<';
 	if (decoded == NULL) {
 		wpa_printf(MSG_DEBUG, "TNC: Failed to decode Base64 data");

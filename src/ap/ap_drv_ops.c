@@ -10,6 +10,7 @@
 
 #include "utils/common.h"
 #include "common/ieee802_11_defs.h"
+#include "common/ieee802_11_common.h"
 #include "common/hw_features_common.h"
 #include "wps/wps.h"
 #include "p2p/p2p.h"
@@ -19,6 +20,7 @@
 #include "ap_config.h"
 #include "p2p_hostapd.h"
 #include "hs20.h"
+#include "wpa_auth.h"
 #include "ap_drv_ops.h"
 
 
@@ -99,6 +101,17 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 		goto fail;
 #endif /* CONFIG_FST */
 
+#ifdef CONFIG_FILS
+	pos = hostapd_eid_fils_indic(hapd, buf, 0);
+	if (add_buf_data(&beacon, buf, pos - buf) < 0 ||
+	    add_buf_data(&proberesp, buf, pos - buf) < 0)
+		goto fail;
+#endif /* CONFIG_FILS */
+
+	pos = hostapd_eid_rsnxe(hapd, buf, sizeof(buf));
+	if (add_buf_data(&assocresp, buf, pos - buf) < 0)
+		goto fail;
+
 	if (add_buf(&beacon, hapd->wps_beacon_ie) < 0 ||
 	    add_buf(&proberesp, hapd->wps_probe_resp_ie) < 0)
 		goto fail;
@@ -168,7 +181,8 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 #endif /* CONFIG_HS20 */
 
 #ifdef CONFIG_MBO
-	if (hapd->conf->mbo_enabled) {
+	if (hapd->conf->mbo_enabled ||
+	    OCE_STA_CFON_ENABLED(hapd) || OCE_AP_ENABLED(hapd)) {
 		pos = hostapd_eid_mbo(hapd, buf, sizeof(buf));
 		if (add_buf_data(&beacon, buf, pos - buf) < 0 ||
 		    add_buf_data(&proberesp, buf, pos - buf) < 0 ||
@@ -176,6 +190,13 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
 			goto fail;
 	}
 #endif /* CONFIG_MBO */
+
+#ifdef CONFIG_OWE
+	pos = hostapd_eid_owe_trans(hapd, buf, sizeof(buf));
+	if (add_buf_data(&beacon, buf, pos - buf) < 0 ||
+	    add_buf_data(&proberesp, buf, pos - buf) < 0)
+		goto fail;
+#endif /* CONFIG_OWE */
 
 	add_buf(&beacon, hapd->conf->vendor_elements);
 	add_buf(&proberesp, hapd->conf->vendor_elements);
@@ -289,9 +310,7 @@ int hostapd_set_drv_ieee8021x(struct hostapd_data *hapd, const char *ifname,
 			params.wpa_pairwise = hapd->conf->wpa_pairwise;
 		params.wpa_key_mgmt = hapd->conf->wpa_key_mgmt;
 		params.rsn_preauth = hapd->conf->rsn_preauth;
-#ifdef CONFIG_IEEE80211W
 		params.ieee80211w = hapd->conf->ieee80211w;
-#endif /* CONFIG_IEEE80211W */
 	}
 	return hostapd_set_ieee8021x(hapd, &params);
 }
@@ -332,7 +351,7 @@ int hostapd_add_sta_node(struct hostapd_data *hapd, const u8 *addr,
 			 u16 auth_alg)
 {
 	if (hapd->driver == NULL || hapd->driver->add_sta_node == NULL)
-		return 0;
+		return -EOPNOTSUPP;
 	return hapd->driver->add_sta_node(hapd->drv_priv, addr, auth_alg);
 }
 
@@ -340,10 +359,44 @@ int hostapd_add_sta_node(struct hostapd_data *hapd, const u8 *addr,
 int hostapd_sta_auth(struct hostapd_data *hapd, const u8 *addr,
 		     u16 seq, u16 status, const u8 *ie, size_t len)
 {
+	struct wpa_driver_sta_auth_params params;
+#ifdef CONFIG_FILS
+	struct sta_info *sta;
+#endif /* CONFIG_FILS */
+
 	if (hapd->driver == NULL || hapd->driver->sta_auth == NULL)
 		return 0;
-	return hapd->driver->sta_auth(hapd->drv_priv, hapd->own_addr, addr,
-				      seq, status, ie, len);
+
+	os_memset(&params, 0, sizeof(params));
+
+#ifdef CONFIG_FILS
+	sta = ap_get_sta(hapd, addr);
+	if (!sta) {
+		wpa_printf(MSG_DEBUG, "Station " MACSTR
+			   " not found for sta_auth processing",
+			   MAC2STR(addr));
+		return 0;
+	}
+
+	if (sta->auth_alg == WLAN_AUTH_FILS_SK ||
+	    sta->auth_alg == WLAN_AUTH_FILS_SK_PFS ||
+	    sta->auth_alg == WLAN_AUTH_FILS_PK) {
+		params.fils_auth = 1;
+		wpa_auth_get_fils_aead_params(sta->wpa_sm, params.fils_anonce,
+					      params.fils_snonce,
+					      params.fils_kek,
+					      &params.fils_kek_len);
+	}
+#endif /* CONFIG_FILS */
+
+	params.own_addr = hapd->own_addr;
+	params.addr = addr;
+	params.seq = seq;
+	params.status = status;
+	params.ie = ie;
+	params.len = len;
+
+	return hapd->driver->sta_auth(hapd->drv_priv, &params);
 }
 
 
@@ -363,6 +416,9 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 		    u16 listen_interval,
 		    const struct ieee80211_ht_capabilities *ht_capab,
 		    const struct ieee80211_vht_capabilities *vht_capab,
+		    const struct ieee80211_he_capabilities *he_capab,
+		    size_t he_capab_len,
+		    const struct ieee80211_he_6ghz_band_cap *he_6ghz_capab,
 		    u32 flags, u8 qosinfo, u8 vht_opmode, int supp_p2p_ps,
 		    int set)
 {
@@ -382,6 +438,9 @@ int hostapd_sta_add(struct hostapd_data *hapd,
 	params.listen_interval = listen_interval;
 	params.ht_capabilities = ht_capab;
 	params.vht_capabilities = vht_capab;
+	params.he_capab = he_capab;
+	params.he_capab_len = he_capab_len;
+	params.he_6ghz_capab = he_6ghz_capab;
 	params.vht_opmode_enabled = !!(flags & WLAN_STA_VHT_OPMODE_ENABLED);
 	params.vht_opmode = vht_opmode;
 	params.flags = hostapd_sta_flags_to_drv(flags);
@@ -486,18 +545,23 @@ int hostapd_flush(struct hostapd_data *hapd)
 
 
 int hostapd_set_freq(struct hostapd_data *hapd, enum hostapd_hw_mode mode,
-		     int freq, int channel, int ht_enabled, int vht_enabled,
-		     int sec_channel_offset, int vht_oper_chwidth,
+		     int freq, int channel, int edmg, u8 edmg_channel,
+		     int ht_enabled, int vht_enabled,
+		     int he_enabled,
+		     int sec_channel_offset, int oper_chwidth,
 		     int center_segment0, int center_segment1)
 {
 	struct hostapd_freq_params data;
+	struct hostapd_hw_modes *cmode = hapd->iface->current_mode;
 
-	if (hostapd_set_freq_params(&data, mode, freq, channel, ht_enabled,
-				    vht_enabled, sec_channel_offset,
-				    vht_oper_chwidth,
+	if (hostapd_set_freq_params(&data, mode, freq, channel, edmg,
+				    edmg_channel, ht_enabled,
+				    vht_enabled, he_enabled, sec_channel_offset,
+				    oper_chwidth,
 				    center_segment0, center_segment1,
-				    hapd->iface->current_mode ?
-				    hapd->iface->current_mode->vht_capab : 0))
+				    cmode ? cmode->vht_capab : 0,
+				    cmode ?
+				    &cmode->he_capab[IEEE80211_MODE_AP] : NULL))
 		return -1;
 
 	if (hapd->driver == NULL)
@@ -526,10 +590,20 @@ int hostapd_set_frag(struct hostapd_data *hapd, int frag)
 int hostapd_sta_set_flags(struct hostapd_data *hapd, u8 *addr,
 			  int total_flags, int flags_or, int flags_and)
 {
-	if (hapd->driver == NULL || hapd->driver->sta_set_flags == NULL)
+	if (!hapd->driver || !hapd->drv_priv || !hapd->driver->sta_set_flags)
 		return 0;
 	return hapd->driver->sta_set_flags(hapd->drv_priv, addr, total_flags,
 					   flags_or, flags_and);
+}
+
+
+int hostapd_sta_set_airtime_weight(struct hostapd_data *hapd, const u8 *addr,
+				   unsigned int weight)
+{
+	if (!hapd->driver || !hapd->driver->sta_set_airtime_weight)
+		return 0;
+	return hapd->driver->sta_set_airtime_weight(hapd->drv_priv, addr,
+						    weight);
 }
 
 
@@ -554,13 +628,13 @@ int hostapd_set_tx_queue_params(struct hostapd_data *hapd, int queue, int aifs,
 
 struct hostapd_hw_modes *
 hostapd_get_hw_feature_data(struct hostapd_data *hapd, u16 *num_modes,
-			    u16 *flags)
+			    u16 *flags, u8 *dfs_domain)
 {
 	if (hapd->driver == NULL ||
 	    hapd->driver->get_hw_feature_data == NULL)
 		return NULL;
 	return hapd->driver->get_hw_feature_data(hapd->drv_priv, num_modes,
-						 flags);
+						 flags, dfs_domain);
 }
 
 
@@ -575,6 +649,12 @@ int hostapd_driver_commit(struct hostapd_data *hapd)
 int hostapd_drv_none(struct hostapd_data *hapd)
 {
 	return hapd->driver && os_strcmp(hapd->driver->name, "none") == 0;
+}
+
+
+bool hostapd_drv_nl80211(struct hostapd_data *hapd)
+{
+	return hapd->driver && os_strcmp(hapd->driver->name, "nl80211") == 0;
 }
 
 
@@ -608,36 +688,41 @@ int hostapd_driver_set_noa(struct hostapd_data *hapd, u8 count, int start,
 
 int hostapd_drv_set_key(const char *ifname, struct hostapd_data *hapd,
 			enum wpa_alg alg, const u8 *addr,
-			int key_idx, int set_tx,
+			int key_idx, int vlan_id, int set_tx,
 			const u8 *seq, size_t seq_len,
-			const u8 *key, size_t key_len)
+			const u8 *key, size_t key_len, enum key_flag key_flag)
 {
+	struct wpa_driver_set_key_params params;
+
 	if (hapd->driver == NULL || hapd->driver->set_key == NULL)
 		return 0;
-	return hapd->driver->set_key(ifname, hapd->drv_priv, alg, addr,
-				     key_idx, set_tx, seq, seq_len, key,
-				     key_len);
+
+	os_memset(&params, 0, sizeof(params));
+	params.ifname = ifname;
+	params.alg = alg;
+	params.addr = addr;
+	params.key_idx = key_idx;
+	params.set_tx = set_tx;
+	params.seq = seq;
+	params.seq_len = seq_len;
+	params.key = key;
+	params.key_len = key_len;
+	params.vlan_id = vlan_id;
+	params.key_flag = key_flag;
+
+	return hapd->driver->set_key(hapd->drv_priv, &params);
 }
 
 
 int hostapd_drv_send_mlme(struct hostapd_data *hapd,
-			  const void *msg, size_t len, int noack)
+			  const void *msg, size_t len, int noack,
+			  const u16 *csa_offs, size_t csa_offs_len,
+			  int no_encrypt)
 {
 	if (!hapd->driver || !hapd->driver->send_mlme || !hapd->drv_priv)
 		return 0;
 	return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack, 0,
-				       NULL, 0);
-}
-
-
-int hostapd_drv_send_mlme_csa(struct hostapd_data *hapd,
-			      const void *msg, size_t len, int noack,
-			      const u16 *csa_offs, size_t csa_offs_len)
-{
-	if (hapd->driver == NULL || hapd->driver->send_mlme == NULL)
-		return 0;
-	return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack, 0,
-				       csa_offs, csa_offs_len);
+				       csa_offs, csa_offs_len, no_encrypt, 0);
 }
 
 
@@ -694,6 +779,15 @@ int hostapd_drv_send_action(struct hostapd_data *hapd, unsigned int freq,
 		sta = ap_get_sta(hapd, dst);
 		if (!sta || !(sta->flags & WLAN_STA_ASSOC))
 			bssid = wildcard_bssid;
+	} else if (is_broadcast_ether_addr(dst) &&
+		   len > 0 && data[0] == WLAN_ACTION_PUBLIC) {
+		/*
+		 * The only current use case of Public Action frames with
+		 * broadcast destination address is DPP PKEX. That case is
+		 * directing all devices and not just the STAs within the BSS,
+		 * so have to use the wildcard BSSID value.
+		 */
+		bssid = wildcard_bssid;
 	}
 	return hapd->driver->send_action(hapd->drv_priv, freq, wait, dst,
 					 hapd->own_addr, bssid, data, len, 0);
@@ -716,14 +810,16 @@ int hostapd_drv_send_action_addr3_ap(struct hostapd_data *hapd,
 int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 			  enum hostapd_hw_mode mode, int freq,
 			  int channel, int ht_enabled, int vht_enabled,
-			  int sec_channel_offset, int vht_oper_chwidth,
+			  int he_enabled,
+			  int sec_channel_offset, int oper_chwidth,
 			  int center_segment0, int center_segment1)
 {
 	struct hostapd_data *hapd = iface->bss[0];
 	struct hostapd_freq_params data;
 	int res;
+	struct hostapd_hw_modes *cmode = iface->current_mode;
 
-	if (!hapd->driver || !hapd->driver->start_dfs_cac)
+	if (!hapd->driver || !hapd->driver->start_dfs_cac || !cmode)
 		return 0;
 
 	if (!iface->conf->ieee80211h) {
@@ -732,11 +828,13 @@ int hostapd_start_dfs_cac(struct hostapd_iface *iface,
 		return -1;
 	}
 
-	if (hostapd_set_freq_params(&data, mode, freq, channel, ht_enabled,
-				    vht_enabled, sec_channel_offset,
-				    vht_oper_chwidth, center_segment0,
+	if (hostapd_set_freq_params(&data, mode, freq, channel, 0, 0,
+				    ht_enabled,
+				    vht_enabled, he_enabled, sec_channel_offset,
+				    oper_chwidth, center_segment0,
 				    center_segment1,
-				    iface->current_mode->vht_capab)) {
+				    cmode->vht_capab,
+				    &cmode->he_capab[IEEE80211_MODE_AP])) {
 		wpa_printf(MSG_ERROR, "Can't set freq params");
 		return -1;
 	}
@@ -771,10 +869,27 @@ static void hostapd_get_hw_mode_any_channels(struct hostapd_data *hapd,
 	for (i = 0; i < mode->num_channels; i++) {
 		struct hostapd_channel_data *chan = &mode->channels[i];
 
-		if ((acs_ch_list_all ||
-		     freq_range_list_includes(&hapd->iface->conf->acs_ch_list,
-					      chan->chan)) &&
-		    !(chan->flag & HOSTAPD_CHAN_DISABLED))
+		if (!acs_ch_list_all &&
+		    (hapd->iface->conf->acs_freq_list.num &&
+		     !freq_range_list_includes(
+			     &hapd->iface->conf->acs_freq_list,
+			     chan->freq)))
+			continue;
+		if (!acs_ch_list_all &&
+		    (!hapd->iface->conf->acs_freq_list_present &&
+		     hapd->iface->conf->acs_ch_list.num &&
+		     !freq_range_list_includes(
+			     &hapd->iface->conf->acs_ch_list,
+			     chan->chan)))
+			continue;
+		if (is_6ghz_freq(chan->freq) &&
+		    hapd->iface->conf->acs_exclude_6ghz_non_psc &&
+		    !is_6ghz_psc_frequency(chan->freq))
+			continue;
+		if (!(chan->flag & HOSTAPD_CHAN_DISABLED) &&
+		    !(hapd->iface->conf->acs_exclude_dfs &&
+		      (chan->flag & HOSTAPD_CHAN_RADAR)) &&
+		    !(chan->max_tx_power < hapd->iface->conf->min_tx_power))
 			int_array_add_unique(freq_list, chan->freq);
 	}
 }
@@ -798,10 +913,9 @@ int hostapd_drv_do_acs(struct hostapd_data *hapd)
 {
 	struct drv_acs_params params;
 	int ret, i, acs_ch_list_all = 0;
-	u8 *channels = NULL;
-	unsigned int num_channels = 0;
 	struct hostapd_hw_modes *mode;
 	int *freq_list = NULL;
+	enum hostapd_hw_mode selected_mode;
 
 	if (hapd->driver == NULL || hapd->driver->do_acs == NULL)
 		return 0;
@@ -813,39 +927,27 @@ int hostapd_drv_do_acs(struct hostapd_data *hapd)
 	 * If no chanlist config parameter is provided, include all enabled
 	 * channels of the selected hw_mode.
 	 */
-	if (!hapd->iface->conf->acs_ch_list.num)
-		acs_ch_list_all = 1;
+	if (hapd->iface->conf->acs_freq_list_present)
+		acs_ch_list_all = !hapd->iface->conf->acs_freq_list.num;
+	else
+		acs_ch_list_all = !hapd->iface->conf->acs_ch_list.num;
 
-	mode = hapd->iface->current_mode;
-	if (mode) {
-		channels = os_malloc(mode->num_channels);
-		if (channels == NULL)
-			return -1;
+	if (hapd->iface->current_mode)
+		selected_mode = hapd->iface->current_mode->mode;
+	else
+		selected_mode = HOSTAPD_MODE_IEEE80211ANY;
 
-		for (i = 0; i < mode->num_channels; i++) {
-			struct hostapd_channel_data *chan = &mode->channels[i];
-			if (!acs_ch_list_all &&
-			    !freq_range_list_includes(
-				    &hapd->iface->conf->acs_ch_list,
-				    chan->chan))
-				continue;
-			if (!(chan->flag & HOSTAPD_CHAN_DISABLED)) {
-				channels[num_channels++] = chan->chan;
-				int_array_add_unique(&freq_list, chan->freq);
-			}
-		}
-	} else {
-		for (i = 0; i < hapd->iface->num_hw_features; i++) {
-			mode = &hapd->iface->hw_features[i];
-			hostapd_get_hw_mode_any_channels(hapd, mode,
-							 acs_ch_list_all,
-							 &freq_list);
-		}
+	for (i = 0; i < hapd->iface->num_hw_features; i++) {
+		mode = &hapd->iface->hw_features[i];
+		if (selected_mode != HOSTAPD_MODE_IEEE80211ANY &&
+		    selected_mode != mode->mode)
+			continue;
+		hostapd_get_hw_mode_any_channels(hapd, mode, acs_ch_list_all,
+						 &freq_list);
 	}
 
-	params.ch_list = channels;
-	params.ch_list_len = num_channels;
 	params.freq_list = freq_list;
+	params.edmg_enabled = hapd->iface->conf->enable_edmg;
 
 	params.ht_enabled = !!(hapd->iface->conf->ieee80211n);
 	params.ht40_enabled = !!(hapd->iface->conf->ht_capab &
@@ -855,20 +957,43 @@ int hostapd_drv_do_acs(struct hostapd_data *hapd)
 	if (hapd->iface->conf->ieee80211n && params.ht40_enabled)
 		params.ch_width = 40;
 
-	/* Note: VHT20 is defined by combination of ht_capab & vht_oper_chwidth
+	/* Note: VHT20 is defined by combination of ht_capab & oper_chwidth
 	 */
-	if (hapd->iface->conf->ieee80211ac && params.ht40_enabled) {
-		if (hapd->iface->conf->vht_oper_chwidth == VHT_CHANWIDTH_80MHZ)
+	if ((hapd->iface->conf->ieee80211ax ||
+	     hapd->iface->conf->ieee80211ac) &&
+	    params.ht40_enabled) {
+		u8 oper_chwidth = hostapd_get_oper_chwidth(hapd->iface->conf);
+
+		if (oper_chwidth == CHANWIDTH_80MHZ)
 			params.ch_width = 80;
-		else if (hapd->iface->conf->vht_oper_chwidth ==
-			 VHT_CHANWIDTH_160MHZ ||
-			 hapd->iface->conf->vht_oper_chwidth ==
-			 VHT_CHANWIDTH_80P80MHZ)
+		else if (oper_chwidth == CHANWIDTH_160MHZ ||
+			 oper_chwidth == CHANWIDTH_80P80MHZ)
 			params.ch_width = 160;
 	}
 
+	if (hapd->iface->conf->op_class)
+		params.ch_width = op_class_to_bandwidth(
+			hapd->iface->conf->op_class);
 	ret = hapd->driver->do_acs(hapd->drv_priv, &params);
-	os_free(channels);
+	os_free(freq_list);
 
 	return ret;
+}
+
+
+int hostapd_drv_update_dh_ie(struct hostapd_data *hapd, const u8 *peer,
+			     u16 reason_code, const u8 *ie, size_t ielen)
+{
+	if (!hapd->driver || !hapd->driver->update_dh_ie || !hapd->drv_priv)
+		return 0;
+	return hapd->driver->update_dh_ie(hapd->drv_priv, peer, reason_code,
+					  ie, ielen);
+}
+
+
+int hostapd_drv_dpp_listen(struct hostapd_data *hapd, bool enable)
+{
+	if (!hapd->driver || !hapd->driver->dpp_listen || !hapd->drv_priv)
+		return 0;
+	return hapd->driver->dpp_listen(hapd->drv_priv, enable);
 }

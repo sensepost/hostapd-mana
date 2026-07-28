@@ -68,7 +68,7 @@ struct eloop_signal {
 };
 
 struct eloop_sock_table {
-	int count;
+	size_t count;
 	struct eloop_sock *table;
 	eloop_event_type type;
 	int changed;
@@ -77,10 +77,10 @@ struct eloop_sock_table {
 struct eloop_data {
 	int max_sock;
 
-	int count; /* sum of all table counts */
+	size_t count; /* sum of all table counts */
 #ifdef CONFIG_ELOOP_POLL
-	int max_pollfd_map; /* number of pollfds_map currently allocated */
-	int max_poll_fds; /* number of pollfds currently allocated */
+	size_t max_pollfd_map; /* number of pollfds_map currently allocated */
+	size_t max_poll_fds; /* number of pollfds currently allocated */
 	struct pollfd *pollfds;
 	struct pollfd **pollfds_map;
 #endif /* CONFIG_ELOOP_POLL */
@@ -90,12 +90,12 @@ struct eloop_data {
 #endif /* CONFIG_ELOOP_EPOLL || CONFIG_ELOOP_KQUEUE */
 #ifdef CONFIG_ELOOP_EPOLL
 	int epollfd;
-	int epoll_max_event_num;
+	size_t epoll_max_event_num;
 	struct epoll_event *epoll_events;
 #endif /* CONFIG_ELOOP_EPOLL */
 #ifdef CONFIG_ELOOP_KQUEUE
 	int kqueuefd;
-	int kqueue_nevents;
+	size_t kqueue_nevents;
 	struct kevent *kqueue_events;
 #endif /* CONFIG_ELOOP_KQUEUE */
 	struct eloop_sock_table readers;
@@ -104,7 +104,7 @@ struct eloop_data {
 
 	struct dl_list timeout;
 
-	int signal_count;
+	size_t signal_count;
 	struct eloop_signal *signals;
 	int signaled;
 	int pending_terminate;
@@ -125,7 +125,8 @@ static void eloop_sigsegv_handler(int sig)
 
 static void eloop_trace_sock_add_ref(struct eloop_sock_table *table)
 {
-	int i;
+	size_t i;
+
 	if (table == NULL || table->table == NULL)
 		return;
 	for (i = 0; i < table->count; i++) {
@@ -139,7 +140,8 @@ static void eloop_trace_sock_add_ref(struct eloop_sock_table *table)
 
 static void eloop_trace_sock_remove_ref(struct eloop_sock_table *table)
 {
-	int i;
+	size_t i;
+
 	if (table == NULL || table->table == NULL)
 		return;
 	for (i = 0; i < table->count; i++) {
@@ -224,22 +226,25 @@ static int eloop_sock_queue(int sock, eloop_event_type type)
 
 
 #ifdef CONFIG_ELOOP_KQUEUE
-static int eloop_sock_queue(int sock, eloop_event_type type)
-{
-	int filter;
-	struct kevent ke;
 
+static short event_type_kevent_filter(eloop_event_type type)
+{
 	switch (type) {
 	case EVENT_TYPE_READ:
-		filter = EVFILT_READ;
-		break;
+		return EVFILT_READ;
 	case EVENT_TYPE_WRITE:
-		filter = EVFILT_WRITE;
-		break;
+		return EVFILT_WRITE;
 	default:
-		filter = 0;
+		return 0;
 	}
-	EV_SET(&ke, sock, filter, EV_ADD, 0, 0, 0);
+}
+
+
+static int eloop_sock_queue(int sock, eloop_event_type type)
+{
+	struct kevent ke;
+
+	EV_SET(&ke, sock, event_type_kevent_filter(type), EV_ADD, 0, 0, 0);
 	if (kevent(eloop.kqueuefd, &ke, 1, NULL, 0, NULL) == -1) {
 		wpa_printf(MSG_ERROR, "%s: kevent(ADD) for fd=%d failed: %s",
 			   __func__, sock, strerror(errno));
@@ -247,6 +252,7 @@ static int eloop_sock_queue(int sock, eloop_event_type type)
 	}
 	return 0;
 }
+
 #endif /* CONFIG_ELOOP_KQUEUE */
 
 
@@ -262,7 +268,7 @@ static int eloop_sock_table_add_sock(struct eloop_sock_table *table,
 #endif /* CONFIG_ELOOP_EPOLL */
 #if defined(CONFIG_ELOOP_EPOLL) || defined(CONFIG_ELOOP_KQUEUE)
 	struct eloop_sock *temp_table;
-	int next;
+	size_t next;
 #endif /* CONFIG_ELOOP_EPOLL || CONFIG_ELOOP_KQUEUE */
 	struct eloop_sock *tmp;
 	int new_max_sock;
@@ -276,7 +282,7 @@ static int eloop_sock_table_add_sock(struct eloop_sock_table *table,
 		return -1;
 
 #ifdef CONFIG_ELOOP_POLL
-	if (new_max_sock >= eloop.max_pollfd_map) {
+	if ((size_t) new_max_sock >= eloop.max_pollfd_map) {
 		struct pollfd **nmap;
 		nmap = os_realloc_array(eloop.pollfds_map, new_max_sock + 50,
 					sizeof(struct pollfd *));
@@ -289,7 +295,8 @@ static int eloop_sock_table_add_sock(struct eloop_sock_table *table,
 
 	if (eloop.count + 1 > eloop.max_poll_fds) {
 		struct pollfd *n;
-		int nmax = eloop.count + 1 + 50;
+		size_t nmax = eloop.count + 1 + 50;
+
 		n = os_realloc_array(eloop.pollfds, nmax,
 				     sizeof(struct pollfd));
 		if (n == NULL)
@@ -301,7 +308,7 @@ static int eloop_sock_table_add_sock(struct eloop_sock_table *table,
 #endif /* CONFIG_ELOOP_POLL */
 #if defined(CONFIG_ELOOP_EPOLL) || defined(CONFIG_ELOOP_KQUEUE)
 	if (new_max_sock >= eloop.max_fd) {
-		next = eloop.max_fd == 0 ? 16 : eloop.max_fd * 2;
+		next = new_max_sock + 16;
 		temp_table = os_realloc_array(eloop.fd_table, next,
 					      sizeof(struct eloop_sock));
 		if (temp_table == NULL)
@@ -381,7 +388,7 @@ static void eloop_sock_table_remove_sock(struct eloop_sock_table *table,
 #ifdef CONFIG_ELOOP_KQUEUE
 	struct kevent ke;
 #endif /* CONFIG_ELOOP_KQUEUE */
-	int i;
+	size_t i;
 
 	if (table == NULL || table->table == NULL || table->count == 0)
 		return;
@@ -411,7 +418,8 @@ static void eloop_sock_table_remove_sock(struct eloop_sock_table *table,
 	os_memset(&eloop.fd_table[sock], 0, sizeof(struct eloop_sock));
 #endif /* CONFIG_ELOOP_EPOLL */
 #ifdef CONFIG_ELOOP_KQUEUE
-	EV_SET(&ke, sock, 0, EV_DELETE, 0, 0, 0);
+	EV_SET(&ke, sock, event_type_kevent_filter(table->type), EV_DELETE, 0,
+	       0, 0);
 	if (kevent(eloop.kqueuefd, &ke, 1, NULL, 0, NULL) < 0) {
 		wpa_printf(MSG_ERROR, "%s: kevent(DEL) for fd=%d failed: %s",
 			   __func__, sock, strerror(errno));
@@ -439,7 +447,7 @@ static int eloop_sock_table_set_fds(struct eloop_sock_table *readers,
 				    struct pollfd **pollfds_map,
 				    int max_pollfd_map)
 {
-	int i;
+	size_t i;
 	int nxt = 0;
 	int fd;
 	struct pollfd *pfd;
@@ -514,7 +522,7 @@ static int eloop_sock_table_dispatch_table(struct eloop_sock_table *table,
 					   int max_pollfd_map,
 					   short int revents)
 {
-	int i;
+	size_t i;
 	struct pollfd *pfd;
 
 	if (!table || !table->table)
@@ -567,7 +575,7 @@ static void eloop_sock_table_dispatch(struct eloop_sock_table *readers,
 static void eloop_sock_table_set_fds(struct eloop_sock_table *table,
 				     fd_set *fds)
 {
-	int i;
+	size_t i;
 
 	FD_ZERO(fds);
 
@@ -584,7 +592,7 @@ static void eloop_sock_table_set_fds(struct eloop_sock_table *table,
 static void eloop_sock_table_dispatch(struct eloop_sock_table *table,
 				      fd_set *fds)
 {
-	int i;
+	size_t i;
 
 	if (table == NULL || table->table == NULL)
 		return;
@@ -648,7 +656,8 @@ static void eloop_sock_table_dispatch(struct kevent *events, int nfds)
 
 static int eloop_sock_table_requeue(struct eloop_sock_table *table)
 {
-	int i, r;
+	size_t i;
+	int r;
 
 	r = 0;
 	for (i = 0; i < table->count && table->table; i++) {
@@ -689,7 +698,8 @@ int eloop_sock_requeue(void)
 static void eloop_sock_table_destroy(struct eloop_sock_table *table)
 {
 	if (table) {
-		int i;
+		size_t i;
+
 		for (i = 0; i < table->count && table->table; i++) {
 			wpa_printf(MSG_INFO, "ELOOP: remaining socket: "
 				   "sock=%d eloop_data=%p user_data=%p "
@@ -775,21 +785,15 @@ int eloop_register_timeout(unsigned int secs, unsigned int usecs,
 	}
 	now_sec = timeout->time.sec;
 	timeout->time.sec += secs;
-	if (timeout->time.sec < now_sec) {
-		/*
-		 * Integer overflow - assume long enough timeout to be assumed
-		 * to be infinite, i.e., the timeout would never happen.
-		 */
-		wpa_printf(MSG_DEBUG, "ELOOP: Too long timeout (secs=%u) to "
-			   "ever happen - ignore it", secs);
-		os_free(timeout);
-		return 0;
-	}
+	if (timeout->time.sec < now_sec)
+		goto overflow;
 	timeout->time.usec += usecs;
 	while (timeout->time.usec >= 1000000) {
 		timeout->time.sec++;
 		timeout->time.usec -= 1000000;
 	}
+	if (timeout->time.sec < now_sec)
+		goto overflow;
 	timeout->eloop_data = eloop_data;
 	timeout->user_data = user_data;
 	timeout->handler = handler;
@@ -806,6 +810,17 @@ int eloop_register_timeout(unsigned int secs, unsigned int usecs,
 	}
 	dl_list_add_tail(&eloop.timeout, &timeout->list);
 
+	return 0;
+
+overflow:
+	/*
+	 * Integer overflow - assume long enough timeout to be assumed
+	 * to be infinite, i.e., the timeout would never happen.
+	 */
+	wpa_printf(MSG_DEBUG,
+		   "ELOOP: Too long timeout (secs=%u usecs=%u) to ever happen - ignore it",
+		   secs,usecs);
+	os_free(timeout);
 	return 0;
 }
 
@@ -963,7 +978,7 @@ static void eloop_handle_alarm(int sig)
 
 static void eloop_handle_signal(int sig)
 {
-	int i;
+	size_t i;
 
 #ifndef CONFIG_NATIVE_WINDOWS
 	if ((sig == SIGINT || sig == SIGTERM) && !eloop.pending_terminate) {
@@ -987,7 +1002,7 @@ static void eloop_handle_signal(int sig)
 
 static void eloop_process_pending_signals(void)
 {
-	int i;
+	size_t i;
 
 	if (eloop.signaled == 0)
 		return;

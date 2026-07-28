@@ -1,22 +1,14 @@
-all: libap.a
-
-clean:
-	rm -f *~ *.o *.d *.gcno *.gcda *.gcov libap.a
-
-install:
-	@echo Nothing to be made.
-
-include ../lib.rules
-
 CFLAGS += -DHOSTAPD
 CFLAGS += -DNEED_AP_MLME
+CFLAGS += -DCONFIG_ETH_P_OUI
 CFLAGS += -DCONFIG_HS20
 CFLAGS += -DCONFIG_INTERWORKING
 CFLAGS += -DCONFIG_IEEE80211R
-CFLAGS += -DCONFIG_IEEE80211W
+CFLAGS += -DCONFIG_IEEE80211R_AP
 CFLAGS += -DCONFIG_WPS
 CFLAGS += -DCONFIG_PROXYARP
-CFLAGS += -DCONFIG_IAPP
+CFLAGS += -DCONFIG_IPV6
+CFLAGS += -DCONFIG_AIRTIME_POLICY
 
 LIB_OBJS= \
 	accounting.o \
@@ -24,6 +16,7 @@ LIB_OBJS= \
 	ap_drv_ops.o \
 	ap_list.o \
 	ap_mlme.o \
+	airtime_policy.o \
 	authsrv.o \
 	beacon.o \
 	bss_load.o \
@@ -32,25 +25,28 @@ LIB_OBJS= \
 	dhcp_snoop.o \
 	drv_callbacks.o \
 	eap_user_db.o \
+	eth_p_oui.o \
 	gas_serv.o \
 	hostapd.o \
 	hs20.o \
 	hw_features.o \
-	iapp.o \
 	ieee802_11_auth.o \
 	ieee802_11.o \
 	ieee802_11_ht.o \
 	ieee802_11_shared.o \
 	ieee802_11_vht.o \
 	ieee802_1x.o \
+	neighbor_db.o \
 	ndisc_snoop.o \
 	p2p_hostapd.o \
-	peerkey_auth.o \
 	pmksa_cache_auth.o \
 	preauth_auth.o \
+	rrm.o \
 	sta_info.o \
 	tkip_countermeasures.o \
 	utils.o \
+	vlan.o \
+	vlan_ifconfig.o \
 	vlan_init.o \
 	wmm.o \
 	wnm_ap.o \
@@ -61,7 +57,4 @@ LIB_OBJS= \
 	wps_hostapd.o \
 	x_snoop.o
 
-libap.a: $(LIB_OBJS)
-	$(AR) crT $@ $?
-
--include $(OBJS:%.o=%.d)
+include ../lib.rules

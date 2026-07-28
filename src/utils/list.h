@@ -1,6 +1,6 @@
 /*
  * Doubly-linked list
- * Copyright (c) 2009, Jouni Malinen <j@w1.fi>
+ * Copyright (c) 2009-2019, Jouni Malinen <j@w1.fi>
  *
  * This software may be distributed under the terms of the BSD license.
  * See README for more details.
@@ -46,12 +46,12 @@ static inline void dl_list_del(struct dl_list *item)
 	item->prev = NULL;
 }
 
-static inline int dl_list_empty(struct dl_list *list)
+static inline int dl_list_empty(const struct dl_list *list)
 {
 	return list->next == list;
 }
 
-static inline unsigned int dl_list_len(struct dl_list *list)
+static inline unsigned int dl_list_len(const struct dl_list *list)
 {
 	struct dl_list *item;
 	int count = 0;
