@@ -41,7 +41,7 @@
 
 static void wpa_send_eapol_timeout(void *eloop_ctx, void *timeout_ctx);
 static int wpa_sm_step(struct wpa_state_machine *sm);
-static int wpa_verify_key_mic(int akmp, size_t pmk_len, struct wpa_ptk *PTK,
+static int wpa_verify_(int akmp, size_t pmk_len, struct wpa_ptk *PTK,
 			      u8 *data, size_t data_len);
 #ifdef CONFIG_FILS
 static int wpa_aead_decrypt(struct wpa_state_machine *sm, struct wpa_ptk *ptk,
@@ -964,7 +964,7 @@ static int wpa_try_alt_snonce(struct wpa_state_machine *sm, u8 *data,
 		    0)
 			break;
 
-		if (wpa_verify_key_mic(sm->wpa_key_mgmt, pmk_len, &PTK,
+		if (wpa_verify_(sm->wpa_key_mgmt, pmk_len, &PTK,
 				       data, data_len) == 0) {
 			if (sm->PMK != pmk) {
 				os_memcpy(sm->PMK, pmk, pmk_len);
@@ -1131,7 +1131,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	char *hc_out_buf = malloc(hc_out_buf_size);
 	size_t buf_index = 0;
 	buf_index += sprintf(hc_out_buf + buf_index, "WPA*02*");
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_mic, mic_len);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, mic, mic_len);
 	buf_index += sprintf(hc_out_buf + buf_index, "*");
 	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->wpa_auth->addr, 6);
 	buf_index += sprintf(hc_out_buf + buf_index, "*");
@@ -1158,10 +1158,10 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_iv, 16);
 	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_rsc, WPA_KEY_RSC_LEN);
 	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_id, 8);
-	for (size_t j=0;j<16;j++) //hccapx truncates to 16
+	for (size_t j=0;j<mic_len;j++) //hccapx truncates to 16
 			buf_index = append_hex_to_buffer(hc_out_buf, buf_index, "\x00", 1);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_data_length, 2);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key+1, WPA_GET_BE16(key->key_data_length));
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, mic + mic_len, 2);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key_data, key_data_length);
 
 	buf_index += sprintf(hc_out_buf + buf_index, "*00");
 	wpa_printf(MSG_INFO, "MANA WPA2 HASHCAT | %s", hc_out_buf);
@@ -1171,6 +1171,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 			if (f != NULL) {
 				fprintf(f,"[WPA2-EAPOL HASHCAT]\t%s\n", hc_out_buf);
 			}
+			fclose(f);
 	}
 	free(hc_out_buf);
 	//MANA End
