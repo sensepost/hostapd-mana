@@ -455,10 +455,10 @@ static void show_version(void)
 		"User space daemon for IEEE 802.11 AP management,\n"
 		"IEEE 802.1X/WPA/WPA2/EAP/RADIUS Authenticator\n"
 		"Copyright (c) 2002-2022, Jouni Malinen <j@w1.fi> "
-		"and contributors\n",
- 		"--------------------------------------------------\n"
- 		"MANA Edition https://github.com/sensepost/hostapd-mana\n"
- 		"By @singe (dominic@sensepost.com)\n"
+		"and contributors\n"
+		"--------------------------------------------------\n"
+		"MANA Edition https://github.com/sensepost/hostapd-mana\n"
+		"By @singe (dominic@sensepost.com)\n",
 		VERSION_STR);
 }
 
