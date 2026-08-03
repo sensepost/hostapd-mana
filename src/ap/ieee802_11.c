@@ -4484,6 +4484,14 @@ static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	resp = check_ssid(hapd, sta, elems.ssid, elems.ssid_len);
 	if (resp != WLAN_STATUS_SUCCESS)
 		return resp;
+// MANA Start
+	if (hapd->iconf->enable_mana &&
+	    elems.ssid_len <= SSID_MAX_LEN) {
+		os_memcpy(sta->mana_assoc_ssid, elems.ssid, elems.ssid_len);
+		sta->mana_assoc_ssid_len = elems.ssid_len;
+		sta->mana_assoc_ssid_set = 1;
+	}
+// MANA End
 	resp = check_wmm(hapd, sta, elems.wmm, elems.wmm_len);
 	if (resp != WLAN_STATUS_SUCCESS)
 		return resp;
@@ -6495,15 +6503,16 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		 */
 		ap_sta_set_authorized(hapd, sta, 1);
 
-		// MANA Start - Print that it has associated and give the MAC and AP
-		if (hapd->iconf->enable_mana && sta->ssid_probe_mana) {
-			struct hostapd_ssid *ssid = sta->ssid_probe_mana;
-
-			 wpa_printf(MSG_INFO,"MANA - Successful association of " MACSTR " to ESSID '%s'\n",
-				   MAC2STR(mgmt->da), ssid->ssid);
+		// MANA Start
+		if (hapd->iconf->enable_mana && sta->mana_assoc_ssid_set) {
+			wpa_printf(MSG_INFO,
+				   "MANA - Successful association of " MACSTR
+				   " to ESSID '%s'",
+				   MAC2STR(mgmt->da),
+				   wpa_ssid_txt(sta->mana_assoc_ssid,
+						sta->mana_assoc_ssid_len));
 		}
-
-		// MANA END
+		// MANA End
 	}
 
 	if (reassoc)

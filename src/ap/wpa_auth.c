@@ -30,6 +30,7 @@
 #include "ieee802_11.h"
 #include "wpa_auth.h"
 #include "pmksa_cache_auth.h"
+#include "sta_info.h"
 #include "wpa_auth_i.h"
 #include "wpa_auth_ie.h"
 #include "common/mana.h" //MANA
@@ -1001,15 +1002,17 @@ static int wpa_try_alt_snonce(struct wpa_state_machine *sm, u8 *data,
 	return 0;
 }
 
-// MANA - hex printing helper function                                                                                     
-size_t append_hex_to_buffer(char *buffer, size_t index, const void *data, size_t len) {																		
+// MANA Start
+// MANA - hex printing helper function
+size_t append_hex_to_buffer(char *buffer, size_t index, const void *data, size_t len)
+{
 	const uint8_t *byte_data = (const uint8_t *)data;																																				
 	while (len-- > 0) {																																																			
 		index += sprintf(buffer + index, "%02x", *byte_data++);																																
-	}																																																												
+	}
 	return index;																																																						
-}																																																													
-// MANA end
+}
+// MANA End
 
 static bool wpa_auth_gtk_rekey_in_process(struct wpa_authenticator *wpa_auth)
 {
@@ -1100,7 +1103,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	wpa_hexdump(MSG_DEBUG, "WPA: Received Replay Counter",
 		    key->replay_counter, WPA_REPLAY_COUNTER_LEN);
 
-	//MANA Start
+	// MANA Start
 	wpa_printf(MSG_INFO, "MANA: Captured a WPA/2 handshake from: " MACSTR, MAC2STR(sm->addr));
 	/*
 	Code to produce hashcat's new WPA2 EAPOL hash format for mode 22000
@@ -1129,7 +1132,37 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	*/
 	size_t hc_out_buf_size = 600; //416 // Turn this into an actual calc
 	char *hc_out_buf = malloc(hc_out_buf_size);
+	const u8 *ssid = wpa_auth->conf.ssid;
+	size_t ssid_len = wpa_auth->conf.ssid_len;
+	bool skip_hashcat = false;
 	size_t buf_index = 0;
+	struct hostapd_data *hapd = wpa_auth->cb_ctx;
+	struct sta_info *assoc_sta = NULL;
+
+	if (mana.conf && mana.conf->enable_mana) {
+		if (hapd)
+			assoc_sta = ap_get_sta(hapd, sm->addr);
+		if (!assoc_sta || !assoc_sta->mana_assoc_ssid_set) {
+			wpa_printf(MSG_DEBUG,
+				   "MANA WPA2 HASHCAT: association SSID unavailable for " MACSTR
+				   ", skip output", MAC2STR(sm->addr));
+			skip_hashcat = true;
+		} else {
+			ssid = assoc_sta->mana_assoc_ssid;
+			ssid_len = assoc_sta->mana_assoc_ssid_len;
+		}
+	}
+
+	if (!hc_out_buf) {
+		wpa_printf(MSG_ERROR, "MANA WPA2 HASHCAT: out of memory");
+		skip_hashcat = true;
+	}
+
+	if (skip_hashcat) {
+		free(hc_out_buf);
+		goto mana_wpaout_done;
+	}
+
 	buf_index += sprintf(hc_out_buf + buf_index, "WPA*02*");
 	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, mic, mic_len);
 	buf_index += sprintf(hc_out_buf + buf_index, "*");
@@ -1137,7 +1170,7 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	buf_index += sprintf(hc_out_buf + buf_index, "*");
 	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->addr, 6);
 	buf_index += sprintf(hc_out_buf + buf_index, "*");
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, wpa_auth->conf.ssid, wpa_auth->conf.ssid_len);
+	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, ssid, ssid_len);
 	buf_index += sprintf(hc_out_buf + buf_index, "*");
 	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->ANonce, WPA_NONCE_LEN);
 	buf_index += sprintf(hc_out_buf + buf_index, "*");
@@ -1174,7 +1207,8 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 			fclose(f);
 	}
 	free(hc_out_buf);
-	//MANA End
+mana_wpaout_done:
+	// MANA End
 	
 	/* FIX: verify that the EAPOL-Key frame was encrypted if pairwise keys
 	 * are set */

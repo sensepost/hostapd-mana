@@ -32,6 +32,7 @@
 #include "pmksa_cache_auth.h"
 #include "wpa_auth.h"
 #include "wpa_auth_glue.h"
+#include "common/mana.h" //MANA
 
 
 static void hostapd_wpa_auth_conf(struct hostapd_bss_config *conf,
@@ -246,6 +247,17 @@ static void hostapd_wpa_auth_disconnect(void *ctx, const u8 *addr,
 					u16 reason)
 {
 	struct hostapd_data *hapd = ctx;
+
+// MANA Start
+	if (mana.conf && mana.conf->enable_mana &&
+	    os_strcmp("NOT_SET", mana.conf->mana_wpaout) != 0) {
+		wpa_printf(MSG_DEBUG,
+			   "MANA: suppress WPA disconnect for STA " MACSTR
+			   " reason %u", MAC2STR(addr), reason);
+		return;
+	}
+// MANA End
+
 	wpa_printf(MSG_DEBUG, "%s: WPA authenticator requests disconnect: "
 		   "STA " MACSTR " reason %d",
 		   __func__, MAC2STR(addr), reason);

@@ -2502,14 +2502,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->logger_syslog = atoi(pos);
 	} else if (os_strcmp(buf, "logger_stdout") == 0) {
 		bss->logger_stdout = atoi(pos);
-	// MANA START
+	// MANA Start
 	} else if (os_strcmp(buf, "enable_mana") == 0) {
 		int val = atoi(pos);
 		conf->enable_mana = (val != 0);
-		if (os_strcmp(conf->mana_wpaout,"NOT_SET") != 0) {
-			wpa_printf(MSG_ERROR, "MANA: For now, you can't use mana mode with WPA/2 handshake capture. See the Wiki.");
-			return 1;
-		}
 		if (conf->enable_mana) {
 			wpa_printf(MSG_DEBUG, "MANA: Enabled");
 		}
@@ -2569,6 +2565,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		fclose(f);
 		conf->mana_credout = tmp2;
 		wpa_printf(MSG_INFO, "MANA: Captured credentials will be written to file '%s'.",conf->mana_credout);
+	// MANA Start
 	} else if (os_strcmp(buf, "mana_wpaout") == 0) {
 		char *tmp2 = malloc(strlen(pos)+1);
 		strcpy(tmp2,pos);
@@ -2580,6 +2577,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		fclose(f);
 		conf->mana_wpaout = tmp2;
 		wpa_printf(MSG_INFO, "MANA: Captured WPA/2 handshakes will be written to file '%s'.",conf->mana_wpaout);
+	// MANA End
 	} else if (os_strcmp(buf, "mana_eapsuccess") == 0) {
 		int val = atoi(pos);
 		conf->mana_eapsuccess = (val != 0);
@@ -2624,7 +2622,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
         	        snprintf(conf->sycophant_id_file[id-1], dirlen + 15, "%sSYCOPHANT_P%dID",  tmp, id);
 		}
 
-	// MANA END
+	// MANA End
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
 			   line);
@@ -5005,7 +5003,7 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 
 	conf->last_bss = conf->bss[0];
 
-	// MANA START
+	// MANA Start
 	conf->enable_mana = 0; //default off;
 	conf->mana_loud = 0; //default off; 1 - advertise all networks across all devices, 0 - advertise specific networks to the device it was discovered from
 	conf->mana_macacl = 0; //default off; 0 - off, 1 - extend MAC ACL to management frames
@@ -5019,7 +5017,7 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	conf->mana_eaptls = 0; //default off; 1 - accept any client certificate presented in EAP-TLS modes. 0 - validate certificates as normal.
 	conf->enable_sycophant = 0; //default off; 1 - relay inner MSCHAPv2 authentication with wpa_sycophant. 0 - No relaying
 	conf->sycophant_dir = "NOT_SET"; //default none
-	// MANA END
+	// MANA End
 
 	while (fgets(buf, sizeof(buf), f)) {
 		struct hostapd_bss_config *bss;
