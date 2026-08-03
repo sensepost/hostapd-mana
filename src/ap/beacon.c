@@ -70,7 +70,8 @@ static u8 * hostapd_eid_bss_load(struct hostapd_data *hapd, u8 *eid, size_t len)
 
 //Start MANA
 //Log output of observed MACs & SSIDs
-static void log_ssid(struct hostapd_data *hapd, const u8 *ssid, size_t ssid_len, const u8 *mac) {
+void mana_log_ssid(struct hostapd_data *hapd, const u8 *ssid, size_t ssid_len,
+		   const u8 *mac) {
 	if (os_strcmp("NOT_SET", hapd->iconf->mana_outfile) == 0) {
 		return; // File not set, so don't log
 	}
@@ -1085,7 +1086,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 			wpa_printf(MSG_DEBUG,"MANA - Broadcast probe request from " MACSTR "",MAC2STR(mgmt->sa));
 			if (!hapd->conf->ignore_broadcast_ssid) {
         iterate = 1; //iterate through hash emitting multiple probe responses
-        log_ssid(hapd, (const u8 *)"<Broadcast>", 11, mgmt->sa);
+        mana_log_ssid(hapd, (const u8 *)"<Broadcast>", 11, mgmt->sa);
       }
 		} else {
 			//Directed probe
@@ -1120,7 +1121,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 					HASH_ADD_STR(newsta->ssids, ssid_txt, newssid);
 			}
  			wpa_printf(MSG_INFO,"MANA - Directed probe request for SSID '%s' from " MACSTR "",wpa_ssid_txt(elems.ssid, elems.ssid_len),MAC2STR(mgmt->sa));
-			log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
+			mana_log_ssid(hapd, elems.ssid, elems.ssid_len, mgmt->sa);
  		}
 	} else { // MANA - Original code when mana's not enabled
     if (res == NO_SSID_MATCH) {

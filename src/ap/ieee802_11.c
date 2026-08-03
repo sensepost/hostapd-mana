@@ -3997,7 +3997,7 @@ static u16 check_ssid(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	if (ssid_ie == NULL)
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
-	if (hapd->iconf->enable_mana) {
+	if (hapd->iconf->enable_mana) { //MANA
 		wpa_printf(MSG_MSGDUMP, "MANA - Checking SSID for start of association, pass through %s", wpa_ssid_txt(ssid_ie, ssid_ie_len));
 		return WLAN_STATUS_SUCCESS;
 	} else {
@@ -5752,6 +5752,16 @@ static void handle_assoc(struct hostapd_data *hapd,
 	taxonomy_sta_info_assoc_req(hapd, sta, pos, left);
 #endif /* CONFIG_TAXONOMY */
 
+#ifdef CONFIG_TAXONOMY
+	if (hapd->iconf->enable_mana) { //MANA
+		const u8 *ssid_ie = get_ie(pos, left, WLAN_EID_SSID);
+
+		if (ssid_ie && ssid_ie[1] <= SSID_MAX_LEN)
+			mana_log_ssid(hapd, ssid_ie + 2, ssid_ie[1],
+				      mgmt->sa);
+	}
+#endif /* CONFIG_TAXONOMY */
+
 	sta->pending_wds_enable = 0;
 
 #ifdef CONFIG_FILS
@@ -6485,7 +6495,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		 */
 		ap_sta_set_authorized(hapd, sta, 1);
 
-		// Print that it has associated and give the MAC and AP
+		// MANA Start - Print that it has associated and give the MAC and AP
 		if (hapd->iconf->enable_mana && sta->ssid_probe_mana) {
 			struct hostapd_ssid *ssid = sta->ssid_probe_mana;
 

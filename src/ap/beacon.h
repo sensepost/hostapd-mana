@@ -31,6 +31,8 @@ sta_track_seen_on(struct hostapd_iface *iface, const u8 *addr,
 		  const char *ifname);
 void sta_track_claim_taxonomy_info(struct hostapd_iface *iface, const u8 *addr,
 				   struct wpabuf **probe_ie_taxonomy);
+void mana_log_ssid(struct hostapd_data *hapd, const u8 *ssid, size_t ssid_len,
+		   const u8 *mac); //MANA
 
 const u8 * hostapd_wpa_ie(struct hostapd_data *hapd, u8 eid);
 
