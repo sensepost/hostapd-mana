@@ -23,6 +23,7 @@
 #include "sta_info.h"
 #include "airtime_policy.h"
 #include "ap_config.h"
+#include "mana/acl.h"
 
 
 static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
@@ -1024,7 +1025,7 @@ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 
 	while (start <= end) {
 		middle = (start + end) / 2;
-		res = os_memcmp(list[middle].addr, addr, ETH_ALEN);
+		res = mana_acl_compare_entry(&list[middle], addr);
 		if (res == 0) {
 			if (vlan_id)
 				*vlan_id = list[middle].vlan_id;
@@ -1039,6 +1040,10 @@ int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 	return 0;
 }
 
+int hostapd_ssidlist_found(struct ssid_filter_entry *list, int num_entries, const char *ssid)
+{
+	return mana_ssidlist_found(list, num_entries, ssid);
+}
 
 int hostapd_rate_found(int *list, int rate)
 {

@@ -61,7 +61,12 @@ typedef u8 macaddr[ETH_ALEN];
 
 struct mac_acl_entry {
 	macaddr addr;
+	macaddr mask; //MANA
 	struct vlan_description vlan_id;
+};
+
+struct ssid_filter_entry { //MANA
+	char ssid[SSID_MAX_LEN];
 };
 
 struct hostapd_radius_servers;
@@ -341,6 +346,8 @@ struct hostapd_bss_config {
 	int num_accept_mac;
 	struct mac_acl_entry *deny_mac;
 	int num_deny_mac;
+	struct ssid_filter_entry *ssid_filter; //MANA
+	int num_ssid_filter; //MANA
 	int wds_sta;
 	int isolate;
 	int start_disabled;
@@ -943,6 +950,27 @@ struct hostapd_config {
 	struct hostapd_bss_config **bss, *last_bss;
 	size_t num_bss;
 
+	// MANA
+	int enable_mana;
+	int mana_loud;
+	int mana_macacl;
+	char * mana_outfile;
+	char * mana_ssid_filter_file;
+	int mana_ssid_filter_type;
+	int mana_wpe;
+	char * mana_credout;
+	char * mana_wpaout;
+	int mana_eapsuccess;
+	int mana_eaptls;
+	int enable_sycophant;
+	char * sycophant_dir;
+        char * sycophant_state_file;
+        char * sycophant_challenge_file;
+        char * sycophant_response_file;
+        char * sycophant_id_file[2];
+
+	// MANA END
+
 	u16 beacon_int;
 	int rts_threshold;
 	int fragm_threshold;
@@ -1176,6 +1204,8 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf);
 void hostapd_config_free(struct hostapd_config *conf);
 int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
 			  const u8 *addr, struct vlan_description *vlan_id);
+int hostapd_ssidlist_found(struct ssid_filter_entry *list, int num_entires, //MANA
+			  const char *ssid);
 int hostapd_rate_found(int *list, int rate);
 const u8 * hostapd_get_psk(const struct hostapd_bss_config *conf,
 			   const u8 *addr, const u8 *p2p_dev_addr,

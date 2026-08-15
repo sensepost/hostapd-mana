@@ -13,7 +13,7 @@
 CONFIG_DRIVER_HOSTAP=y
 
 # Driver interface for wired authenticator
-#CONFIG_DRIVER_WIRED=y
+CONFIG_DRIVER_WIRED=y
 
 # Driver interface for drivers using the nl80211 kernel interface
 CONFIG_DRIVER_NL80211=y
@@ -42,7 +42,7 @@ CONFIG_LIBNL32=y
 #LIBS_c += -L/usr/local/lib
 
 # Driver interface for no driver (e.g., RADIUS server only)
-#CONFIG_DRIVER_NONE=y
+CONFIG_DRIVER_NONE=y
 
 # WPA2/IEEE 802.11i RSN pre-authentication
 CONFIG_RSN_PREAUTH=y
@@ -102,7 +102,7 @@ CONFIG_EAP_TTLS=y
 #CONFIG_EAP_GPSK_SHA256=y
 
 # EAP-FAST for the integrated EAP server
-#CONFIG_EAP_FAST=y
+CONFIG_EAP_FAST=y
 
 # EAP-TEAP for the integrated EAP server
 # Note: The current EAP-TEAP implementation is experimental and should not be
@@ -142,7 +142,9 @@ CONFIG_PKCS12=y
 CONFIG_IPV6=y
 
 # IEEE Std 802.11r-2008 (Fast BSS Transition)
-#CONFIG_IEEE80211R=y
+CONFIG_IEEE80211R=y
+# MANA - this is needed to get SSID information for the hccapx support
+# MANA - todo figure out where else to get the ssid other than wpa_auth_config struct for use in wpa_auth.c
 
 # Use the hostapd's IEEE 802.11 authentication (ACL), but without
 # the IEEE 802.11 Management capability (e.g., FreeBSD/net80211)
@@ -359,7 +361,8 @@ CONFIG_IPV6=y
 # Has the AP retain the Probe Request and (Re)Association Request frames from
 # a client, from which a signature can be produced which can identify the model
 # of client device like "Nexus 6P" or "iPhone 5s".
-#CONFIG_TAXONOMY=y
+CONFIG_TAXONOMY=y
+#MANA needs this to fingerprint clients
 
 # Fast Initial Link Setup (FILS) (IEEE 802.11ai)
 #CONFIG_FILS=y
