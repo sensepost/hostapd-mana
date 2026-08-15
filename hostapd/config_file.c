@@ -24,6 +24,8 @@
 #include "ap/wpa_auth.h"
 #include "ap/ap_config.h"
 #include "config_file.h"
+#include "mana/acl.h"
+#include "mana/config.h"
 
 
 #ifndef CONFIG_NO_VLAN
@@ -126,6 +128,9 @@ static int hostapd_config_read_maclist(const char *fname,
 	int line = 0;
 	u8 addr[ETH_ALEN];
 	int vlan_id;
+	char *lastpos; //MANA
+	int vlanflag = 0; //MANA
+	u8 mask[ETH_ALEN]; //MANA
 
 	f = fopen(fname, "r");
 	if (!f) {
@@ -137,6 +142,7 @@ static int hostapd_config_read_maclist(const char *fname,
 		int rem = 0;
 
 		line++;
+		vlanflag = 0;
 
 		if (buf[0] == '#')
 			continue;
@@ -150,6 +156,7 @@ static int hostapd_config_read_maclist(const char *fname,
 		}
 		if (buf[0] == '\0')
 			continue;
+		lastpos = pos; //MANA
 		pos = buf;
 		if (buf[0] == '-') {
 			rem = 1;
@@ -173,10 +180,29 @@ static int hostapd_config_read_maclist(const char *fname,
 			pos++;
 		while (*pos == ' ' || *pos == '\t')
 			pos++;
-		if (*pos != '\0')
+		if (*pos != '\0') {
 			vlan_id = atoi(pos);
+			if (*(pos+2) != ':') { //MANA
+				vlanflag = 1;
+			}
+		}
 
-		if (hostapd_add_acl_maclist(acl, num, vlan_id, addr) < 0) {
+		lastpos = pos;
+		while (*pos != '\0') {
+			if (*pos == '\n') {
+				*pos = '\0';
+				break;
+			}
+			pos++;
+		}
+		pos = lastpos;
+
+		if (mana_acl_parse_mask(pos, vlanflag, mask, line, fname) < 0) {
+			fclose(f);
+			return -1;
+		}
+
+		if (mana_add_acl_maclist(acl, num, vlan_id, addr, mask) < 0) {
 			fclose(f);
 			return -1;
 		}
@@ -578,6 +604,8 @@ static int hostapd_config_read_eap_user(const char *fname,
 }
 
 #endif /* EAP_SERVER */
+
+#include <stdlib.h>
 
 
 #ifndef CONFIG_NO_RADIUS
@@ -2372,6 +2400,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 			       struct hostapd_bss_config *bss,
 			       const char *buf, char *pos, int line)
 {
+	int mana_res;
+
 	if (os_strcmp(buf, "interface") == 0) {
 		os_strlcpy(conf->bss[0]->iface, pos,
 			   sizeof(conf->bss[0]->iface));
@@ -2414,6 +2444,11 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->logger_syslog = atoi(pos);
 	} else if (os_strcmp(buf, "logger_stdout") == 0) {
 		bss->logger_stdout = atoi(pos);
+	} else if ((mana_res = mana_config_fill(conf, bss, buf, pos, line)) ==
+		   MANA_CONFIG_HANDLED) {
+		/* handled by hostapd-mana */
+	} else if (mana_res == MANA_CONFIG_ERROR) {
+		return 1;
 	} else if (os_strcmp(buf, "dump_file") == 0) {
 		wpa_printf(MSG_INFO, "Line %d: DEPRECATED: 'dump_file' configuration variable is not used anymore",
 			   line);
@@ -5275,6 +5310,8 @@ struct hostapd_config * hostapd_config_read(const char *fname)
 	}
 
 	conf->last_bss = conf->bss[0];
+
+	mana_config_defaults(conf);
 
 	while (fgets(buf, sizeof(buf), f)) {
 		struct hostapd_bss_config *bss;
