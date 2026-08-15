@@ -279,6 +279,14 @@ struct sta_info {
 	struct wpabuf *assoc_ie_taxonomy;
 #endif /* CONFIG_TAXONOMY */
 
+// MANA Start
+	u8 mana_assoc_ssid[SSID_MAX_LEN];
+	size_t mana_assoc_ssid_len;
+	unsigned int mana_assoc_ssid_set:1;
+// MANA End
+
+	struct hostapd_ssid *ssid_probe_mana; //MANA
+
 #ifdef CONFIG_FILS
 	u8 fils_snonce[FILS_NONCE_LEN];
 	u8 fils_session[FILS_SESSION_LEN];

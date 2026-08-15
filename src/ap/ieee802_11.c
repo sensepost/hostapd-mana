@@ -55,6 +55,7 @@
 #include "fils_hlp.h"
 #include "dpp_hostapd.h"
 #include "gas_query_ap.h"
+#include "mana/probe.h"
 
 
 #ifdef CONFIG_FILS
@@ -3997,17 +3998,21 @@ static u16 check_ssid(struct hostapd_data *hapd, struct sta_info *sta,
 {
 	if (ssid_ie == NULL)
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
-
-	if (ssid_ie_len != hapd->conf->ssid.ssid_len ||
-	    os_memcmp(ssid_ie, hapd->conf->ssid.ssid, ssid_ie_len) != 0) {
-		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_INFO,
-			       "Station tried to associate with unknown SSID "
-			       "'%s'", wpa_ssid_txt(ssid_ie, ssid_ie_len));
-		return WLAN_STATUS_UNSPECIFIED_FAILURE;
-	}
+	if (hapd->iconf->enable_mana) { //MANA
+		wpa_printf(MSG_MSGDUMP, "MANA - Checking SSID for start of association, pass through %s", wpa_ssid_txt(ssid_ie, ssid_ie_len));
+		return WLAN_STATUS_SUCCESS;
+	} else {
+		if (ssid_ie_len != hapd->conf->ssid.ssid_len ||
+			os_memcmp(ssid_ie, hapd->conf->ssid.ssid, ssid_ie_len) != 0) {
+			hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+					   HOSTAPD_LEVEL_INFO,
+					   "Station tried to associate with unknown SSID "
+					   "'%s'", wpa_ssid_txt(ssid_ie, ssid_ie_len));
+			return WLAN_STATUS_UNSPECIFIED_FAILURE;
+		}
 
 	return WLAN_STATUS_SUCCESS;
+	}
 }
 
 
@@ -4480,6 +4485,14 @@ static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	resp = check_ssid(hapd, sta, elems.ssid, elems.ssid_len);
 	if (resp != WLAN_STATUS_SUCCESS)
 		return resp;
+// MANA Start
+	if (hapd->iconf->enable_mana &&
+	    elems.ssid_len <= SSID_MAX_LEN) {
+		os_memcpy(sta->mana_assoc_ssid, elems.ssid, elems.ssid_len);
+		sta->mana_assoc_ssid_len = elems.ssid_len;
+		sta->mana_assoc_ssid_set = 1;
+	}
+// MANA End
 	resp = check_wmm(hapd, sta, elems.wmm, elems.wmm_len);
 	if (resp != WLAN_STATUS_SUCCESS)
 		return resp;
@@ -5748,6 +5761,16 @@ static void handle_assoc(struct hostapd_data *hapd,
 	taxonomy_sta_info_assoc_req(hapd, sta, pos, left);
 #endif /* CONFIG_TAXONOMY */
 
+#ifdef CONFIG_TAXONOMY
+	if (hapd->iconf->enable_mana) { //MANA
+		const u8 *ssid_ie = get_ie(pos, left, WLAN_EID_SSID);
+
+		if (ssid_ie && ssid_ie[1] <= SSID_MAX_LEN)
+			mana_log_ssid(hapd, ssid_ie + 2, ssid_ie[1],
+				      mgmt->sa);
+	}
+#endif /* CONFIG_TAXONOMY */
+
 	sta->pending_wds_enable = 0;
 
 #ifdef CONFIG_FILS
@@ -6480,6 +6503,17 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		 * authorization step.
 		 */
 		ap_sta_set_authorized(hapd, sta, 1);
+
+		// MANA Start
+		if (hapd->iconf->enable_mana && sta->mana_assoc_ssid_set) {
+			wpa_printf(MSG_INFO,
+				   "MANA - Successful association of " MACSTR
+				   " to ESSID '%s'",
+				   MAC2STR(mgmt->da),
+				   wpa_ssid_txt(sta->mana_assoc_ssid,
+						sta->mana_assoc_ssid_len));
+		}
+		// MANA End
 	}
 
 	if (reassoc)
