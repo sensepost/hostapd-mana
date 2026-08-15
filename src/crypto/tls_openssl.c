@@ -37,7 +37,7 @@
 #include "sha256.h"
 #include "tls.h"
 #include "tls_openssl.h"
-#include "common/mana.h" //MANA
+#include "mana/eap.h"
 
 #if !defined(CONFIG_FIPS) &&                             \
     (defined(EAP_FAST) || defined(EAP_FAST_DYNAMIC) ||   \
@@ -2341,7 +2341,7 @@ static void debug_print_cert(X509 *cert, const char *title)
 static int tls_verify_cb(int preverify_ok, X509_STORE_CTX *x509_ctx)
 {
 	//START MANA
-	if (mana.conf->mana_eaptls)
+	if (mana_eaptls_accept_any_cert())
 		return 1;
 	//END MANA
 	char buf[256];

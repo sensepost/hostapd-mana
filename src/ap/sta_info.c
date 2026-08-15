@@ -38,7 +38,7 @@
 #include "ndisc_snoop.h"
 #include "sta_info.h"
 #include "vlan.h"
-#include "common/mana.h" //MANA
+#include "mana/state.h"
 #include "wps_hostapd.h"
 
 static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,

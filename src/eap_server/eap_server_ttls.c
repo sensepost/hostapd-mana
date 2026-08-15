@@ -16,7 +16,7 @@
 #include "eap_server/eap_tls_common.h"
 #include "eap_common/chap.h"
 #include "eap_common/eap_ttls.h"
-#include "common/mana.h" //MANA
+#include "mana/eap.h"
 
 
 #define EAP_TTLS_VERSION 0
@@ -540,7 +540,7 @@ static void eap_ttls_process_phase2_pap(struct eap_sm *sm,
 	}
 
 //MANA Start
-	if (mana.conf->mana_wpe) {
+	if (mana_wpe_enabled()) {
 		// thanks gcp
 		eap_server_pap_rx_callback(sm, "TTLS-PAP",
 				sm->identity, sm->identity_len,
@@ -609,7 +609,7 @@ static void eap_ttls_process_phase2_chap(struct eap_sm *sm,
 	os_free(chal);
 
 //MANA Start
-	if (mana.conf->mana_wpe) {
+	if (mana_wpe_enabled()) {
 		// First byte of password is the ID, rest is the hash
 		eap_server_chap_rx_callback(sm, "TTLS-CHAP",
 				sm->identity, sm->identity_len,
@@ -671,7 +671,7 @@ static void eap_ttls_process_phase2_mschap(struct eap_sm *sm,
 
 //MANA Start
 //#ifdef CONFIG_TESTING_OPTIONS
-	if (mana.conf->mana_wpe) {
+	if (mana_wpe_enabled()) {
 		eap_server_mschap_rx_callback(sm, "TTLS-MSCHAP",
 					      sm->identity, sm->identity_len,
 					      challenge, response + 2 + 24);
@@ -807,7 +807,7 @@ static void eap_ttls_process_phase2_mschapv2(struct eap_sm *sm,
 	rx_resp = response + 2 + EAP_TTLS_MSCHAPV2_CHALLENGE_LEN + 8;
 //MANA Start
 //#ifdef CONFIG_TESTING_OPTIONS
-	if (mana.conf->mana_wpe)
+	if (mana_wpe_enabled())
 	{
 		u8 challenge2[8];
 

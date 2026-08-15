@@ -55,7 +55,7 @@
 #include "hs20.h"
 #include "airtime_policy.h"
 #include "wpa_auth_kay.h"
-#include "common/mana.h" //MANA
+#include "mana/state.h"
 
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);

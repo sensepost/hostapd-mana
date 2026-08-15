@@ -12,7 +12,7 @@
 #include "crypto/random.h"
 #include "eap_i.h"
 #include "eap_common/chap.h"
-#include "common/mana.h" //MANA
+#include "mana/eap.h"
 
 
 #define CHALLENGE_LEN 16
@@ -121,7 +121,7 @@ static void eap_md5_process(struct eap_sm *sm, void *priv,
 
 	id = eap_get_id(respData);
 //MANA Start
-	if (mana.conf->mana_wpe) {
+	if (mana_wpe_enabled()) {
 		eap_server_chap_rx_callback(sm, "MD5",
 				sm->identity, sm->identity_len,
 				pos, data->challenge, id);

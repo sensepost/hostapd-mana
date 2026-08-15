@@ -31,29 +31,7 @@ sta_track_seen_on(struct hostapd_iface *iface, const u8 *addr,
 		  const char *ifname);
 void sta_track_claim_taxonomy_info(struct hostapd_iface *iface, const u8 *addr,
 				   struct wpabuf **probe_ie_taxonomy);
-void mana_log_ssid(struct hostapd_data *hapd, const u8 *ssid, size_t ssid_len,
-		   const u8 *mac); //MANA
 
 const u8 * hostapd_wpa_ie(struct hostapd_data *hapd, u8 eid);
 
 #endif /* BEACON_H */
-
-// MANA START
-#include "uthash/uthash.h"
-struct mana_ssid {
-        char ssid_txt[SSID_MAX_LEN+1];
-        u8 ssid[SSID_MAX_LEN];
-        size_t ssid_len;
-		//u8 sta_addr[6];
-        UT_hash_handle hh;
-};
-//struct mana_ssid *mana_data;
-struct mana_mac {
-	//char mac_txt[18];
-	u8 sta_addr[6];
-	struct mana_ssid *ssids;
-	UT_hash_handle hh;
-};
-extern struct mana_mac *mana_machash;
-extern struct mana_ssid *mana_ssidhash;
-// MANA END

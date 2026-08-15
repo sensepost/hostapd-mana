@@ -430,7 +430,7 @@ static int hostapd_cli_cmd_mana_macacl_enable(struct wpa_ctrl *ctrl, int argc, c
 }
 static int hostapd_cli_cmd_mana_get_aclmode(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
-	return wpa_ctrl_command(ctrl, "MANAACL_MODE");
+	return wpa_ctrl_command(ctrl, "MANA_ACLMODE");
 }
 static int hostapd_cli_cmd_mana_wpe_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
@@ -454,7 +454,7 @@ static int hostapd_cli_cmd_mana_eapsuccess_enable(struct wpa_ctrl *ctrl, int arg
 }
 static int hostapd_cli_cmd_mana_get_eapsuccess(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
-	return wpa_ctrl_command(ctrl, "EAPSUCCESS_STATE");
+	return wpa_ctrl_command(ctrl, "EAPSUCCESS_MODE");
 }
 static int hostapd_cli_cmd_mana_eaptls_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
@@ -466,7 +466,7 @@ static int hostapd_cli_cmd_mana_eaptls_enable(struct wpa_ctrl *ctrl, int argc, c
 }
 static int hostapd_cli_cmd_mana_get_eaptls(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {
-	return wpa_ctrl_command(ctrl, "MANA_EAPTLS_STATE");
+	return wpa_ctrl_command(ctrl, "MANA_EAPTLS_MODE");
 }
 static int hostapd_cli_cmd_sycophant_disable(struct wpa_ctrl *ctrl, int argc, char *argv[])
 {

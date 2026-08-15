@@ -55,6 +55,7 @@
 #include "fils_hlp.h"
 #include "dpp_hostapd.h"
 #include "gas_query_ap.h"
+#include "mana/probe.h"
 
 
 #ifdef CONFIG_FILS

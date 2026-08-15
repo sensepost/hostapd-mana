@@ -22,6 +22,7 @@ endif
 endif
 
 CFLAGS += $(EXTRA_CFLAGS)
+CFLAGS += -I$(abspath ..)
 CFLAGS += -I$(abspath ../src)
 CFLAGS += -I$(abspath ../src/utils)
 
@@ -84,7 +85,20 @@ OBJS += ../src/ap/beacon.o
 OBJS += ../src/ap/bss_load.o
 OBJS += ../src/ap/neighbor_db.o
 OBJS += ../src/ap/rrm.o
-OBJS += ../src/common/mana.o
+MANA_OBJS += ../mana/acl.o
+MANA_OBJS += ../mana/config.o
+MANA_OBJS += ../mana/ctrl_iface.o
+MANA_OBJS += ../mana/eap.o
+MANA_OBJS += ../mana/probe.o
+MANA_OBJS += ../mana/state.o
+MANA_OBJS += ../mana/sycophant.o
+MANA_OBJS += ../mana/wpa.o
+OBJS += $(MANA_OBJS)
+
+$(BUILDDIR)/$(PROJ)/mana/%.o: $(ROOTDIR)mana/%.c $(CONFIG_FILE) | _make_dirs
+	$(Q)mkdir -p $(dir $@)
+	$(Q)$(CC) -c -o $@ $(CFLAGS) $<
+	@$(E) "  CC " $<
 
 OBJS_c = hostapd_cli.o
 OBJS_c += ../src/common/wpa_ctrl.o

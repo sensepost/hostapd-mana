@@ -33,7 +33,7 @@
 #include "sta_info.h"
 #include "wpa_auth_i.h"
 #include "wpa_auth_ie.h"
-#include "common/mana.h" //MANA
+#include "mana/wpa.h"
 
 #define STATE_MACHINE_DATA struct wpa_state_machine
 #define STATE_MACHINE_DEBUG_PREFIX "WPA"
@@ -1002,18 +1002,6 @@ static int wpa_try_alt_snonce(struct wpa_state_machine *sm, u8 *data,
 	return 0;
 }
 
-// MANA Start
-// MANA - hex printing helper function
-size_t append_hex_to_buffer(char *buffer, size_t index, const void *data, size_t len)
-{
-	const uint8_t *byte_data = (const uint8_t *)data;																																				
-	while (len-- > 0) {																																																			
-		index += sprintf(buffer + index, "%02x", *byte_data++);																																
-	}
-	return index;																																																						
-}
-// MANA End
-
 static bool wpa_auth_gtk_rekey_in_process(struct wpa_authenticator *wpa_auth)
 {
 	struct wpa_group *group;
@@ -1103,112 +1091,8 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	wpa_hexdump(MSG_DEBUG, "WPA: Received Replay Counter",
 		    key->replay_counter, WPA_REPLAY_COUNTER_LEN);
 
-	// MANA Start
-	wpa_printf(MSG_INFO, "MANA: Captured a WPA/2 handshake from: " MACSTR, MAC2STR(sm->addr));
-	/*
-	Code to produce hashcat's new WPA2 EAPOL hash format for mode 22000
-	https://hashcat.net/forum/thread-10253.html
-	https://github.com/hashcat/hashcat/issues/1816
-
-	PROTOCOL*TYPE*PMKID/MIC*MACAP*MACCLIENT*ESSID*ANONCE*EAPOL*MESSAGEPAIR
-
-	PROTOCOL = Fixed string "WPA"
-	TYPE = 01 for PMKID, 02 for EAPOL
-	PMKID/MIC = PMKID if TYPE=01, MIC if TYPE=02
-	MACAP = MAC of AP
-	MACCLIENT = MAC of CLIENT
-	ESSID = network name (ESSID) in HEX
-	ANONCE = ANONCE
-	EAPOL = EAPOL (SNONCE is in here)
-	MESSAGEPAIR = Bitmask:
-		0: MP info (https://hashcat.net/wiki/doku.php?id=hccapx)
-		1: MP info (https://hashcat.net/wiki/doku.php?id=hccapx)
-		2: MP info (https://hashcat.net/wiki/doku.php?id=hccapx)
-		3: x (unused)
-		4: ap-less attack (set to 1) - no nonce-error-corrections necessary
-		5: LE router detected (set to 1) - nonce-error-corrections only for LE necessary
-		6: BE router detected (set to 1) - nonce-error-corrections only for BE necessary
-		7: not replaycount checked (set to 1) - replaycount not checked, nonce-error-corrections definitely necessary
-	*/
-	size_t hc_out_buf_size = 600; //416 // Turn this into an actual calc
-	char *hc_out_buf = malloc(hc_out_buf_size);
-	const u8 *ssid = wpa_auth->conf.ssid;
-	size_t ssid_len = wpa_auth->conf.ssid_len;
-	bool skip_hashcat = false;
-	size_t buf_index = 0;
-	struct hostapd_data *hapd = wpa_auth->cb_ctx;
-	struct sta_info *assoc_sta = NULL;
-
-	if (mana.conf && mana.conf->enable_mana) {
-		if (hapd)
-			assoc_sta = ap_get_sta(hapd, sm->addr);
-		if (!assoc_sta || !assoc_sta->mana_assoc_ssid_set) {
-			wpa_printf(MSG_DEBUG,
-				   "MANA WPA2 HASHCAT: association SSID unavailable for " MACSTR
-				   ", skip output", MAC2STR(sm->addr));
-			skip_hashcat = true;
-		} else {
-			ssid = assoc_sta->mana_assoc_ssid;
-			ssid_len = assoc_sta->mana_assoc_ssid_len;
-		}
-	}
-
-	if (!hc_out_buf) {
-		wpa_printf(MSG_ERROR, "MANA WPA2 HASHCAT: out of memory");
-		skip_hashcat = true;
-	}
-
-	if (skip_hashcat) {
-		free(hc_out_buf);
-		goto mana_wpaout_done;
-	}
-
-	buf_index += sprintf(hc_out_buf + buf_index, "WPA*02*");
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, mic, mic_len);
-	buf_index += sprintf(hc_out_buf + buf_index, "*");
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->wpa_auth->addr, 6);
-	buf_index += sprintf(hc_out_buf + buf_index, "*");
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->addr, 6);
-	buf_index += sprintf(hc_out_buf + buf_index, "*");
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, ssid, ssid_len);
-	buf_index += sprintf(hc_out_buf + buf_index, "*");
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, sm->ANonce, WPA_NONCE_LEN);
-	buf_index += sprintf(hc_out_buf + buf_index, "*");
-	/*
-	for (size_t j = 0; j < data_len; j++) {
-					buf_index += sprintf(hc_out_buf + buf_index, "%02x", data[j]);
-	}
-	*/
-	// We can't just output data like above, we need to blank the MIC for some
-	// reason I'm guessing is related to hashcat optimisations, so all of this
-	// below code is just to make sure we remove the MIC from the EAPOL data.
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, hdr, sizeof(*hdr));
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, &key->type, 1);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_info, 2);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_length, 2);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->replay_counter, WPA_REPLAY_COUNTER_LEN);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_nonce, WPA_NONCE_LEN);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_iv, 16);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_rsc, WPA_KEY_RSC_LEN);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key->key_id, 8);
-	for (size_t j=0;j<mic_len;j++) //hccapx truncates to 16
-			buf_index = append_hex_to_buffer(hc_out_buf, buf_index, "\x00", 1);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, mic + mic_len, 2);
-	buf_index = append_hex_to_buffer(hc_out_buf, buf_index, key_data, key_data_length);
-
-	buf_index += sprintf(hc_out_buf + buf_index, "*00");
-	wpa_printf(MSG_INFO, "MANA WPA2 HASHCAT | %s", hc_out_buf);
-
-	if (os_strcmp("NOT_SET",mana.conf->mana_wpaout)!=0) {																																 
-			FILE *f = fopen(mana.conf->mana_wpaout, "a");																																			 
-			if (f != NULL) {
-				fprintf(f,"[WPA2-EAPOL HASHCAT]\t%s\n", hc_out_buf);
-			}
-			fclose(f);
-	}
-	free(hc_out_buf);
-mana_wpaout_done:
-	// MANA End
+	mana_wpa_capture_handshake(wpa_auth, sm, hdr, key, mic, mic_len,
+				   key_data, key_data_length);
 	
 	/* FIX: verify that the EAPOL-Key frame was encrypted if pairwise keys
 	 * are set */

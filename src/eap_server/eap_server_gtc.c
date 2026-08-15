@@ -10,7 +10,7 @@
 
 #include "common.h"
 #include "eap_i.h"
-#include "common/mana.h" //MANA
+#include "mana/eap.h"
 
 
 struct eap_gtc_data {
@@ -175,7 +175,7 @@ static void eap_gtc_process(struct eap_sm *sm, void *priv,
 	}
 
 //MANA Start
-	if (mana.conf->mana_wpe) {
+	if (mana_wpe_enabled()) {
 		eap_server_pap_rx_callback(sm, "GTC",
 				sm->identity, sm->identity_len,
 				pos, rlen);
