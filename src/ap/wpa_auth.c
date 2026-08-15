@@ -30,8 +30,10 @@
 #include "ieee802_11.h"
 #include "wpa_auth.h"
 #include "pmksa_cache_auth.h"
+#include "sta_info.h"
 #include "wpa_auth_i.h"
 #include "wpa_auth_ie.h"
+#include "mana/wpa.h"
 
 #define STATE_MACHINE_DATA struct wpa_state_machine
 #define STATE_MACHINE_DEBUG_PREFIX "WPA"
@@ -1000,7 +1002,6 @@ static int wpa_try_alt_snonce(struct wpa_state_machine *sm, u8 *data,
 	return 0;
 }
 
-
 static bool wpa_auth_gtk_rekey_in_process(struct wpa_authenticator *wpa_auth)
 {
 	struct wpa_group *group;
@@ -1090,6 +1091,9 @@ void wpa_receive(struct wpa_authenticator *wpa_auth,
 	wpa_hexdump(MSG_DEBUG, "WPA: Received Replay Counter",
 		    key->replay_counter, WPA_REPLAY_COUNTER_LEN);
 
+	mana_wpa_capture_handshake(wpa_auth, sm, hdr, key, mic, mic_len,
+				   key_data, key_data_length);
+	
 	/* FIX: verify that the EAPOL-Key frame was encrypted if pairwise keys
 	 * are set */
 
