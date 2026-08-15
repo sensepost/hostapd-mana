@@ -38,6 +38,7 @@
 #include "ndisc_snoop.h"
 #include "sta_info.h"
 #include "vlan.h"
+#include "mana/state.h"
 #include "wps_hostapd.h"
 
 static void ap_sta_remove_in_other_bss(struct hostapd_data *hapd,
@@ -1901,9 +1902,6 @@ void ap_sta_disconnect(struct hostapd_data *hapd, struct sta_info *sta,
 
 	if (sta == NULL && addr)
 		sta = ap_get_sta(hapd, addr);
-
-	if (addr)
-		hostapd_drv_sta_deauth(hapd, addr, reason);
 
 	if (sta == NULL)
 		return;

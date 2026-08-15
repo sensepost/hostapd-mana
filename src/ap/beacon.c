@@ -34,6 +34,7 @@
 #include "dfs.h"
 #include "taxonomy.h"
 #include "ieee802_11_auth.h"
+#include "mana/probe.h"
 
 
 #ifdef NEED_AP_MLME
@@ -63,7 +64,6 @@ static u8 * hostapd_eid_bss_load(struct hostapd_data *hapd, u8 *eid, size_t len)
 	}
 	return eid;
 }
-
 
 static u8 ieee802_11_erp_info(struct hostapd_data *hapd)
 {
@@ -718,6 +718,8 @@ static size_t he_elem_len(struct hostapd_data *hapd)
 struct probe_resp_params {
 	const struct ieee80211_mgmt *req;
 	bool is_p2p;
+	const u8 *mana_ssid;
+	size_t mana_ssid_len;
 
 	/* Generated IEs will be included inside an ML element */
 	struct hostapd_data *mld_ap;
@@ -846,16 +848,23 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	epos = pos + len;
 
 	*pos++ = WLAN_EID_SSID;
-	*pos++ = hapd->conf->ssid.ssid_len;
-	os_memcpy(pos, hapd->conf->ssid.ssid,
-		  hapd->conf->ssid.ssid_len);
-	pos += hapd->conf->ssid.ssid_len;
+	if (hapd->iconf->enable_mana && params->mana_ssid &&
+	    params->mana_ssid_len > 0) {
+		*pos++ = params->mana_ssid_len;
+		os_memcpy(pos, params->mana_ssid, params->mana_ssid_len);
+		pos += params->mana_ssid_len;
+	} else {
+		*pos++ = hapd->conf->ssid.ssid_len;
+		os_memcpy(pos, hapd->conf->ssid.ssid,
+			  hapd->conf->ssid.ssid_len);
+		pos += hapd->conf->ssid.ssid_len;
+	}
 
 	/* Supported rates */
 	pos = hostapd_eid_supp_rates(hapd, pos);
 
 	/* DS Params */
-	pos = hostapd_eid_ds_params(hapd, pos);
+	pos = hostapd_eid_ds_params(hapd, pos); //MANA
 
 	pos = hostapd_eid_country(hapd, pos, epos - pos);
 
@@ -1051,7 +1060,6 @@ static u8 * hostapd_probe_resp_fill_elems(struct hostapd_data *hapd,
 	return pos;
 }
 
-
 static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 				   struct probe_resp_params *params)
 {
@@ -1072,6 +1080,13 @@ static void hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 	params->resp->frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT,
 						   WLAN_FC_STYPE_PROBE_RESP);
+	if (!mana_probe_macacl_allowed(hapd, params->req)) {
+		os_free(params->resp);
+		params->resp = NULL;
+		params->resp_len = 0;
+		return;
+	}
+
 	/* Unicast the response to all requests on bands other than 6 GHz. For
 	 * the 6 GHz, unicast is used only if the actual SSID is not included in
 	 * the Beacon frames. Otherwise, broadcast response is used per IEEE
@@ -1282,7 +1297,8 @@ void sta_track_expire(struct hostapd_iface *iface, int force)
 }
 
 
-static struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface,
+//static struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface, //MANA
+struct hostapd_sta_info * sta_track_get(struct hostapd_iface *iface,
 					       const u8 *addr)
 {
 	struct hostapd_sta_info *info;
@@ -1459,6 +1475,81 @@ static bool parse_ml_probe_req(const struct ieee80211_eht_ml *ml, size_t ml_len,
 #endif /* CONFIG_IEEE80211BE */
 
 
+static void hostapd_init_probe_req_params(struct hostapd_data *hapd,
+					  struct probe_resp_params *params,
+					  const struct ieee80211_mgmt *mgmt,
+					  struct ieee802_11_elems *elems)
+{
+	os_memset(params, 0, sizeof(*params));
+
+#ifdef CONFIG_IEEE80211BE
+	if (hapd->conf->mld_ap && elems->probe_req_mle) {
+		int mld_id;
+		u16 links;
+
+		if (parse_ml_probe_req((struct ieee80211_eht_ml *)
+				       elems->probe_req_mle,
+				       elems->probe_req_mle_len, &mld_id,
+				       &links))
+			hostapd_fill_probe_resp_ml_params(hapd, params, mgmt,
+							  mld_id, links);
+	}
+#endif /* CONFIG_IEEE80211BE */
+
+	params->req = mgmt;
+	params->is_p2p = !!elems->p2p;
+	params->known_bss = elems->mbssid_known_bss;
+	params->known_bss_len = elems->mbssid_known_bss_len;
+}
+
+
+static void hostapd_send_probe_resp_from_params(struct hostapd_data *hapd,
+						struct probe_resp_params *params,
+						enum ssid_match_result res,
+						const struct ieee80211_mgmt *mgmt)
+{
+	u16 csa_offs[2];
+	size_t csa_offs_len;
+	int noack;
+	int ret;
+
+	hostapd_gen_probe_resp(hapd, params);
+	hostapd_free_probe_resp_params(params);
+
+	if (!params->resp)
+		return;
+
+	/*
+	 * If this is a broadcast probe request, apply no ack policy to avoid
+	 * excessive retries.
+	 */
+	noack = !!(res == WILDCARD_SSID_MATCH &&
+		   is_broadcast_ether_addr(mgmt->da));
+
+	csa_offs_len = 0;
+	if (hapd->csa_in_progress) {
+		if (params->csa_pos)
+			csa_offs[csa_offs_len++] =
+				params->csa_pos - (u8 *) params->resp;
+
+		if (params->ecsa_pos)
+			csa_offs[csa_offs_len++] =
+				params->ecsa_pos - (u8 *) params->resp;
+	}
+
+	ret = hostapd_drv_send_mlme(hostapd_mbssid_get_tx_bss(hapd),
+				    params->resp, params->resp_len, noack,
+				    csa_offs_len ? csa_offs : NULL,
+				    csa_offs_len, 0);
+
+	if (ret < 0)
+		wpa_printf(MSG_INFO, "handle_probe_req: send failed");
+
+	os_free(params->resp);
+	params->resp = NULL;
+}
+
+
 void handle_probe_req(struct hostapd_data *hapd,
 		      const struct ieee80211_mgmt *mgmt, size_t len,
 		      int ssi_signal)
@@ -1467,18 +1558,12 @@ void handle_probe_req(struct hostapd_data *hapd,
 	const u8 *ie;
 	size_t ie_len;
 	size_t i;
-	int noack;
 	enum ssid_match_result res;
 	int ret;
-	u16 csa_offs[2];
-	size_t csa_offs_len;
 	struct radius_sta rad_info;
 	struct probe_resp_params params;
 	char *hex = NULL;
-#ifdef CONFIG_IEEE80211BE
-	int mld_id;
-	u16 links;
-#endif /* CONFIG_IEEE80211BE */
+	int iterate = 0;
 
 	if (hapd->iconf->rssi_ignore_probe_request && ssi_signal &&
 	    ssi_signal < hapd->iconf->rssi_ignore_probe_request)
@@ -1570,8 +1655,12 @@ void handle_probe_req(struct hostapd_data *hapd,
 	}
 #endif /* CONFIG_P2P */
 
+	if (!mana_probe_ssid_allowed(hapd, elems.ssid, elems.ssid_len))
+		return;
+
 	if (hapd->conf->ignore_broadcast_ssid && elems.ssid_len == 0 &&
-	    elems.ssid_list_len == 0 && elems.short_ssid_list_len == 0) {
+	    elems.ssid_list_len == 0 && elems.short_ssid_list_len == 0 &&
+	    !hapd->iconf->enable_mana) {
 		wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR " for "
 			   "broadcast SSID ignored", MAC2STR(mgmt->sa));
 		return;
@@ -1599,6 +1688,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 			taxonomy_hostapd_sta_info_probe_req(hapd, info,
 							    ie, ie_len);
 		}
+		mana_probe_record_taxonomy(hapd, mgmt->sa);
 	}
 #endif /* CONFIG_TAXONOMY */
 
@@ -1626,22 +1716,31 @@ void handle_probe_req(struct hostapd_data *hapd,
 		}
 	}
 
-	if (res == NO_SSID_MATCH) {
-		if (!(mgmt->da[0] & 0x01)) {
-			wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
-				   " for foreign SSID '%s' (DA " MACSTR ")%s",
-				   MAC2STR(mgmt->sa),
-				   wpa_ssid_txt(elems.ssid, elems.ssid_len),
-				   MAC2STR(mgmt->da),
-				   elems.ssid_list ? " (SSID list)" : "");
+	if (hapd->iconf->enable_mana) {
+		mana_probe_process_request(hapd, mgmt, elems.ssid, elems.ssid_len,
+					   res == WILDCARD_SSID_MATCH,
+					   &iterate);
+	} else {
+		if (res == NO_SSID_MATCH) {
+			if (!(mgmt->da[0] & 0x01)) {
+				wpa_printf(MSG_MSGDUMP, "Probe Request from "
+					   MACSTR " for foreign SSID '%s' (DA "
+					   MACSTR ")%s", MAC2STR(mgmt->sa),
+					   wpa_ssid_txt(elems.ssid,
+							elems.ssid_len),
+					   MAC2STR(mgmt->da),
+					   elems.ssid_list ? " (SSID list)" : "");
+			}
+			return;
 		}
-		return;
-	}
 
-	if (hapd->conf->ignore_broadcast_ssid && res == WILDCARD_SSID_MATCH) {
-		wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR " for "
-			   "broadcast SSID ignored", MAC2STR(mgmt->sa));
-		return;
+		if (hapd->conf->ignore_broadcast_ssid &&
+		    res == WILDCARD_SSID_MATCH) {
+			wpa_printf(MSG_MSGDUMP, "Probe Request from " MACSTR
+				   " for broadcast SSID ignored",
+				   MAC2STR(mgmt->sa));
+			return;
+		}
 	}
 
 #ifdef CONFIG_INTERWORKING
@@ -1743,60 +1842,52 @@ void handle_probe_req(struct hostapd_data *hapd,
 
 	os_free(hex);
 
-	os_memset(&params, 0, sizeof(params));
+	if (!iterate) {
+		hostapd_init_probe_req_params(hapd, &params, mgmt, &elems);
+		if (hapd->iconf->enable_mana && elems.ssid_len > 0) {
+			params.mana_ssid = elems.ssid;
+			params.mana_ssid_len = elems.ssid_len;
+			wpa_printf(MSG_DEBUG,
+				   "MANA: Generating response for SSID '%s' for STA "
+				   MACSTR,
+				   wpa_ssid_txt(elems.ssid, elems.ssid_len),
+				   MAC2STR(mgmt->sa));
+		}
 
-#ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap && elems.probe_req_mle &&
-	    parse_ml_probe_req((struct ieee80211_eht_ml *) elems.probe_req_mle,
-			       elems.probe_req_mle_len, &mld_id, &links)) {
-		hostapd_fill_probe_resp_ml_params(hapd, &params, mgmt,
-						  mld_id, links);
+		hostapd_send_probe_resp_from_params(hapd, &params, res, mgmt);
+
+		wpa_printf(MSG_EXCESSIVE,
+			   "STA " MACSTR " sent probe request for %s SSID",
+			   MAC2STR(mgmt->sa),
+			   elems.ssid_len == 0 ? "broadcast" : "our");
+	} else {
+		struct mana_ssid *khash;
+		struct mana_ssid *k;
+
+		khash = mana_probe_iter_hash(hapd, mgmt->sa);
+		if (khash == NULL)
+			return;
+
+		for (k = khash; k; k = (struct mana_ssid *) k->hh.next) {
+			wpa_printf(MSG_DEBUG,
+				   "MANA: Generating broadcast response for SSID '%s' for STA "
+				   MACSTR,
+				   k->ssid_txt, MAC2STR(mgmt->sa));
+
+			hostapd_init_probe_req_params(hapd, &params, mgmt,
+						      &elems);
+			params.mana_ssid = k->ssid;
+			params.mana_ssid_len = k->ssid_len;
+			hostapd_send_probe_resp_from_params(hapd, &params, res,
+							    mgmt);
+
+			wpa_printf(MSG_EXCESSIVE,
+				   "MANA: STA " MACSTR
+				   " sent probe request for SSID '%s'",
+				   MAC2STR(mgmt->sa), k->ssid_txt);
+		}
 	}
-#endif /* CONFIG_IEEE80211BE */
 
-	params.req = mgmt;
-	params.is_p2p = !!elems.p2p;
-	params.known_bss = elems.mbssid_known_bss;
-	params.known_bss_len = elems.mbssid_known_bss_len;
-
-	hostapd_gen_probe_resp(hapd, &params);
-
-	hostapd_free_probe_resp_params(&params);
-
-	if (!params.resp)
-		return;
-
-	/*
-	 * If this is a broadcast probe request, apply no ack policy to avoid
-	 * excessive retries.
-	 */
-	noack = !!(res == WILDCARD_SSID_MATCH &&
-		   is_broadcast_ether_addr(mgmt->da));
-
-	csa_offs_len = 0;
-	if (hapd->csa_in_progress) {
-		if (params.csa_pos)
-			csa_offs[csa_offs_len++] =
-				params.csa_pos - (u8 *) params.resp;
-
-		if (params.ecsa_pos)
-			csa_offs[csa_offs_len++] =
-				params.ecsa_pos - (u8 *) params.resp;
-	}
-
-	ret = hostapd_drv_send_mlme(hostapd_mbssid_get_tx_bss(hapd),
-				    params.resp, params.resp_len, noack,
-				    csa_offs_len ? csa_offs : NULL,
-				    csa_offs_len, 0);
-
-	if (ret < 0)
-		wpa_printf(MSG_INFO, "handle_probe_req: send failed");
-
-	os_free(params.resp);
-
-	wpa_printf(MSG_EXCESSIVE, "STA " MACSTR " sent probe request for %s "
-		   "SSID", MAC2STR(mgmt->sa),
-		   elems.ssid_len == 0 ? "broadcast" : "our");
 }
 
 
@@ -2853,7 +2944,19 @@ static int __ieee802_11_set_beacon(struct hostapd_data *hapd)
 	}
 
 	res = hostapd_drv_set_ap(hapd, &params);
-	hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
+	//  MANA - Start Beacon Stuffs here
+	//hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
+	//struct wpa_driver_ap_params params2 = params;
+	//os_memset(&params2.ssid, 0, params2.ssid_len);
+	//params2.hide_ssid = HIDDEN_SSID_ZERO_CONTENTS;
+	//hostapd_build_ap_extra_ies(hapd, &beacon, &proberesp, &assocresp);
+	//params2.beacon_ies = beacon;
+	//params2.proberesp_ies = proberesp;
+   //params2.assocresp_ies = assocresp;
+	//wpa_printf(MSG_INFO, "ZZZZ : Sending Hidden AP: %s", params2.ssid);
+	//res = hostapd_drv_set_ap(hapd, &params2);
+	//hostapd_free_ap_extra_ies(hapd, beacon, proberesp, assocresp);
+	//  MANA - End Beacon Stuff here
 	if (res)
 		wpa_printf(MSG_ERROR, "Failed to set beacon parameters");
 	else

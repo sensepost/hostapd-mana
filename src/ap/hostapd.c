@@ -56,7 +56,7 @@
 #include "hs20.h"
 #include "airtime_policy.h"
 #include "wpa_auth_kay.h"
-#include "hw_features.h"
+#include "mana/state.h"
 
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
@@ -375,6 +375,7 @@ int hostapd_reload_config(struct hostapd_iface *iface)
 	}
 
 	iface->conf = newconf;
+	mana.conf = newconf;
 	hostapd_config_free(oldconf);
 
 
@@ -3370,6 +3371,7 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 	if (conf == NULL)
 		goto fail;
 	hapd_iface->conf = conf;
+	mana.conf = conf; //MANA
 
 	hapd_iface->num_bss = conf->num_bss;
 	hapd_iface->bss = os_calloc(conf->num_bss,
