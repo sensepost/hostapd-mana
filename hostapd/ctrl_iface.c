@@ -67,7 +67,7 @@
 #include "fst/fst_ctrl_iface.h"
 #include "config_file.h"
 #include "ctrl_iface.h"
-
+#include "mana/ctrl_iface.h"
 
 #define HOSTAPD_CLI_DUP_VALUE_MAX_LEN 256
 
@@ -132,7 +132,6 @@ static int hostapd_ctrl_iface_new_sta(struct hostapd_data *hapd,
 	hostapd_new_assoc_sta(hapd, sta, 0);
 	return 0;
 }
-
 
 #ifdef NEED_AP_MLME
 static int hostapd_ctrl_iface_sa_query(struct hostapd_data *hapd,
@@ -227,7 +226,6 @@ static int hostapd_ctrl_iface_wps_check_pin(
 
 	return ret;
 }
-
 
 #ifdef CONFIG_WPS_NFC
 static int hostapd_ctrl_iface_wps_nfc_tag_read(struct hostapd_data *hapd,
@@ -3506,7 +3504,7 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      struct sockaddr_storage *from,
 					      socklen_t fromlen)
 {
-	int reply_len, res;
+	int reply_len, res, mana_res;
 
 	os_memcpy(reply, "OK\n", 3);
 	reply_len = 3;
@@ -4016,6 +4014,10 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		reply_len = hostapd_ctrl_iface_driver_cmd(hapd, buf + 7, reply,
 							  reply_size);
 #endif /* ANDROID */
+	} else if ((mana_res = mana_ctrl_iface_process(
+			    hapd, buf, reply, reply_size, &reply_len)) != 0) {
+		if (mana_res < 0)
+			reply_len = -1;
 	} else {
 		os_memcpy(reply, "UNKNOWN COMMAND\n", 16);
 		reply_len = 16;
