@@ -100,7 +100,9 @@ void mana_log_ssid(struct hostapd_data *hapd, const u8 *ssid, size_t ssid_len,
 int mana_probe_ssid_allowed(struct hostapd_data *hapd, const u8 *ssid,
 			    size_t ssid_len)
 {
-	if (os_strcmp(hapd->iconf->mana_ssid_filter_file, "NOT_SET") == 0 ||
+	/* A dynamically-created BSS may not have the optional filter set. */
+	if (!hapd->iconf->mana_ssid_filter_file ||
+	    os_strcmp(hapd->iconf->mana_ssid_filter_file, "NOT_SET") == 0 ||
 	    ssid_len == 0)
 		return 1;
 

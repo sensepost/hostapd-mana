@@ -56,6 +56,7 @@
 #include "hs20.h"
 #include "airtime_policy.h"
 #include "wpa_auth_kay.h"
+#include "mana/config.h"
 #include "mana/state.h"
 
 
@@ -3827,6 +3828,7 @@ hostapd_config_alloc(struct hapd_interfaces *interfaces, const char *ifname,
 				"configuration", __func__);
 		 return NULL;
 	}
+	mana_config_defaults(conf);
 
 	if (driver) {
 		int j;
@@ -3898,6 +3900,9 @@ static int hostapd_data_alloc(struct hostapd_iface *hapd_iface,
 
 	hapd_iface->conf = conf;
 	hapd_iface->num_bss = conf->num_bss;
+	/* MANA's EAP hooks use the active hostapd configuration. This path is
+	 * also used by the dynamic ADD command in the hwsim test harness. */
+	mana.conf = conf;
 
 	return 0;
 }
