@@ -31,7 +31,7 @@ void mana_wpa_capture_handshake(struct wpa_authenticator *wpa_auth,
 				const u8 *mic, size_t mic_len,
 				const u8 *key_data, u16 key_data_length)
 {
-	size_t hc_out_buf_size = 600;
+	size_t hc_out_buf_size;
 	char *hc_out_buf;
 	const u8 *ssid = wpa_auth->conf.ssid;
 	size_t ssid_len = wpa_auth->conf.ssid_len;
@@ -58,6 +58,13 @@ void mana_wpa_capture_handshake(struct wpa_authenticator *wpa_auth,
 		}
 	}
 
+	/*
+	 * Calculate the buffer size at runtime.
+	 * The old fixed 600-byte allocation was too small for valid EAPOL-Key
+	 * frames with a sizeable key-data field (e.g., RSN IEs).
+	 */
+	hc_out_buf_size = 270 + 4 * mic_len + 2 * ssid_len +
+		2 * key_data_length;
 	hc_out_buf = os_malloc(hc_out_buf_size);
 	if (!hc_out_buf) {
 		wpa_printf(MSG_ERROR, "MANA WPA2 HASHCAT: out of memory");
