@@ -34,7 +34,7 @@ void mana_config_defaults(struct hostapd_config *conf)
 	conf->mana_eapsuccess = 0;
 	conf->mana_eaptls = 0;
 	conf->enable_sycophant = 0;
-	conf->sycophant_dir = "NOT_SET";
+	conf->sycophant_socket = "/run/wpa_sycophant.sock";
 }
 
 int mana_config_read_ssidlist(const char *fname,
@@ -197,46 +197,12 @@ int mana_config_fill(struct hostapd_config *conf,
 			wpa_printf(MSG_DEBUG, "SYCOPHANT: Enabled");
 		return MANA_CONFIG_HANDLED;
 	}
-	if (os_strcmp(field, "sycophant_dir") == 0) {
-		size_t dirlen;
-		int id;
-
-		if (access(value, W_OK) != 0) {
-			wpa_printf(MSG_ERROR,
-				   "SYCOPHANT: Line %d: Failed to access sycophant directory '%s'",
-				   line, value);
+	if (os_strcmp(field, "sycophant_socket") == 0) {
+		conf->sycophant_socket = os_strdup(value);
+		if (!conf->sycophant_socket)
 			return MANA_CONFIG_ERROR;
-		}
-
-		conf->sycophant_dir = os_strdup(value);
-		if (!conf->sycophant_dir)
-			return MANA_CONFIG_ERROR;
-		wpa_printf(MSG_INFO, "MANA: Sycohpant state directory set to %s.",
-			   conf->sycophant_dir);
-
-		dirlen = os_strlen(conf->sycophant_dir);
-		conf->sycophant_state_file = os_malloc(dirlen + 16);
-		conf->sycophant_challenge_file = os_malloc(dirlen + 10);
-		conf->sycophant_response_file = os_malloc(dirlen + 9);
-		if (!conf->sycophant_state_file ||
-		    !conf->sycophant_challenge_file ||
-		    !conf->sycophant_response_file)
-			return MANA_CONFIG_ERROR;
-		os_snprintf(conf->sycophant_state_file, dirlen + 16,
-			    "%sSYCOPHANT_STATE", value);
-		os_snprintf(conf->sycophant_challenge_file, dirlen + 10,
-			    "%sCHALLENGE", value);
-		os_snprintf(conf->sycophant_response_file, dirlen + 9,
-			    "%sRESPONSE", value);
-
-		for (id = 1; id <= 2; id++) {
-			conf->sycophant_id_file[id - 1] = os_malloc(dirlen + 15);
-			if (!conf->sycophant_id_file[id - 1])
-				return MANA_CONFIG_ERROR;
-			os_snprintf(conf->sycophant_id_file[id - 1],
-				    dirlen + 15, "%sSYCOPHANT_P%dID",
-				    value, id);
-		}
+		wpa_printf(MSG_INFO, "SYCOPHANT: Socket path set to %s",
+			   conf->sycophant_socket);
 		return MANA_CONFIG_HANDLED;
 	}
 

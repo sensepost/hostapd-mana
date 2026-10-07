@@ -1092,11 +1092,7 @@ struct hostapd_config {
 	int mana_eapsuccess;
 	int mana_eaptls;
 	int enable_sycophant;
-	char * sycophant_dir;
-        char * sycophant_state_file;
-        char * sycophant_challenge_file;
-        char * sycophant_response_file;
-        char * sycophant_id_file[2];
+	char * sycophant_socket;
 
 	// MANA END
 
