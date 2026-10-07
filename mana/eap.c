@@ -8,6 +8,7 @@
 #include "eap_server/eap_i.h"
 #include "mana/eap.h"
 #include "mana/state.h"
+#include "mana/sycophant.h"
 
 #define MANA_MSCHAP_CHALLENGE_LEN 8
 
@@ -32,30 +33,9 @@ void mana_eap_user_get_identity(struct eap_sm *sm, const u8 **identity,
 	if (!mana.conf)
 		return;
 
-	if (mana.conf->enable_sycophant &&
-	    os_strcmp("NOT_SET", mana.conf->sycophant_dir) != 0) {
-		char sup_state[2] = "*";
-		FILE *sycophant_state = fopen(mana.conf->sycophant_state_file, "rb");
-
-		if (sycophant_state) {
-			fread(sup_state, 1, 1, sycophant_state);
-			fclose(sycophant_state);
-		}
-		if (os_strcmp(sup_state, "I") == 0) {
-			const char *id_file = phase2 ? mana.conf->sycophant_id_file[1] :
-				mana.conf->sycophant_id_file[0];
-			FILE *sycophant_id = fopen(id_file, "wb");
-
-			if (sycophant_id) {
-				fwrite(*identity, *identity_len, 1, sycophant_id);
-				fclose(sycophant_id);
-			} else {
-				wpa_printf(MSG_ERROR,
-					   "SYCOPHANT: Unable to open Sycophant Stage %d Identity File %s",
-					   phase2, id_file);
-			}
-		}
-	}
+	if (mana.conf->enable_sycophant)
+		mana_sycophant_identity(phase2 ? 2 : 1, *identity,
+					*identity_len);
 
 	if (mana.conf->mana_wpe || mana.conf->enable_sycophant) {
 		wpa_printf(MSG_INFO, "MANA EAP Identity Phase %d: %.*s",

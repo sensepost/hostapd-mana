@@ -58,6 +58,7 @@
 #include "wpa_auth_kay.h"
 #include "mana/config.h"
 #include "mana/state.h"
+#include "mana/sycophant.h"
 
 
 static int hostapd_flush_old_stations(struct hostapd_data *hapd, u16 reason);
@@ -3391,6 +3392,8 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
 	}
 
 	hapd_iface->is_ch_switch_dfs = false;
+	if (mana_sycophant_init() < 0)
+		goto fail;
 	return hapd_iface;
 
 fail:

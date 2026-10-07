@@ -310,8 +310,6 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	resp = (struct eap_mschapv2_hdr *) pos;
 	pos = (u8 *) (resp + 1);
 
-	mana_sycophant_mschapv2_response(respData);
-
 	if (len < sizeof(*resp) + 1 + 49 ||
 	    resp->op_code != MSCHAPV2_OP_RESPONSE ||
 	    pos[0] != 49) {
@@ -322,6 +320,7 @@ static void eap_mschapv2_process_response(struct eap_sm *sm,
 	}
 	data->resp_mschapv2_id = resp->mschapv2_id;
 	pos++;
+	mana_sycophant_mschapv2_response(pos, MSCHAPV2_RESP_LEN);
 	peer_challenge = pos;
 	pos += 16 + 8;
 	nt_response = pos;
